@@ -35,7 +35,7 @@ typedef bool (*subtype_seek_read_func)(struct wtap*, int64_t, wtap_rec *,
  * Struct holding data of the currently read file.
  */
 struct wtap {
-    FILE_T                      fh;
+    FILE_T                      fh;                     /**< Primary FILE_T for sequential reads */
     FILE_T                      random_fh;              /**< Secondary FILE_T for random access */
     bool                        ispipe;                 /**< true if the file is a pipe */
     int                         file_type_subtype;
@@ -44,26 +44,26 @@ struct wtap {
     GArray                      *shb_iface_to_global;   /**< An array mapping the per-section interface numbers to global IDs */
     GArray                      *interface_data;        /**< An array holding the interface data from pcapng IDB:s or equivalent(?)*/
     unsigned                    next_interface_data;    /**< Next interface data that wtap_get_next_interface_description() will show */
-    GArray                      *nrbs;                  /**< holds the Name Res Blocks, or NULL */
+    GArray                      *nrbs;                  /**< Holds the Name Res Blocks, or NULL */
     GArray                      *dsbs;                  /**< An array of DSBs (of type wtap_block_t), or NULL if not supported. */
     GArray                      *meta_events;           /**< An array of meta events (of type wtap_block_t), or NULL if not supported. */
 
     char                        *pathname;              /**< File pathname; might just be "-" */
 
-    void                        *priv;          /* this one holds per-file state and is free'd automatically by wtap_close() */
-    void                        *wslua_data;    /* this one holds wslua state info and is not free'd */
+    void                        *priv;                  /**< Stores per-file state and is free'd automatically by wtap_close() */
+    void                        *wslua_data;            /**< Stores wslua state info and is not free'd */
 
-    subtype_read_func           subtype_read;
-    subtype_seek_read_func      subtype_seek_read;
+    subtype_read_func           subtype_read;           /**< Function called for sequential reads */
+    subtype_seek_read_func      subtype_seek_read;      /**< Function called for random access reads */
     void                        (*subtype_sequential_close)(struct wtap*);
     void                        (*subtype_close)(struct wtap*);
-    int                         file_encap;    /* per-file, for those
+    int                         file_encap;    /**< Per-file encapsulation type, for those
                                                 * file formats that have
                                                 * per-file encapsulation
                                                 * types rather than per-packet
                                                 * encapsulation types
                                                 */
-    int                         file_tsprec;   /* per-file timestamp precision
+    int                         file_tsprec;    /**< Per-file timestamp precision
                                                 * of the fractional part of
                                                 * the time stamp, for those
                                                 * file formats that have
@@ -140,8 +140,6 @@ WS_DLL_PUBLIC int64_t wtap_dump_file_tell(wtap_dumper *wdh, int *err);
 
 extern int wtap_num_file_types;
 
-#include <wsutil/pint.h>
-
 /* Macros to byte-swap possibly-unaligned 64-bit, 32-bit and 16-bit quantities;
  * they take a pointer to the quantity, and byte-swap it in place.
  */
@@ -178,100 +176,6 @@ extern int wtap_num_file_types;
         (p)[1] = (p)[0];   \
         (p)[0] = tmp;      \
     }
-
-
-/* Pointer routines to put items out in a particular byte order.
- * These will work regardless of the byte alignment of the pointer.
- */
-
-#ifndef phtons
-#define phtons(p, v) \
-    {                 \
-        (p)[0] = (uint8_t)((v) >> 8);    \
-        (p)[1] = (uint8_t)((v) >> 0);    \
-    }
-#endif
-
-#ifndef phton24
-#define phton24(p, v) \
-    {                 \
-        (p)[0] = (uint8_t)((v) >> 16);    \
-        (p)[1] = (uint8_t)((v) >> 8);     \
-        (p)[2] = (uint8_t)((v) >> 0);     \
-    }
-#endif
-
-#ifndef phtonl
-#define phtonl(p, v) \
-    {                 \
-        (p)[0] = (uint8_t)((v) >> 24);    \
-        (p)[1] = (uint8_t)((v) >> 16);    \
-        (p)[2] = (uint8_t)((v) >> 8);     \
-        (p)[3] = (uint8_t)((v) >> 0);     \
-    }
-#endif
-
-#ifndef phtonll
-#define phtonll(p, v) \
-    {                 \
-        (p)[0] = (uint8_t)((v) >> 56);    \
-        (p)[1] = (uint8_t)((v) >> 48);    \
-        (p)[2] = (uint8_t)((v) >> 40);    \
-        (p)[3] = (uint8_t)((v) >> 32);    \
-        (p)[4] = (uint8_t)((v) >> 24);    \
-        (p)[5] = (uint8_t)((v) >> 16);    \
-        (p)[6] = (uint8_t)((v) >> 8);     \
-        (p)[7] = (uint8_t)((v) >> 0);     \
-    }
-#endif
-
-#ifndef phtole8
-#define phtole8(p, v) \
-    {                 \
-        (p)[0] = (uint8_t)((v) >> 0);    \
-    }
-#endif
-
-#ifndef phtoles
-#define phtoles(p, v) \
-    {                 \
-        (p)[0] = (uint8_t)((v) >> 0);    \
-        (p)[1] = (uint8_t)((v) >> 8);    \
-    }
-#endif
-
-#ifndef phtole24
-#define phtole24(p, v) \
-    {                 \
-        (p)[0] = (uint8_t)((v) >> 0);     \
-        (p)[1] = (uint8_t)((v) >> 8);     \
-        (p)[2] = (uint8_t)((v) >> 16);    \
-    }
-#endif
-
-#ifndef phtolel
-#define phtolel(p, v) \
-    {                 \
-        (p)[0] = (uint8_t)((v) >> 0);     \
-        (p)[1] = (uint8_t)((v) >> 8);     \
-        (p)[2] = (uint8_t)((v) >> 16);    \
-        (p)[3] = (uint8_t)((v) >> 24);    \
-    }
-#endif
-
-#ifndef phtolell
-#define phtolell(p, v) \
-    {                 \
-        (p)[0] = (uint8_t)((v) >> 0);     \
-        (p)[1] = (uint8_t)((v) >> 8);     \
-        (p)[2] = (uint8_t)((v) >> 16);    \
-        (p)[3] = (uint8_t)((v) >> 24);    \
-        (p)[4] = (uint8_t)((v) >> 32);    \
-        (p)[5] = (uint8_t)((v) >> 40);    \
-        (p)[6] = (uint8_t)((v) >> 48);    \
-        (p)[7] = (uint8_t)((v) >> 56);    \
-    }
-#endif
 
 /*
  * Read a given number of bytes from a file into a buffer or, if

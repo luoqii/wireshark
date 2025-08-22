@@ -4200,8 +4200,8 @@ dissect_smb_fid(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int offset,
 		GSL_iterator = si->ct->GSL_fid_info;
 		while (GSL_iterator) {
 			suspect_fid_info = (smb_fid_info_t *)GSL_iterator->data;
-			if (suspect_fid_info->opened_in > pinfo->num
-			|| si->sip ? !si->sip->is_create_req : true) break;
+			if (suspect_fid_info->opened_in > pinfo->num || !si->sip || !si->sip->is_create_req)
+				break;
 			if ((suspect_fid_info->tid == si->tid) && (suspect_fid_info->fid == fid))
 				fid_info = (smb_fid_info_t *)suspect_fid_info;
 			GSL_iterator = g_slist_next(GSL_iterator);
@@ -9224,7 +9224,7 @@ dissect_security_information_mask(tvbuff_t *tvb, proto_tree *parent_tree, int of
 }
 
 int
-dissect_nt_user_quota(tvbuff_t *tvb, proto_tree *tree, int offset, uint16_t *bcp)
+dissect_nt_user_quota(tvbuff_t *tvb, packet_info* pinfo, proto_tree *tree, int offset, uint16_t *bcp)
 {
 	int     old_offset, old_sid_offset;
 	uint32_t qsize;
@@ -9265,7 +9265,7 @@ dissect_nt_user_quota(tvbuff_t *tvb, proto_tree *tree, int offset, uint16_t *bcp
 
 		/* SID of the user */
 		old_sid_offset = offset;
-		offset = dissect_nt_sid(tvb, offset, tree, "Quota", NULL, -1);
+		offset = dissect_nt_sid(tvb, pinfo, offset, tree, "Quota", NULL, -1);
 		*bcp -= (offset-old_sid_offset);
 
 		if (qsize) {
@@ -9279,7 +9279,7 @@ dissect_nt_user_quota(tvbuff_t *tvb, proto_tree *tree, int offset, uint16_t *bcp
 
 
 int
-dissect_nt_get_user_quota(tvbuff_t *tvb, proto_tree *tree, int offset, uint32_t *bcp)
+dissect_nt_get_user_quota(tvbuff_t *tvb, packet_info* pinfo, proto_tree *tree, int offset, uint32_t *bcp)
 {
 	int     old_offset, old_sid_offset;
 	uint32_t qsize;
@@ -9299,7 +9299,7 @@ dissect_nt_get_user_quota(tvbuff_t *tvb, proto_tree *tree, int offset, uint32_t 
 
 		/* SID of the user */
 		old_sid_offset = offset;
-		offset = dissect_nt_sid(tvb, offset, tree, "SID", NULL, -1);
+		offset = dissect_nt_sid(tvb, pinfo, offset, tree, "SID", NULL, -1);
 		*bcp -= (offset-old_sid_offset);
 
 		if (qsize) {
@@ -9325,7 +9325,7 @@ dissect_nt_trans_data_request(tvbuff_t *tvb, packet_info *pinfo, int offset, pro
 
 	tree = proto_tree_add_subtree_format(parent_tree, tvb, offset, -1,
 				ett_smb_nt_trans_data, NULL, "%s Data",
-				val_to_str_ext(subcmd, &nt_cmd_vals_ext, "Unknown NT transaction (%u)"));
+				val_to_str_ext(pinfo->pool, subcmd, &nt_cmd_vals_ext, "Unknown NT transaction (%u)"));
 
 	switch(subcmd) {
 	case NT_TRANS_CREATE:
@@ -9392,10 +9392,10 @@ dissect_nt_trans_data_request(tvbuff_t *tvb, packet_info *pinfo, int offset, pro
 		proto_tree_add_item(tree, hf_smb_length_of_sid, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 		offset +=4;
 
-		offset = dissect_nt_sid(tvb, offset, tree, "Quota", NULL, -1);
+		offset = dissect_nt_sid(tvb, pinfo, offset, tree, "Quota", NULL, -1);
 		break;
 	case NT_TRANS_SET_USER_QUOTA:
-		offset = dissect_nt_user_quota(tvb, tree, offset, &bcp);
+		offset = dissect_nt_user_quota(tvb, pinfo, tree, offset, &bcp);
 		break;
 	}
 
@@ -9420,7 +9420,7 @@ dissect_nt_trans_param_request(tvbuff_t *tvb, packet_info *pinfo, int offset, pr
 
 	tree = proto_tree_add_subtree_format(parent_tree, tvb, offset, len,
 				ett_smb_nt_trans_param, NULL, "%s Parameters",
-				val_to_str_ext(subcmd, &nt_cmd_vals_ext, "Unknown NT transaction (%u)"));
+				val_to_str_ext(pinfo->pool, subcmd, &nt_cmd_vals_ext, "Unknown NT transaction (%u)"));
 
 	switch(subcmd) {
 	case NT_TRANS_CREATE:
@@ -9588,7 +9588,7 @@ dissect_nt_trans_setup_request(tvbuff_t *tvb, packet_info *pinfo, int offset, pr
 
 	tree = proto_tree_add_subtree_format(parent_tree, tvb, offset, len,
 				ett_smb_nt_trans_setup, NULL, "%s Setup",
-				val_to_str_ext(subcmd, &nt_cmd_vals_ext, "Unknown NT transaction (%u)"));
+				val_to_str_ext(pinfo->pool, subcmd, &nt_cmd_vals_ext, "Unknown NT transaction (%u)"));
 
 	switch(subcmd) {
 	case NT_TRANS_CREATE:
@@ -9953,7 +9953,7 @@ dissect_nt_trans_data_response(tvbuff_t *tvb, packet_info *pinfo,
 		if (nti != NULL) {
 			tree = proto_tree_add_subtree_format(parent_tree, tvb, offset, len,
 				ett_smb_nt_trans_data, NULL, "%s Data",
-				val_to_str_ext(nti->subcmd, &nt_cmd_vals_ext, "Unknown NT Transaction (%u)"));
+				val_to_str_ext(pinfo->pool, nti->subcmd, &nt_cmd_vals_ext, "Unknown NT Transaction (%u)"));
 		} else {
 			/*
 			 * We never saw the request to which this is a
@@ -10004,7 +10004,7 @@ dissect_nt_trans_data_response(tvbuff_t *tvb, packet_info *pinfo,
 		break;
 	case NT_TRANS_GET_USER_QUOTA:
 		bcp = len;
-		offset = dissect_nt_user_quota(tvb, tree, offset, &bcp);
+		offset = dissect_nt_user_quota(tvb, pinfo, tree, offset, &bcp);
 		break;
 	case NT_TRANS_SET_USER_QUOTA:
 		/* not decoded yet */
@@ -10043,7 +10043,7 @@ dissect_nt_trans_param_response(tvbuff_t *tvb, packet_info *pinfo,
 		if (nti != NULL) {
 			tree = proto_tree_add_subtree_format(parent_tree, tvb, offset, len,
 				ett_smb_nt_trans_param, NULL, "%s Parameters",
-				val_to_str_ext(nti->subcmd, &nt_cmd_vals_ext, "Unknown NT Transaction (%u)"));
+				val_to_str_ext(pinfo->pool, nti->subcmd, &nt_cmd_vals_ext, "Unknown NT Transaction (%u)"));
 		} else {
 			/*
 			 * We never saw the request to which this is a
@@ -10285,7 +10285,7 @@ dissect_nt_trans_setup_response(tvbuff_t *tvb, packet_info *pinfo,
 		if (nti != NULL) {
 			proto_tree_add_bytes_format(parent_tree, hf_smb_nt_transaction_setup, tvb, offset, len,
 				NULL, "%s Setup",
-				val_to_str_ext(nti->subcmd, &nt_cmd_vals_ext, "Unknown NT Transaction (%u)"));
+				val_to_str_ext(pinfo->pool, nti->subcmd, &nt_cmd_vals_ext, "Unknown NT Transaction (%u)"));
 		} else {
 			/*
 			 * We never saw the request to which this is a
@@ -10350,7 +10350,7 @@ dissect_nt_transaction_response(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
 	if (nti != NULL) {
 		proto_tree_add_uint(tree, hf_smb_nt_trans_subcmd, tvb, 0, 0, nti->subcmd);
 		col_append_fstr(pinfo->cinfo, COL_INFO, ", %s",
-				val_to_str_ext(nti->subcmd, &nt_cmd_vals_ext, "<unknown (%u)>"));
+				val_to_str_ext(pinfo->pool, nti->subcmd, &nt_cmd_vals_ext, "<unknown (%u)>"));
 	} else {
 		proto_tree_add_uint_format_value(tree, hf_smb_nt_trans_subcmd, tvb, offset, 0, -1,
 			"<unknown function - could not find matching request>");
@@ -11790,7 +11790,7 @@ dissect_transaction2_request_parameters(tvbuff_t *tvb, packet_info *pinfo,
 
 	tree = proto_tree_add_subtree_format(parent_tree, tvb, offset, bc,
 				ett_smb_transaction_params, NULL, "%s Parameters",
-				val_to_str_ext(subcmd, &trans2_cmd_vals_ext,
+				val_to_str_ext(pinfo->pool, subcmd, &trans2_cmd_vals_ext,
 					       "Unknown (0x%02x)"));
 
 	switch(subcmd) {
@@ -11895,7 +11895,7 @@ dissect_transaction2_request_parameters(tvbuff_t *tvb, packet_info *pinfo,
 
 		if (mult_cmds == false) {
 			col_append_fstr(pinfo->cinfo, COL_INFO, ", %s",
-				val_to_str(si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
+				val_to_str(pinfo->pool, si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
 			if (mult_cmds == false) {
 				if (strlen(fn) <= 40) {
 					col_append_fstr(pinfo->cinfo, COL_INFO, ", Pattern: %s",
@@ -11928,7 +11928,7 @@ dissect_transaction2_request_parameters(tvbuff_t *tvb, packet_info *pinfo,
 		COUNT_BYTES_TRANS(2);
 
 		col_append_fstr(pinfo->cinfo, COL_INFO, ", %s",
-			val_to_str(si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
+			val_to_str(pinfo->pool, si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
 
 		/* resume key */
 		CHECK_BYTE_COUNT_TRANS(4);
@@ -11973,7 +11973,7 @@ dissect_transaction2_request_parameters(tvbuff_t *tvb, packet_info *pinfo,
 
 		if (mult_cmds == false)
 			col_append_fstr(pinfo->cinfo, COL_INFO, ", %s",
-						val_to_str_ext(si->info_level, &qfsi_vals_ext,
+						val_to_str_ext(pinfo->pool, si->info_level, &qfsi_vals_ext,
 								"Unknown (0x%02x)"));
 		break;
 	case 0x0004:	/*TRANS2_SET_FS_INFORMATION*/
@@ -11987,7 +11987,7 @@ dissect_transaction2_request_parameters(tvbuff_t *tvb, packet_info *pinfo,
 
 		if (mult_cmds == false)
 			col_append_fstr(pinfo->cinfo, COL_INFO, ", %s",
-						val_to_str(si->info_level, sfsi_vals,
+						val_to_str(pinfo->pool, si->info_level, sfsi_vals,
 							   "Unknown (0x%02x)"));
 		break;
 	case 0x0005:	/*TRANS2_QUERY_PATH_INFORMATION*/
@@ -12002,7 +12002,7 @@ dissect_transaction2_request_parameters(tvbuff_t *tvb, packet_info *pinfo,
 		if (mult_cmds == false)
 			col_append_fstr(
 					pinfo->cinfo, COL_INFO, ", %s",
-					val_to_str_ext(si->info_level, &qpi_loi_vals_ext,
+					val_to_str_ext(pinfo->pool, si->info_level, &qpi_loi_vals_ext,
 						   "Unknown (%u)"));
 
 		/* 4 reserved bytes */
@@ -12086,7 +12086,7 @@ dissect_transaction2_request_parameters(tvbuff_t *tvb, packet_info *pinfo,
 		if (!mult_cmds)	{
 			col_append_fstr(
 				pinfo->cinfo, COL_INFO, ", %s",
-				val_to_str_ext(si->info_level, &qpi_loi_vals_ext,
+				val_to_str_ext(pinfo->pool, si->info_level, &qpi_loi_vals_ext,
 					"Unknown (%u)"));
 		}
 		break;
@@ -12116,7 +12116,7 @@ dissect_transaction2_request_parameters(tvbuff_t *tvb, packet_info *pinfo,
 		if (mult_cmds == false)	{
 			col_append_fstr(
 				pinfo->cinfo, COL_INFO, ", %s",
-				val_to_str_ext(si->info_level, &spi_loi_vals_ext,
+				val_to_str_ext(pinfo->pool, si->info_level, &spi_loi_vals_ext,
 					"Unknown (%u)"));
 		}
 
@@ -12368,7 +12368,7 @@ dissect_dfs_inconsistency_data(tvbuff_t *tvb, packet_info *pinfo,
 }
 
 static int
-dissect_dfs_referral_strings(tvbuff_t *tvb, proto_tree *tree, int hfindex,
+dissect_dfs_referral_strings(tvbuff_t *tvb, packet_info* pinfo, proto_tree *tree, int hfindex,
 			     int nstring, int stroffset, int oldoffset, int offset,
 			     uint16_t bc, bool unicode, int *end)
 {
@@ -12382,7 +12382,7 @@ dissect_dfs_referral_strings(tvbuff_t *tvb, proto_tree *tree, int hfindex,
 	bc -= (stroffset - offset);
 	for (istring = 0; istring < nstring; istring++) {
 		if ((int16_t)bc > 0) {
-			str = smb_get_unicode_or_ascii_string(wmem_packet_scope(), tvb, &stroffset, unicode, &str_len, false, false, &bc);
+			str = smb_get_unicode_or_ascii_string(pinfo->pool, tvb, &stroffset, unicode, &str_len, false, false, &bc);
 			CHECK_STRING_TRANS_SUBR(str);
 			proto_tree_add_string(tree, hfindex, tvb, stroffset, str_len, str);
 			stroffset += str_len;
@@ -12397,17 +12397,17 @@ dissect_dfs_referral_strings(tvbuff_t *tvb, proto_tree *tree, int hfindex,
 
 
 static int
-dissect_dfs_referral_string(tvbuff_t *tvb, proto_tree *tree, int hfindex,
+dissect_dfs_referral_string(tvbuff_t *tvb, packet_info* pinfo, proto_tree *tree, int hfindex,
 			    int stroffset, int oldoffset, int offset,
 			    uint16_t bc, bool unicode, int *end)
 {
-	return dissect_dfs_referral_strings(tvb, tree, hfindex,
+	return dissect_dfs_referral_strings(tvb, pinfo, tree, hfindex,
 					   1, stroffset, oldoffset, offset,
 					   bc, unicode, end);
 }
 
 static int
-dissect_dfs_referral_entry_v2(tvbuff_t *tvb, proto_tree *tree, int oldoffset, int offset,
+dissect_dfs_referral_entry_v2(tvbuff_t *tvb, packet_info* pinfo, proto_tree *tree, int oldoffset, int offset,
 			      uint16_t refflags _U_, uint16_t *bcp, bool unicode, int *ucstring_end)
 {
 
@@ -12445,21 +12445,21 @@ dissect_dfs_referral_entry_v2(tvbuff_t *tvb, proto_tree *tree, int oldoffset, in
 
 	/* path */
 	if (pathoffset) {
-		dissect_dfs_referral_string(tvb, tree, hf_smb_dfs_referral_path,
+		dissect_dfs_referral_string(tvb, pinfo, tree, hf_smb_dfs_referral_path,
 					    pathoffset+oldoffset, oldoffset, offset,
 					    *bcp, unicode, ucstring_end);
 	}
 
 	/* alt path */
 	if (altpathoffset) {
-		dissect_dfs_referral_string(tvb, tree, hf_smb_dfs_referral_alt_path,
+		dissect_dfs_referral_string(tvb, pinfo, tree, hf_smb_dfs_referral_alt_path,
 					    altpathoffset+oldoffset, oldoffset, offset,
 					    *bcp, unicode, ucstring_end);
 	}
 
 	/* node */
 	if (nodeoffset) {
-		dissect_dfs_referral_string(tvb, tree, hf_smb_dfs_referral_node,
+		dissect_dfs_referral_string(tvb, pinfo, tree, hf_smb_dfs_referral_node,
 					    nodeoffset+oldoffset, oldoffset, offset,
 					    *bcp, unicode, ucstring_end);
 	}
@@ -12470,7 +12470,7 @@ dissect_dfs_referral_entry_v2(tvbuff_t *tvb, proto_tree *tree, int oldoffset, in
 
 
 static int
-dissect_dfs_referral_entry_v3(tvbuff_t *tvb, proto_tree *tree, int oldoffset, int offset,
+dissect_dfs_referral_entry_v3(tvbuff_t *tvb, packet_info* pinfo, proto_tree *tree, int oldoffset, int offset,
 			      uint16_t refflags, uint16_t *bcp, bool unicode, int *ucstring_end)
 {
 	uint16_t domoffset;
@@ -12510,7 +12510,7 @@ dissect_dfs_referral_entry_v3(tvbuff_t *tvb, proto_tree *tree, int oldoffset, in
 
 		/* domain name */
 		if (domoffset) {
-			dissect_dfs_referral_string(tvb, tree, hf_smb_dfs_referral_domain_name,
+			dissect_dfs_referral_string(tvb, pinfo, tree, hf_smb_dfs_referral_domain_name,
 						    domoffset+oldoffset, oldoffset, offset,
 						    *bcp, unicode, ucstring_end);
 		}
@@ -12520,7 +12520,7 @@ dissect_dfs_referral_entry_v3(tvbuff_t *tvb, proto_tree *tree, int oldoffset, in
 
 			exptree = proto_tree_add_subtree(tree, tvb, offset, *bcp, ett_smb_dfs_referral_expnames, NULL, "Expanded Names");
 
-			dissect_dfs_referral_strings(tvb, exptree, hf_smb_dfs_referral_expname,
+			dissect_dfs_referral_strings(tvb, pinfo, exptree, hf_smb_dfs_referral_expname,
 						     nexpnames, expoffset+oldoffset, oldoffset, offset,
 						     *bcp, unicode, ucstring_end);
 		}
@@ -12550,21 +12550,21 @@ dissect_dfs_referral_entry_v3(tvbuff_t *tvb, proto_tree *tree, int oldoffset, in
 
 		/* path */
 		if (pathoffset) {
-			dissect_dfs_referral_string(tvb, tree, hf_smb_dfs_referral_path,
+			dissect_dfs_referral_string(tvb, pinfo, tree, hf_smb_dfs_referral_path,
 						    pathoffset+oldoffset, oldoffset, offset,
 						    *bcp, unicode, ucstring_end);
 		}
 
 		/* alt path */
 		if (altpathoffset) {
-			dissect_dfs_referral_string(tvb, tree, hf_smb_dfs_referral_alt_path,
+			dissect_dfs_referral_string(tvb, pinfo, tree, hf_smb_dfs_referral_alt_path,
 						    altpathoffset+oldoffset, oldoffset, offset,
 						    *bcp, unicode, ucstring_end);
 		}
 
 		/* node */
 		if (nodeoffset) {
-			dissect_dfs_referral_string(tvb, tree, hf_smb_dfs_referral_node,
+			dissect_dfs_referral_string(tvb, pinfo, tree, hf_smb_dfs_referral_node,
 						    nodeoffset+oldoffset, oldoffset, offset,
 						    *bcp, unicode, ucstring_end);
 		}
@@ -12667,17 +12667,17 @@ dissect_smb_get_dfs_referral_data(tvbuff_t *tvb, packet_info *pinfo,
 				break;
 
 			case 2:
-				offset = dissect_dfs_referral_entry_v2(tvb, rt, old_offset_2, offset,
+				offset = dissect_dfs_referral_entry_v2(tvb, pinfo, rt, old_offset_2, offset,
 								       refflags, bcp, unicode, &ucstring_end);
 				break;
 			case 3:
-				offset = dissect_dfs_referral_entry_v3(tvb, rt, old_offset_2, offset,
+				offset = dissect_dfs_referral_entry_v3(tvb, pinfo, rt, old_offset_2, offset,
 								       refflags, bcp, unicode, &ucstring_end);
 				break;
 			case 4:
 				/* V4 is extactly same as V3, except the version number and
 				 * one more ReferralEntryFlags */
-				offset = dissect_dfs_referral_entry_v3(tvb, rt, old_offset_2, offset,
+				offset = dissect_dfs_referral_entry_v3(tvb, pinfo, rt, old_offset_2, offset,
 								       refflags, bcp, unicode, &ucstring_end);
 				break;
 			}
@@ -14652,7 +14652,7 @@ dissect_transaction2_request_data(tvbuff_t *tvb, packet_info *pinfo,
 
 	tree = proto_tree_add_subtree_format(parent_tree, tvb, offset, dc,
 				ett_smb_transaction_data, &item, "%s Data",
-				val_to_str_ext(subcmd, &trans2_cmd_vals_ext,
+				val_to_str_ext(pinfo->pool, subcmd, &trans2_cmd_vals_ext,
 					       "Unknown (0x%02x)"));
 
 	switch(subcmd) {
@@ -15037,11 +15037,9 @@ dissect_transaction_request(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 				proto_tree_add_uint(tree, hf_smb_trans2_subcmd,
 				    tvb, offset, 2, subcmd);
 				col_append_fstr(pinfo->cinfo, COL_INFO, "; %s",
- 					    val_to_str_ext(subcmd, &trans2_cmd_vals_ext,
-							   "Unknown (0x%02x)"));
+						val_to_str_ext(pinfo->pool, subcmd, &trans2_cmd_vals_ext, "Unknown (0x%02x)"));
 				proto_item_append_text(smb_tree, " %s",
-						val_to_str_ext(subcmd, &trans2_cmd_vals_ext,
-							   "Unknown (0x%02x)"));
+						val_to_str_ext(pinfo->pool, subcmd, &trans2_cmd_vals_ext, "Unknown (0x%02x)"));
 
 				if (tdc && mult_cmds == false)
 					col_append_fstr(pinfo->cinfo, COL_INFO, ", Data: %u of %u", dc, tdc);
@@ -15311,7 +15309,7 @@ dissect_4_3_4_1(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree,
 	}
 
 	tree = proto_tree_add_subtree(parent_tree, tvb, offset, *bcp, ett_smb_ff2_data, &item,
-		    val_to_str(si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
+		    val_to_str(pinfo->pool, si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
 
 	/*
 	 * Figure out of there are enough bytes to display the whole entry.
@@ -15414,7 +15412,7 @@ dissect_4_3_4_2(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree,
 	}
 
 	tree = proto_tree_add_subtree(parent_tree, tvb, offset, *bcp, ett_smb_ff2_data, &item,
-		    val_to_str(si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
+		    val_to_str(pinfo->pool, si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
 
 	/*
 	 * Figure out of there are enough bytes to display the whole entry.
@@ -15541,7 +15539,7 @@ dissect_4_3_4_3(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree,
 	}
 
 	tree = proto_tree_add_subtree(parent_tree, tvb, offset, *bcp, ett_smb_ff2_data, &item,
-		    val_to_str(si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
+		    val_to_str(pinfo->pool, si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
 
 	if (resume_keys) {
 		/* resume key */
@@ -15641,7 +15639,7 @@ dissect_4_3_4_4(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree,
 	tvb_ensure_bytes_exist(tvb, offset, neo ? neo : *bcp);
 
 	tree = proto_tree_add_subtree(parent_tree, tvb, offset, *bcp, ett_smb_ff2_data, &item,
-		    val_to_str(si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
+		    val_to_str(pinfo->pool, si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
 
 	/*
 	 * We assume that the presence of a next entry offset implies the
@@ -15739,7 +15737,7 @@ dissect_4_3_4_5(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree,
 	tvb_ensure_bytes_exist(tvb, offset, neo ? neo : *bcp);
 
 	tree = proto_tree_add_subtree(parent_tree, tvb, offset, *bcp, ett_smb_ff2_data, &item,
-		    val_to_str(si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
+		    val_to_str(pinfo->pool, si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
 
 	/*
 	 * We assume that the presence of a next entry offset implies the
@@ -15843,7 +15841,7 @@ dissect_4_3_4_6(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree,
 	tvb_ensure_bytes_exist(tvb, offset, neo ? neo : *bcp);
 
 	tree = proto_tree_add_subtree(parent_tree, tvb, offset, *bcp, ett_smb_ff2_data, &item,
-		    val_to_str(si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
+		    val_to_str(pinfo->pool, si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
 
 	/*
 	 * XXX - I have not seen any of these that contain a resume
@@ -15973,7 +15971,7 @@ dissect_4_3_4_6full(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree,
 	tvb_ensure_bytes_exist(tvb, offset, neo ? neo : *bcp);
 
 	tree = proto_tree_add_subtree(parent_tree, tvb, offset, *bcp, ett_smb_ff2_data, &item,
-		    val_to_str(si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
+		    val_to_str(pinfo->pool, si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
 
 	/*
 	 * XXX - I have not seen any of these that contain a resume
@@ -16093,7 +16091,7 @@ dissect_4_3_4_6_id_both(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tr
 	tvb_ensure_bytes_exist(tvb, offset, neo ? neo : *bcp);
 
 	tree = proto_tree_add_subtree(parent_tree, tvb, offset, *bcp, ett_smb_ff2_data, &item,
-		    val_to_str(si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
+		    val_to_str(pinfo->pool, si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
 
 	/*
 	 * XXX - I have not seen any of these that contain a resume
@@ -16233,7 +16231,7 @@ dissect_4_3_4_7(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree,
 	tvb_ensure_bytes_exist(tvb, offset, neo ? neo : *bcp);
 
 	tree = proto_tree_add_subtree(parent_tree, tvb, offset, *bcp, ett_smb_ff2_data, &item,
-		    val_to_str(si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
+		    val_to_str(pinfo->pool, si->info_level, ff2_il_vals, "Unknown (0x%02x)"));
 
 	/*
 	 * We assume that the presence of a next entry offset implies the
@@ -16972,7 +16970,7 @@ dissect_qfsi_vals(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree,
 
 		for (i = 0; i < num_sids; i++) {
 			old_sid_offset = offset;
-			offset = dissect_nt_sid(tvb, offset, st_sids, "SID", NULL, -1);
+			offset = dissect_nt_sid(tvb, pinfo, offset, st_sids, "SID", NULL, -1);
 			CHECK_BYTE_COUNT_TRANS_SUBR(offset-old_sid_offset);
 			*bcp -= (offset - old_sid_offset);
 		}
@@ -17091,7 +17089,7 @@ dissect_transaction2_response_data(tvbuff_t *tvb, packet_info *pinfo,
 		if ((t2i != NULL) && (t2i->subcmd != -1)) {
 			tree = proto_tree_add_subtree_format(parent_tree, tvb, offset, dc,
 				ett_smb_transaction_data, &item, "%s Data",
-				val_to_str_ext(t2i->subcmd, &trans2_cmd_vals_ext,
+				val_to_str_ext(pinfo->pool, t2i->subcmd, &trans2_cmd_vals_ext,
 					       "Unknown (0x%02x)"));
 		} else {
 			tree = proto_tree_add_subtree(parent_tree, tvb, offset, dc,
@@ -17271,7 +17269,7 @@ dissect_transaction2_response_parameters(tvbuff_t *tvb, packet_info *pinfo, prot
 		if ((t2i != NULL) && (t2i->subcmd != -1)) {
 			tree = proto_tree_add_subtree_format(parent_tree, tvb, offset, pc,
 				ett_smb_transaction_params, &item, "%s Parameters",
-				val_to_str_ext(t2i->subcmd, &trans2_cmd_vals_ext,
+				val_to_str_ext(pinfo->pool, t2i->subcmd, &trans2_cmd_vals_ext,
 					       "Unknown (0x%02x)"));
 		} else {
 			tree = proto_tree_add_subtree(parent_tree, tvb, offset, pc,
@@ -17620,10 +17618,10 @@ dissect_transaction_response(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 
 				/* Sub command */
 				col_append_fstr(pinfo->cinfo, COL_INFO, "; %s",
-						val_to_str_ext(t2i->subcmd, &trans2_cmd_vals_ext,
+						val_to_str_ext(pinfo->pool, t2i->subcmd, &trans2_cmd_vals_ext,
 							"Unknown (0x%02x)"));
 				proto_item_append_text(smb_tree, ", %s",
-						val_to_str_ext(t2i->subcmd, &trans2_cmd_vals_ext,
+						val_to_str_ext(pinfo->pool, t2i->subcmd, &trans2_cmd_vals_ext,
 							"<unknown (0x%02x)>"));
 				/* FID */
 				if (si->sip && si->sip->fid)
@@ -18264,14 +18262,14 @@ dissect_smb_command(tvbuff_t *tvb, packet_info *pinfo, int offset, proto_tree *s
 			col_clear(pinfo->cinfo, COL_INFO);
 			col_append_fstr(pinfo->cinfo, COL_INFO,
 				"%s %s",
-				val_to_str_ext(cmd, &smb_cmd_vals_ext, "Unknown (0x%02x)"),
+				val_to_str_ext(pinfo->pool, cmd, &smb_cmd_vals_ext, "Unknown (0x%02x)"),
 				(si->request)? "Request" : "Response");
 		} else {
 			/* Don't display "Trans2" in the Packet List */
 			if (cmd != 0x32)
 				col_append_fstr(pinfo->cinfo, COL_INFO,
 					"; %s",
-					val_to_str_ext(cmd, &smb_cmd_vals_ext, "Unknown (0x%02x)"));
+					val_to_str_ext(pinfo->pool, cmd, &smb_cmd_vals_ext, "Unknown (0x%02x)"));
 		}
 
 		proto_item_append_text(smb_tree, ", %s %s (0x%02x)",
@@ -18544,7 +18542,7 @@ VALUE_STRING_ENUM(HRD_errors);
 VALUE_STRING_ARRAY(HRD_errors);
 static value_string_ext HRD_errors_ext = VALUE_STRING_EXT_INIT(HRD_errors);
 
-static const char *decode_smb_error(uint8_t errcls, uint16_t errcode)
+static const char *decode_smb_error(wmem_allocator_t* pool, uint8_t errcls, uint16_t errcode)
 {
 
 	switch (errcls) {
@@ -18553,13 +18551,13 @@ static const char *decode_smb_error(uint8_t errcls, uint16_t errcode)
 		return "No Error";   /* No error ??? */
 
 	case SMB_ERRDOS:
-		return val_to_str_ext(errcode, &DOS_errors_ext, "Unknown DOS error (%x)");
+		return val_to_str_ext(pool, errcode, &DOS_errors_ext, "Unknown DOS error (%x)");
 
 	case SMB_ERRSRV:
-		return val_to_str_ext(errcode, &SRV_errors_ext, "Unknown SRV error (%x)");
+		return val_to_str_ext(pool, errcode, &SRV_errors_ext, "Unknown SRV error (%x)");
 
 	case SMB_ERRHRD:
-		return val_to_str_ext(errcode, &HRD_errors_ext, "Unknown HRD error (%x)");
+		return val_to_str_ext(pool, errcode, &HRD_errors_ext, "Unknown HRD error (%x)");
 
 	default:
 		return "Unknown error class!";
@@ -19147,7 +19145,7 @@ dissect_smb(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void* da
 		errcode = tvb_get_letohs(tvb, offset);
 		proto_tree_add_uint_format_value(htree, hf_smb_error_code, tvb,
 			offset, 2, errcode, "%s",
-			decode_smb_error(errclass, errcode));
+			decode_smb_error(pinfo->pool, errclass, errcode));
 		offset += 2;
 	}
 
@@ -19273,7 +19271,7 @@ dissect_smb(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void* da
 				 */
 				col_append_fstr(
 					pinfo->cinfo, COL_INFO, ", Error: %s",
-					val_to_str_ext(si->nt_status, &NT_errors_ext,
+					val_to_str_ext(pinfo->pool, si->nt_status, &NT_errors_ext,
 					    "Unknown (0x%08X)"));
 			}
 		} else {
@@ -19287,7 +19285,7 @@ dissect_smb(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void* da
 				 */
 				col_append_fstr(
 					pinfo->cinfo, COL_INFO, ", Error: %s",
-					decode_smb_error(errclass, errcode));
+					decode_smb_error(pinfo->pool, errclass, errcode));
 			}
 		}
 	}

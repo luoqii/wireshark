@@ -1113,7 +1113,7 @@ capture_radiotap(const unsigned char * pd, int offset, int len, capture_packet_i
 		return false;
 	}
 	hdr = (const struct ieee80211_radiotap_header *)pd;
-	it_len = pletoh16(&hdr->it_len);
+	it_len = pletohu16(&hdr->it_len);
 	if (!BYTES_ARE_IN_FRAME(offset, len, it_len))
 		return false;
 
@@ -1127,7 +1127,7 @@ capture_radiotap(const unsigned char * pd, int offset, int len, capture_packet_i
 		return false;
 	}
 
-	present = pletoh32(&hdr->it_present);
+	present = pletohu32(&hdr->it_present);
 	offset += (int)sizeof(struct ieee80211_radiotap_header);
 	it_len -= (int)sizeof(struct ieee80211_radiotap_header);
 
@@ -1137,7 +1137,7 @@ capture_radiotap(const unsigned char * pd, int offset, int len, capture_packet_i
 		if (!BYTES_ARE_IN_FRAME(offset, 4, it_len)) {
 			return false;
 		}
-		xpresent = pletoh32(pd + offset);
+		xpresent = pletohu32(pd + offset);
 		offset += 4;
 		it_len -= 4;
 	}
@@ -3473,7 +3473,7 @@ dissect_radiotap(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, void* u
 	tvbuff_t  *ven_data_tvb;
 
 	/* our non-standard overrides */
-	static struct radiotap_override overrides[] = {
+	static const struct radiotap_override overrides[] = {
 		{IEEE80211_RADIOTAP_XCHANNEL, 4, 8},	/* xchannel */
 
 		/* keep last */
@@ -3552,7 +3552,7 @@ dissect_radiotap(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, void* u
 	    ett_radiotap_present);
 
 	for (i = 0; i < n_bitmaps; i++) {
-		uint32_t bmap = pletoh32(bmap_start + 4 * i);
+		uint32_t bmap = pletohu32(bmap_start + 4 * i);
 
 		rtap_ns_offset = rtap_ns_offset_next;
 		rtap_ns_offset_next += 32;
@@ -4095,9 +4095,8 @@ dissect_radiotap(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, void* u
 				it_root = proto_tree_add_item(item_tree, hf_radiotap_vht,
 						tvb, offset, 12, ENC_NA);
 				vht_tree = proto_item_add_subtree(it_root, ett_radiotap_vht);
-				/* TODO: which endian order is this field?  Currently treated as big endian.. */
 				it = proto_tree_add_item(vht_tree, hf_radiotap_vht_known,
-						tvb, offset, 2, ENC_NA);
+						tvb, offset, 2, ENC_LITTLE_ENDIAN);
 				vht_known_tree = proto_item_add_subtree(it, ett_radiotap_vht_known);
 
 				proto_tree_add_item(vht_known_tree, hf_radiotap_vht_have_stbc,

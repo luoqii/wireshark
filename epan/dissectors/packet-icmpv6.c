@@ -683,6 +683,9 @@ static dissector_handle_t icmpv6_handle;
 static dissector_handle_t ipv6_handle;
 static dissector_handle_t icmp_extension_handle;
 
+/* Cached protocol identifier */
+static int proto_ieee802154;
+
 #define ICMP6_DST_UNREACH                 1
 #define ICMP6_PACKET_TOO_BIG              2
 #define ICMP6_TIME_EXCEEDED               3
@@ -1802,7 +1805,7 @@ static int dissect_icmpv6_nd_opt(tvbuff_t *tvb, int offset, packet_info *pinfo, 
         opt_offset += 1;
 
         /* Add option name to option root label */
-        proto_item_append_text(ti, " (%s", val_to_str(opt_type, option_vals, "Unknown %d"));
+        proto_item_append_text(ti, " (%s", val_to_str(pinfo->pool, opt_type, option_vals, "Unknown %d"));
 
         /* Option length */
         ti_opt_len = proto_tree_add_item(icmp6opt_tree, hf_icmpv6_opt_length, tvb,opt_offset, 1, ENC_BIG_ENDIAN);
@@ -2293,7 +2296,7 @@ static int dissect_icmpv6_nd_opt(tvbuff_t *tvb, int offset, packet_info *pinfo, 
                 opt_offset += 2;
 
                 /* PvD ID FQDN */
-                used_bytes = get_dns_name(tvb, opt_offset, 0, opt_offset, &dns_name, &dns_len);
+                used_bytes = get_dns_name(pinfo->pool, tvb, opt_offset, 0, opt_offset, &dns_name, &dns_len);
                 name_out = format_text(pinfo->pool, dns_name, dns_len);
                 proto_tree_add_string(icmp6opt_tree, hf_icmpv6_opt_pvd_id_fqdn, tvb, opt_offset, used_bytes, name_out);
                 proto_item_append_text(ti, " : %s", name_out);
@@ -2379,7 +2382,7 @@ static int dissect_icmpv6_nd_opt(tvbuff_t *tvb, int offset, packet_info *pinfo, 
 
                 route_preference = tvb_get_uint8(tvb, opt_offset);
                 route_preference = (route_preference & ND_RA_FLAG_RTPREF_MASK) >> 3;
-                proto_item_append_text(ti, " : %s", val_to_str(route_preference, nd_flag_router_pref, "Unknown %d") );
+                proto_item_append_text(ti, " : %s", val_to_str(pinfo->pool, route_preference, nd_flag_router_pref, "Unknown %d") );
                 opt_offset += 1;
 
                 /* Route Lifetime */
@@ -2581,7 +2584,7 @@ static int dissect_icmpv6_nd_opt(tvbuff_t *tvb, int offset, packet_info *pinfo, 
                         opt_offset += padd_length;
                         break;
                     }
-                    used_bytes = get_dns_name(tvb, opt_offset, 0, opt_offset, &dnssl_name, &dnssl_len);
+                    used_bytes = get_dns_name(pinfo->pool, tvb, opt_offset, 0, opt_offset, &dnssl_name, &dnssl_len);
                     name_out = format_text(pinfo->pool, dnssl_name, dnssl_len);
                     proto_tree_add_string(icmp6opt_tree, hf_icmpv6_opt_dnssl, tvb, opt_offset, used_bytes, name_out);
                     proto_item_append_text(ti, " %s", name_out);
@@ -2649,7 +2652,7 @@ static int dissect_icmpv6_nd_opt(tvbuff_t *tvb, int offset, packet_info *pinfo, 
 
                 /* EUI-64 */
                 proto_tree_add_item(icmp6opt_tree, hf_icmpv6_opt_aro_eui64, tvb, opt_offset, 8, ENC_BIG_ENDIAN);
-                proto_item_append_text(ti, " : Register %s %s", tvb_eui64_to_str(pinfo->pool, tvb, opt_offset), val_to_str(status, nd_opt_earo_status_val, "Unknown %d"));
+                proto_item_append_text(ti, " : Register %s %s", tvb_eui64_to_str(pinfo->pool, tvb, opt_offset), val_to_str(pinfo->pool, status, nd_opt_earo_status_val, "Unknown %d"));
                 opt_offset += 8;
 
             }
@@ -2711,8 +2714,7 @@ static int dissect_icmpv6_nd_opt(tvbuff_t *tvb, int offset, packet_info *pinfo, 
                         break;
                 }
                 /* Update the 6LoWPAN dissectors with new context information. */
-                hints = (ieee802154_hints_t *)p_get_proto_data(wmem_file_scope(), pinfo,
-                        proto_get_id_by_filter_name(IEEE802154_PROTOABBREV_WPAN), 0);
+                hints = (ieee802154_hints_t *)p_get_proto_data(wmem_file_scope(), pinfo, proto_ieee802154, 0);
                 if ((opt_len <= 24) && hints) {
                     lowpan_context_insert(context_id, hints->src_pan, context_len, &context_prefix, pinfo->num);
                 }
@@ -2856,7 +2858,7 @@ dissect_icmpv6_rpl_opt(tvbuff_t *tvb, int offset, packet_info *pinfo, proto_tree
         opt_offset += 1;
 
         /* Add option name to option root label */
-        proto_item_append_text(ti, " (%s", val_to_str(opt_type, rpl_option_vals, "Unknown %d"));
+        proto_item_append_text(ti, " (%s", val_to_str(pinfo->pool, opt_type, rpl_option_vals, "Unknown %d"));
 
         /* The Pad1 option is a special case, and contains no data. */
         if (opt_type == RPL_OPT_PAD1) {
@@ -3897,7 +3899,7 @@ dissect_nodeinfo(tvbuff_t *tvb, int ni_offset, packet_info *pinfo _U_, proto_tre
             case ICMP6_NI_SUBJ_FQDN: {
                 int fqdn_len;
                 const char *fqdn_name;
-                used_bytes = get_dns_name(tvb, ni_offset, 0, ni_offset, &fqdn_name, &fqdn_len);
+                used_bytes = get_dns_name(pinfo->pool, tvb, ni_offset, 0, ni_offset, &fqdn_name, &fqdn_len);
                 proto_tree_add_string(tree, hf_icmpv6_ni_query_subject_fqdn, tvb, ni_offset, used_bytes,
                     format_text(pinfo->pool, fqdn_name, fqdn_len));
                 ni_offset += used_bytes;
@@ -3929,7 +3931,7 @@ dissect_nodeinfo(tvbuff_t *tvb, int ni_offset, packet_info *pinfo _U_, proto_tre
                         break;
                     }
                     /* Node Name */
-                    used_bytes = get_dns_name(tvb, ni_offset, 0, ni_offset, &node_name, &node_name_len);
+                    used_bytes = get_dns_name(pinfo->pool, tvb, ni_offset, 0, ni_offset, &node_name, &node_name_len);
                     proto_tree_add_string(tree, hf_icmpv6_ni_reply_node_name, tvb, ni_offset, used_bytes,
                         format_text(pinfo->pool, node_name, node_name_len));
                     ni_offset += used_bytes;
@@ -4051,7 +4053,7 @@ dissect_rrenum(tvbuff_t *tvb, int rr_offset, packet_info *pinfo, proto_tree *tre
         proto_tree_add_item(mp_tree, hf_icmpv6_rr_pco_mp_matchprefix, tvb, rr_offset, 16, ENC_NA);
 
         /* Add Info (Prefix, Length...) to Match Prefix Part label */
-        proto_item_append_text(ti_mp, ": %s %s/%u (%u-%u)", val_to_str(opcode, rr_pco_mp_opcode_val, "Unknown %d"), tvb_ip6_to_str(pinfo->pool, tvb, rr_offset), matchlen, minlen, maxlen);
+        proto_item_append_text(ti_mp, ": %s %s/%u (%u-%u)", val_to_str(pinfo->pool, opcode, rr_pco_mp_opcode_val, "Unknown %d"), tvb_ip6_to_str(pinfo->pool, tvb, rr_offset), matchlen, minlen, maxlen);
         rr_offset += 16;
 
         while ((int)tvb_reported_length(tvb) > rr_offset) {
@@ -4212,7 +4214,7 @@ dissect_mldrv2( tvbuff_t *tvb, uint32_t offset, packet_info *pinfo _U_, proto_tr
 
         /* Multicast Address */
         proto_tree_add_item(mar_tree, hf_icmpv6_mldr_mar_multicast_address, tvb, mldr_offset, 16, ENC_NA);
-        proto_item_append_text(ti_mar, " %s: %s", val_to_str(record_type, mldr_record_type_val,"Unknown Record Type (%d)"), tvb_ip6_to_str(pinfo->pool, tvb, mldr_offset));
+        proto_item_append_text(ti_mar, " %s: %s", val_to_str(pinfo->pool, record_type, mldr_record_type_val,"Unknown Record Type (%d)"), tvb_ip6_to_str(pinfo->pool, tvb, mldr_offset));
         mldr_offset += 16;
 
         /* Source Address */
@@ -4382,7 +4384,7 @@ dissect_icmpv6(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     }
     offset += 1;
 
-    col_add_str(pinfo->cinfo, COL_INFO, val_to_str(icmp6_type, icmpv6_type_val, "Unknown (%d)"));
+    col_add_str(pinfo->cinfo, COL_INFO, val_to_str(pinfo->pool, icmp6_type, icmpv6_type_val, "Unknown (%d)"));
 
     if (tree)
         code_item = proto_tree_add_item(icmp6_tree, hf_icmpv6_code, tvb, offset, 1, ENC_BIG_ENDIAN);
@@ -4395,28 +4397,28 @@ dissect_icmpv6(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
             code_name = val_to_str_const(icmp6_code, icmpv6_unreach_code_val, "Unknown");
             break;
         case ICMP6_TIME_EXCEEDED:
-            code_name = val_to_str(icmp6_code, icmpv6_timeex_code_val, "Unknown (%d)");
+            code_name = val_to_str(pinfo->pool, icmp6_code, icmpv6_timeex_code_val, "Unknown (%d)");
             break;
         case ICMP6_PARAM_PROB:
-            code_name = val_to_str(icmp6_code, icmpv6_paramprob_code_val, "Unknown (%d)");
+            code_name = val_to_str(pinfo->pool, icmp6_code, icmpv6_paramprob_code_val, "Unknown (%d)");
             break;
         case ICMP6_ROUTER_RENUMBERING:
-            code_name = val_to_str(icmp6_code, icmpv6_rr_code_val, "Unknown (%d)");
+            code_name = val_to_str(pinfo->pool, icmp6_code, icmpv6_rr_code_val, "Unknown (%d)");
             break;
         case ICMP6_NI_QUERY:
-            code_name = val_to_str(icmp6_code, ni_query_code_val, "Unknown (%d)");
+            code_name = val_to_str(pinfo->pool, icmp6_code, ni_query_code_val, "Unknown (%d)");
             break;
         case ICMP6_NI_REPLY:
-            code_name = val_to_str(icmp6_code, ni_reply_code_val, "Unknown (%d)");
+            code_name = val_to_str(pinfo->pool, icmp6_code, ni_reply_code_val, "Unknown (%d)");
             break;
         case ICMP6_RPL_CONTROL:
-            code_name = val_to_str(icmp6_code, rpl_code_val, "Unknown (%d)");
+            code_name = val_to_str(pinfo->pool, icmp6_code, rpl_code_val, "Unknown (%d)");
             break;
         case ICMP6_EXTECHO:
-            code_name = val_to_str(icmp6_code, ext_echo_req_code_str, "Unknown (%d)");
+            code_name = val_to_str(pinfo->pool, icmp6_code, ext_echo_req_code_str, "Unknown (%d)");
             break;
         case ICMP6_EXTECHOREPLY:
-            code_name = val_to_str(icmp6_code, ext_echo_reply_code_str, "Unknown (%d)");
+            code_name = val_to_str(pinfo->pool, icmp6_code, ext_echo_reply_code_str, "Unknown (%d)");
             break;
     }
 
@@ -4927,7 +4929,7 @@ dissect_icmpv6(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
                 /* Subtype */
                 proto_tree_add_item(icmp6_tree, hf_icmpv6_fmip6_subtype, tvb, offset, 1, ENC_BIG_ENDIAN);
                 subtype = tvb_get_uint8(tvb, offset);
-                col_append_fstr(pinfo->cinfo, COL_INFO, " (%s)", val_to_str(subtype, fmip6_subtype_val, "Unknown (%d)"));
+                col_append_fstr(pinfo->cinfo, COL_INFO, " (%s)", val_to_str(pinfo->pool, subtype, fmip6_subtype_val, "Unknown (%d)"));
                 offset += 1;
 
                 switch(subtype){
@@ -4939,7 +4941,7 @@ dissect_icmpv6(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
                     break;
                     case FMIP6_SUBTYPE_PRRTADV:
                     {
-                        proto_item_append_text(code_item, " (%s)", val_to_str(icmp6_code, fmip6_prrtadv_code_val, "Unknown %d") );
+                        proto_item_append_text(code_item, " (%s)", val_to_str(pinfo->pool, icmp6_code, fmip6_prrtadv_code_val, "Unknown %d") );
                         /* Reserved */
                         proto_tree_add_item(icmp6_tree, hf_icmpv6_reserved, tvb, offset, 1, ENC_NA);
                     }
@@ -4953,14 +4955,14 @@ dissect_icmpv6(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
                             NULL
                         };
 
-                        proto_item_append_text(code_item, " (%s)", val_to_str(icmp6_code, fmip6_hi_code_val, "Unknown %d") );
+                        proto_item_append_text(code_item, " (%s)", val_to_str(pinfo->pool, icmp6_code, fmip6_hi_code_val, "Unknown %d") );
                         /* Flags */
                         proto_tree_add_bitmask(icmp6_tree, tvb, offset, hf_icmpv6_fmip6_hi_flag, ett_icmpv6_flag_fmip6, fmip6_hi_flags, ENC_BIG_ENDIAN);
                     }
                     break;
                     case FMIP6_SUBTYPE_HACK:
                     {
-                        proto_item_append_text(code_item, " (%s)", val_to_str(icmp6_code, fmip6_hack_code_val, "Unknown %d") );
+                        proto_item_append_text(code_item, " (%s)", val_to_str(pinfo->pool, icmp6_code, fmip6_hack_code_val, "Unknown %d") );
                         /* Reserved */
                         proto_tree_add_item(icmp6_tree, hf_icmpv6_reserved, tvb, offset, 1, ENC_NA);
                     }
@@ -6678,6 +6680,8 @@ proto_reg_handoff_icmpv6(void)
      */
     ipv6_handle = find_dissector_add_dependency("ipv6", proto_icmpv6);
     icmp_extension_handle = find_dissector("icmp_extension");
+
+    proto_ieee802154 = proto_get_id_by_filter_name(IEEE802154_PROTOABBREV_WPAN);
 }
 
 /*

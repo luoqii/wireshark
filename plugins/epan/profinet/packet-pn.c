@@ -1489,15 +1489,15 @@ dissect_PNIO_status(tvbuff_t *tvb, int offset,
     }
     else {
         proto_item_append_text(sub_item, ": Error: \"%s\", \"%s\", \"%s\", \"%s\"",
-            val_to_str(u8ErrorCode, pn_io_error_code, "(0x%x)"),
-            val_to_str(u8ErrorDecode, pn_io_error_decode, "(0x%x)"),
-            val_to_str(u8ErrorCode1, error_code1_vals, "(0x%x)"),
-            val_to_str(u8ErrorCode2, error_code2_vals, "(0x%x)"));
+            val_to_str(pinfo->pool, u8ErrorCode, pn_io_error_code, "(0x%x)"),
+            val_to_str(pinfo->pool, u8ErrorDecode, pn_io_error_decode, "(0x%x)"),
+            val_to_str(pinfo->pool, u8ErrorCode1, error_code1_vals, "(0x%x)"),
+            val_to_str(pinfo->pool, u8ErrorCode2, error_code2_vals, "(0x%x)"));
         col_append_fstr(pinfo->cinfo, COL_INFO, ", Error: \"%s\", \"%s\", \"%s\", \"%s\"",
-            val_to_str(u8ErrorCode, pn_io_error_code, "(0x%x)"),
-            val_to_str(u8ErrorDecode, pn_io_error_decode, "(0x%x)"),
-            val_to_str(u8ErrorCode1, error_code1_vals, "(0x%x)"),
-            val_to_str(u8ErrorCode2, error_code2_vals, "(0x%x)"));
+            val_to_str(pinfo->pool, u8ErrorCode, pn_io_error_code, "(0x%x)"),
+            val_to_str(pinfo->pool, u8ErrorDecode, pn_io_error_decode, "(0x%x)"),
+            val_to_str(pinfo->pool, u8ErrorCode1, error_code1_vals, "(0x%x)"),
+            val_to_str(pinfo->pool, u8ErrorCode2, error_code2_vals, "(0x%x)"));
     }
     proto_item_set_len(sub_item, offset - u32SubStart);
 
@@ -1944,68 +1944,6 @@ init_pn (int proto)
     proto_register_subtree_array (ett, array_length (ett));
     expert_pn = expert_register_protocol(proto);
     expert_register_field_array(expert_pn, ei, array_length(ei));
-}
-
-/* Read a string from an "xml" file, dropping xml comment blocks */
-char *pn_fgets(char *str, int n, FILE *stream, wmem_allocator_t *scope)
-{
-    const char XML_COMMENT_START[] = "<!--";
-    const char XML_COMMENT_END[] = "-->";
-
-    char *retVal = fgets(str, n, stream);
-    if (retVal == NULL) {
-        /* No input, we're done */
-        return retVal;
-    }
-
-    /* Search for the XML begin comment marker */
-    char *comment_start = strstr(str, XML_COMMENT_START);
-    char *common_start_end = comment_start + sizeof(XML_COMMENT_START) - 1;
-    if(comment_start == NULL) {
-        /* No comment start, we're done */
-        return retVal;
-    }
-
-    /* Terminate the input buffer at the comment start */
-    *comment_start = '\0';
-    size_t used_space = comment_start - str;
-    size_t remaining_space = n - used_space;
-
-    /* Read more data looking for the comment end */
-    char *comment_end = strstr(common_start_end, XML_COMMENT_END);
-    if (comment_end == NULL) {
-      // Not found in this line, read more lines until we do find it */
-      char *temp = (char*)wmem_alloc(scope, MAX_LINE_LENGTH);
-      char *next_line = temp;
-      while((comment_end == NULL) && (next_line != NULL)) {
-          next_line = fgets(temp, MAX_LINE_LENGTH, stream);
-          if (next_line == NULL) {
-              /* No more data, exit now */
-              break;
-          }
-          comment_end = strstr(next_line, XML_COMMENT_END);
-      }
-    }
-
-    if (comment_end == NULL) {
-        /* We didn't find the comment end, return what we have */
-        return retVal;
-    }
-
-    /* We did find a comment end, skip past the comment */
-    char *comment_end_end = comment_end + sizeof(XML_COMMENT_END) - 1;
-
-    /* Check we have space left in the buffer to move the trailing bytes after the comment end */
-    size_t remaining_bytes = strlen(comment_end_end) + 1;
-    if (remaining_bytes < remaining_space) {
-        (void) g_strlcat(str, comment_end_end, n);
-    }
-    else {
-      /* Seek the file back to the comment end so the next read picks it up */
-      fseek(stream, -(long)(remaining_bytes), SEEK_CUR);
-    }
-
-    return retVal;
 }
 
 /*

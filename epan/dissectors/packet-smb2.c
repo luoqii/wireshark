@@ -1809,7 +1809,10 @@ static char *policy_hnd_to_file_id(wmem_allocator_t *pool, const e_ctx_hnd *hnd)
 	return guid_to_str(pool, &hnd->uuid);
 }
 static unsigned smb2_eo_files_hash(const void *k) {
-	return g_str_hash(policy_hnd_to_file_id(wmem_packet_scope(), (const e_ctx_hnd *)k));
+	char* file_id = policy_hnd_to_file_id(NULL, (const e_ctx_hnd*)k);
+	unsigned hash = g_str_hash(file_id);
+	wmem_free(NULL, file_id);
+	return hash;
 }
 static int smb2_eo_files_equal(const void *k1, const void *k2) {
 int	are_equal;
@@ -2527,7 +2530,7 @@ dissect_smb2_ioctl_function(tvbuff_t *tvb, packet_info *pinfo, proto_tree *paren
 		if (ioctl_name == NULL) {
 			col_append_fstr(
 				pinfo->cinfo, COL_INFO, " %s",
-				val_to_str_ext((ioctl_function>>16)&0xffff, &smb2_ioctl_device_vals_ext,
+				val_to_str_ext(pinfo->pool, (ioctl_function>>16)&0xffff, &smb2_ioctl_device_vals_ext,
 				"Unknown (0x%08X)"));
 		}
 
@@ -3520,7 +3523,7 @@ dissect_smb2_sec_info_00(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *pare
 }
 
 static int
-dissect_smb2_quota_info(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *parent_tree, int offset, smb2_info_t *si _U_)
+dissect_smb2_quota_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, int offset, smb2_info_t *si _U_)
 {
 	proto_item *item = NULL;
 	proto_tree *tree = NULL;
@@ -3532,7 +3535,7 @@ dissect_smb2_quota_info(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *paren
 	}
 
 	bcp = tvb_captured_length_remaining(tvb, offset);
-	offset = dissect_nt_user_quota(tvb, tree, offset, &bcp);
+	offset = dissect_nt_user_quota(tvb, pinfo, tree, offset, &bcp);
 
 	return offset;
 }
@@ -3829,9 +3832,9 @@ dissect_smb2_ses_flags(proto_tree *parent_tree, tvbuff_t *tvb, int offset)
 }
 
 #define SHARE_FLAGS_manual_caching		0x00000000
-#define SHARE_FLAGS_auto_caching		0x00000010
-#define SHARE_FLAGS_vdo_caching			0x00000020
-#define SHARE_FLAGS_no_caching			0x00000030
+#define SHARE_FLAGS_auto_caching		0x00000001
+#define SHARE_FLAGS_vdo_caching			0x00000002
+#define SHARE_FLAGS_no_caching			0x00000003
 
 static const value_string share_cache_vals[] = {
 	{ SHARE_FLAGS_manual_caching,	"Manual caching" },
@@ -3875,13 +3878,10 @@ dissect_smb2_share_flags(proto_tree *tree, tvbuff_t *tvb, int offset)
 		NULL
 	};
 	proto_item *item = NULL;
-	uint32_t cp;
 
 	item = proto_tree_add_bitmask(tree, tvb, offset, hf_smb2_share_flags, ett_smb2_share_flags, sf_fields, ENC_LITTLE_ENDIAN);
 
-	cp = tvb_get_letohl(tvb, offset);
-	cp &= 0x00000030;
-	proto_tree_add_uint_format(item, hf_smb2_share_caching, tvb, offset, 4, cp, "Caching policy: %s (%08x)", val_to_str(cp, share_cache_vals, "Unknown:%u"), cp);
+	proto_tree_add_item(item, hf_smb2_share_caching, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 
 
 	offset += 4;
@@ -4970,7 +4970,7 @@ dissect_smb2_find_request(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, i
 	}
 
 	col_append_fstr(pinfo->cinfo, COL_INFO, ", %s, Pattern: %s",
-			val_to_str(il, smb2_find_info_levels, "(Level:0x%02x)"),
+			val_to_str(pinfo->pool, il, smb2_find_info_levels, "(Level:0x%02x)"),
 			buf);
 
 	return offset;
@@ -5602,8 +5602,8 @@ static int dissect_smb2_posix_info(tvbuff_t *tvb, packet_info *pinfo _U_, proto_
 	offset += 4;
 
 	/* Owner and Group SID */
-	offset = dissect_nt_sid(tvb, offset, tree, "Owner SID", NULL, -1);
-	offset = dissect_nt_sid(tvb, offset, tree, "Group SID", NULL, -1);
+	offset = dissect_nt_sid(tvb, pinfo, offset, tree, "Owner SID", NULL, -1);
+	offset = dissect_nt_sid(tvb, pinfo, offset, tree, "Group SID", NULL, -1);
 
 	if (si->saved)
 		si->saved->num_matched++;
@@ -5766,7 +5766,7 @@ dissect_smb2_find_response(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tr
 
 	if (si->saved && si->saved->extra_info_type == SMB2_EI_FINDPATTERN) {
 		col_append_fstr(pinfo->cinfo, COL_INFO, ", %s, Pattern: %s",
-				val_to_str(si->saved->infolevel, smb2_find_info_levels, "(Level:0x%02x)"),
+				val_to_str(pinfo->pool, si->saved->infolevel, smb2_find_info_levels, "(Level:0x%02x)"),
 				(const char *)si->saved->extra_info);
 	}
 
@@ -5816,7 +5816,7 @@ dissect_smb2_negotiate_context(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree
 
 	/* type */
 	type = tvb_get_letohl(tvb, offset);
-	type_str = val_to_str(type, smb2_negotiate_context_types, "Unknown Type: (0x%0x)");
+	type_str = val_to_str(pinfo->pool, type, smb2_negotiate_context_types, "Unknown Type: (0x%0x)");
 	proto_item_append_text(sub_item, ": %s ", type_str);
 	proto_tree_add_item(sub_tree, hf_smb2_negotiate_context_type, tvb, offset, 2, ENC_LITTLE_ENDIAN);
 	offset += 2;
@@ -6361,9 +6361,9 @@ dissect_smb2_getinfo_buffer_quota(tvbuff_t *tvb, packet_info *pinfo _U_, proto_t
 	offset += 4;
 
 	if (sidlist_len != 0) {
-		offset = dissect_nt_get_user_quota(tvb, tree, offset, &sidlist_len);
+		offset = dissect_nt_get_user_quota(tvb, pinfo, tree, offset, &sidlist_len);
 	} else if (startsid_len != 0) {
-		offset = dissect_nt_sid(tvb, offset + startsid_offset, tree, "Start SID", NULL, -1);
+		offset = dissect_nt_sid(tvb, pinfo, offset + startsid_offset, tree, "Start SID", NULL, -1);
 	}
 
 	return offset;
@@ -6413,7 +6413,7 @@ dissect_smb2_class_infolevel(packet_info *pinfo, tvbuff_t *tvb, int offset, prot
 		break;
 	default:
 		hfindex = hf_smb2_infolevel;
-		vsx = NULL;  /* allowed arg to val_to_str_ext() */
+		vsx = NULL;  /* allowed arg to val_to_str_ext(pinfo->pool, ) */
 	}
 
 
@@ -6435,8 +6435,8 @@ dissect_smb2_class_infolevel(packet_info *pinfo, tvbuff_t *tvb, int offset, prot
 		 * as well.
 		 */
 		col_append_fstr(pinfo->cinfo, COL_INFO, " %s/%s",
-				val_to_str(cl, smb2_class_vals, "(Class:0x%02x)"),
-				val_to_str_ext(il, vsx, "(Level:0x%02x)"));
+				val_to_str(pinfo->pool, cl, smb2_class_vals, "(Class:0x%02x)"),
+				val_to_str_ext(pinfo->pool, il, vsx, "(Level:0x%02x)"));
 	}
 
 	return offset;
@@ -10351,8 +10351,8 @@ dissect_smb2_posix_buffer_response(tvbuff_t *tvb _U_, packet_info *pinfo _U_, pr
 	offset += 4;
 
 	/* Owner and Group SID */
-	offset = dissect_nt_sid(tvb, offset, tree, "Owner SID", NULL, -1);
-	dissect_nt_sid(tvb, offset, tree, "Group SID", NULL, -1);
+	offset = dissect_nt_sid(tvb, pinfo, offset, tree, "Owner SID", NULL, -1);
+	dissect_nt_sid(tvb, pinfo, offset, tree, "Group SID", NULL, -1);
 }
 
 #define SMB2_AAPL_SERVER_QUERY	1
@@ -12805,7 +12805,7 @@ dissect_smb2(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, bool fi
 			proto_tree_add_item(header_tree, hf_smb2_nt_status, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 			if (si->status) {
 				proto_item_append_text(item, ", %s",
-					val_to_str_ext(si->status, &NT_errors_ext, "Unknown (0x%08X)"));
+					val_to_str_ext(pinfo->pool, si->status, &NT_errors_ext, "Unknown (0x%08X)"));
 			}
 			offset += 4;
 		} else {
@@ -12884,7 +12884,7 @@ dissect_smb2(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, bool fi
 		if (si->status) {
 			col_append_fstr(
 					pinfo->cinfo, COL_INFO, ", Error: %s",
-					val_to_str_ext(si->status, &NT_errors_ext,
+					val_to_str_ext(pinfo->pool, si->status, &NT_errors_ext,
 						       "Unknown (0x%08X)"));
 		}
 
@@ -15071,7 +15071,7 @@ proto_register_smb2(void)
 
 		{ &hf_smb2_share_caching,
 			{ "Caching policy", "smb2.share.caching", FT_UINT32, BASE_HEX,
-			VALS(share_cache_vals), 0, NULL, HFILL }
+			VALS(share_cache_vals), 0x30, NULL, HFILL }
 		},
 
 		{ &hf_smb2_share_caps,

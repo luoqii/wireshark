@@ -325,7 +325,7 @@ extern "C" {
 #define WTAP_TSPREC_PER_PACKET -1  /* as a per-file value, means per-packet */
 /*
  * These values are the number of digits of precision after the integral part.
- * Thry're the same as WS_TSPREC values; we define them here so that
+ * They're the same as WS_TSPREC values; we define them here so that
  * tools/make-enums.py sees them.
  */
 #define WTAP_TSPREC_SEC         0
@@ -2414,14 +2414,14 @@ bool wtap_dump(wtap_dumper *, const wtap_rec *, int *err, char **err_info);
 WS_DLL_PUBLIC
 bool wtap_dump_flush(wtap_dumper *, int *);
 WS_DLL_PUBLIC
-int wtap_dump_file_type_subtype(wtap_dumper *wdh);
+int wtap_dump_file_type_subtype(const wtap_dumper *wdh);
 WS_DLL_PUBLIC
-int64_t wtap_get_bytes_dumped(wtap_dumper *);
+int64_t wtap_get_bytes_dumped(const wtap_dumper *);
 WS_DLL_PUBLIC
 void wtap_set_bytes_dumped(wtap_dumper *wdh, int64_t bytes_dumped);
 struct addrinfo;
 WS_DLL_PUBLIC
-bool wtap_addrinfo_list_empty(addrinfo_lists_t *addrinfo_lists);
+bool wtap_addrinfo_list_empty(const addrinfo_lists_t *addrinfo_lists);
 WS_DLL_PUBLIC
 bool wtap_dump_set_addrinfo_list(wtap_dumper *wdh, addrinfo_lists_t *addrinfo_lists);
 WS_DLL_PUBLIC
@@ -2779,6 +2779,10 @@ void wtap_cleanup(void);
 #define WTAP_ERR_TIME_STAMP_NOT_SUPPORTED     -27
     /**< We don't support writing that record's time stamp to that
          file type  */
+
+#define WTAP_ERR_REC_MALFORMED		      -28
+	 /**< Packet being read is of a known type, but is malformed so it will be skipped.
+	     This can be used instead of WTAP_ERR_BAD_FILE to not stop reading of a file */
 
 #ifdef __cplusplus
 }

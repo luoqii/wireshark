@@ -24,6 +24,7 @@
 #include <wsutil/buffer.h>
 #include <wsutil/ws_assert.h>
 #include <wsutil/exported_pdu_tlvs.h>
+#include <wsutil/pint.h>
 #ifdef HAVE_PLUGINS
 #include <wsutil/plugins.h>
 #endif
@@ -627,7 +628,7 @@ struct encap_type_info {
 	const char *description;
 };
 
-static struct encap_type_info encap_table_base[] = {
+static const struct encap_type_info encap_table_base[] = {
 	/* WTAP_ENCAP_UNKNOWN */
 	{ "unknown", "Unknown" },
 
@@ -1393,7 +1394,7 @@ wtap_name_to_encap(const char *name)
 /*
  * For precision values that correspond to a specific precision.
  */
-static const char *precnames[NUM_WS_TSPREC_VALS] = {
+static const char * const precnames[NUM_WS_TSPREC_VALS] = {
 	"seconds",
 	"100 milliseconds (deciseconds)",
 	"10 milliseconds (centiseconds)",
@@ -1421,7 +1422,7 @@ wtap_tsprec_string(int tsprec)
 	return s;
 }
 
-static const char *wtap_errlist[] = {
+static const char * const wtap_errlist[] = {
 	/* WTAP_ERR_NOT_REGULAR_FILE */
 	"The file isn't a plain file or pipe",
 
@@ -2172,12 +2173,12 @@ wtap_buffer_append_epdu_tag(Buffer *buf, uint16_t epdu_tag, const uint8_t *data,
 	ws_buffer_assure_space(buf, space_needed);
 	buf_data = ws_buffer_end_ptr(buf);
 	memset(buf_data, 0, space_needed);
-	phton16(buf_data + 0, epdu_tag);
+	phtonu16(buf_data + 0, epdu_tag);
 	/* It seems as though the convention for exported_pdu is to specify
 	 * the fully-padded length of the tag value, not just its useful length.
 	 * e.g. the string value 'a' would be given a length of 4.
 	 */
-	phton16(buf_data + 2, data_len + pad_len);
+	phtonu16(buf_data + 2, data_len + pad_len);
 	if (data_len > 0) {
 		/* Still only copy as many bytes as we actually have */
 		memcpy(buf_data + 4, data, data_len);
@@ -2195,9 +2196,9 @@ wtap_buffer_append_epdu_uint(Buffer *buf, uint16_t epdu_tag, uint32_t val)
 	ws_buffer_assure_space(buf, space_needed);
 	buf_data = ws_buffer_end_ptr(buf);
 	memset(buf_data, 0, space_needed);
-	phton16(buf_data + 0, epdu_tag);
-	phton16(buf_data + 2, 4);
-	phton32(buf_data + 4, val);
+	phtonu16(buf_data + 0, epdu_tag);
+	phtonu16(buf_data + 2, 4);
+	phtonu32(buf_data + 4, val);
 	ws_buffer_increase_length(buf, space_needed);
 }
 

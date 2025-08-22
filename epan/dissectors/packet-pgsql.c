@@ -511,7 +511,6 @@ static void dissect_pgsql_logical_be_msg(int32_t length, tvbuff_t *tvb, int n, p
         dissect_pg_epoch(tvb, n, shrub, hf_logical_commit_ts);
         n += 8;
         proto_tree_add_item(shrub, hf_xid, tvb, n, 4, ENC_BIG_ENDIAN);
-        n += 4;
         break;
 
     /* Message */
@@ -531,7 +530,6 @@ static void dissect_pgsql_logical_be_msg(int32_t length, tvbuff_t *tvb, int n, p
         proto_tree_add_item_ret_int(shrub, hf_logical_message_length, tvb, n, 4, ENC_BIG_ENDIAN, &content_length);
         n += 4;
         proto_tree_add_item(shrub, hf_logical_message_content, tvb, n, content_length, ENC_ASCII);
-        n += content_length;
         break;
 
     /* Commit */
@@ -543,7 +541,6 @@ static void dissect_pgsql_logical_be_msg(int32_t length, tvbuff_t *tvb, int n, p
         proto_tree_add_item(shrub, hf_logical_lsn_transaction, tvb, n, 8, ENC_BIG_ENDIAN);
         n += 8;
         dissect_pg_epoch(tvb, n, shrub, hf_standby_clock_ts);
-        n += 8;
         break;
 
     /* Origin */
@@ -552,7 +549,6 @@ static void dissect_pgsql_logical_be_msg(int32_t length, tvbuff_t *tvb, int n, p
         n += 8;
         siz = tvb_strsize(tvb, n);
         proto_tree_add_item(shrub, hf_logical_origin_name, tvb, n, siz, ENC_ASCII);
-        n += siz;
         break;
 
     /* Relation */
@@ -603,7 +599,6 @@ static void dissect_pgsql_logical_be_msg(int32_t length, tvbuff_t *tvb, int n, p
         n += siz;
         s = tvb_get_stringz_enc(pinfo->pool, tvb, n, &siz, ENC_ASCII);
         proto_tree_add_string(shrub, hf_custom_type_name, tvb, n, siz, s);
-        n += siz;
         break;
 
     /* Insert */
@@ -614,7 +609,7 @@ static void dissect_pgsql_logical_be_msg(int32_t length, tvbuff_t *tvb, int n, p
         }
         proto_tree_add_item(shrub, hf_relation_oid, tvb, n, 4, ENC_BIG_ENDIAN);
         n += 4;
-        n = dissect_new_tuple_data(tvb, n, shrub);
+        dissect_new_tuple_data(tvb, n, shrub);
         break;
 
     /* Update */
@@ -627,7 +622,7 @@ static void dissect_pgsql_logical_be_msg(int32_t length, tvbuff_t *tvb, int n, p
         proto_tree_add_item(shrub, hf_logical_column_oid, tvb, n, 4, ENC_BIG_ENDIAN);
         n += 4;
         n = dissect_old_tuple_data(tvb, n, shrub);
-        n = dissect_new_tuple_data(tvb, n, shrub);
+        dissect_new_tuple_data(tvb, n, shrub);
         break;
 
     /* Delete */
@@ -639,7 +634,7 @@ static void dissect_pgsql_logical_be_msg(int32_t length, tvbuff_t *tvb, int n, p
         i = tvb_get_ntohl(tvb, n);
         proto_tree_add_item(shrub, hf_logical_column_oid, tvb, n, 4, ENC_BIG_ENDIAN);
         n += 4;
-        n = dissect_old_tuple_data(tvb, n, shrub);
+        dissect_old_tuple_data(tvb, n, shrub);
         break;
 
     /* Truncate */
@@ -666,7 +661,6 @@ static void dissect_pgsql_logical_be_msg(int32_t length, tvbuff_t *tvb, int n, p
         proto_tree_add_item(shrub, hf_xid, tvb, n, 4, ENC_BIG_ENDIAN);
         n += 4;
         proto_tree_add_item(shrub, hf_logical_stream_first_segment, tvb, n, 1, ENC_BIG_ENDIAN);
-        n += 1;
         break;
 
     /* Stream Stop */
@@ -685,7 +679,6 @@ static void dissect_pgsql_logical_be_msg(int32_t length, tvbuff_t *tvb, int n, p
         proto_tree_add_item(shrub, hf_logical_lsn_transaction, tvb, n, 8, ENC_BIG_ENDIAN);
         n += 8;
         dissect_pg_epoch(tvb, n, shrub, hf_logical_prepare_commit_ts);
-        n += 8;
         break;
 
     /* Stream Abort */
@@ -706,7 +699,6 @@ static void dissect_pgsql_logical_be_msg(int32_t length, tvbuff_t *tvb, int n, p
             proto_tree_add_item(shrub, hf_logical_lsn_abort, tvb, n, 8, ENC_BIG_ENDIAN);
             n += 8;
             dissect_pg_epoch(tvb, n, shrub, hf_logical_stream_abort_ts);
-            n += 8;
         }
         break;
 
@@ -722,7 +714,6 @@ static void dissect_pgsql_logical_be_msg(int32_t length, tvbuff_t *tvb, int n, p
         n += 4;
         siz = tvb_strsize(tvb, n);
         proto_tree_add_item(shrub, hf_logical_prepare_gid, tvb, n, siz, ENC_ASCII);
-        n += siz;
         break;
 
     /* Prepare*/
@@ -739,7 +730,6 @@ static void dissect_pgsql_logical_be_msg(int32_t length, tvbuff_t *tvb, int n, p
         n += 4;
         siz = tvb_strsize(tvb, n);
         proto_tree_add_item(shrub, hf_logical_prepare_gid, tvb, n, siz, ENC_ASCII);
-        n += siz;
         break;
 
     /* Commit Prepared */
@@ -756,7 +746,6 @@ static void dissect_pgsql_logical_be_msg(int32_t length, tvbuff_t *tvb, int n, p
         n += 4;
         siz = tvb_strsize(tvb, n);
         proto_tree_add_item(shrub, hf_logical_prepare_gid, tvb, n, siz, ENC_ASCII);
-        n += siz;
         break;
 
     /* Rollback Prepared */
@@ -775,7 +764,6 @@ static void dissect_pgsql_logical_be_msg(int32_t length, tvbuff_t *tvb, int n, p
         n += 4;
         siz = tvb_strsize(tvb, n);
         proto_tree_add_item(shrub, hf_logical_prepare_gid, tvb, n, siz, ENC_ASCII);
-        n += siz;
         break;
 
     /* Stream Prepare */
@@ -792,7 +780,6 @@ static void dissect_pgsql_logical_be_msg(int32_t length, tvbuff_t *tvb, int n, p
         n += 4;
         siz = tvb_strsize(tvb, n);
         proto_tree_add_item(shrub, hf_logical_prepare_gid, tvb, n, siz, ENC_ASCII);
-        n += siz;
         break;
     default:
         return;
@@ -833,7 +820,6 @@ static void dissect_pgsql_copy_data_be_msg(int32_t length, tvbuff_t *tvb,
         dissect_pg_epoch(tvb, n, shrub, hf_standby_clock_ts);
         n += 8;
         proto_tree_add_item(shrub, hf_standby_immediate_ack, tvb, n, 1, ENC_NULL);
-        n += 1;
         break;
 
     default:
@@ -861,7 +847,6 @@ static void dissect_pgsql_copy_data_fe_msg(tvbuff_t *tvb, int n, proto_tree *tre
         dissect_pg_epoch(tvb, n, shrub, hf_standby_clock_ts);
         n += 8;
         proto_tree_add_item(shrub, hf_standby_immediate_ack, tvb, n, 1, ENC_NULL);
-        n += 1;
         break;
 
     /* Hot standby feedback */
@@ -878,7 +863,6 @@ static void dissect_pgsql_copy_data_fe_msg(tvbuff_t *tvb, int n, proto_tree *tre
         proto_tree_add_item(shrub, hf_standby_catalog_xmin, tvb, n, 4, ENC_BIG_ENDIAN);
         n += 4;
         proto_tree_add_item(shrub, hf_standby_catalog_xmin_epoch, tvb, n, 4, ENC_BIG_ENDIAN);
-        n += 4;
         break;
 
     default:

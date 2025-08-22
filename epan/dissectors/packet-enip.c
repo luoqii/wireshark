@@ -3522,7 +3522,7 @@ dissect_enip_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
 
    /* Add encapsulation command to info column */
    col_append_sep_fstr(pinfo->cinfo, COL_INFO, " | ", "%s (%s)",
-      val_to_str(encap_cmd, encap_cmd_vals, "Unknown Command (0x%04x)"),
+      val_to_str(pinfo->pool, encap_cmd, encap_cmd_vals, "Unknown Command (0x%04x)"),
       pkt_type_str );
 
    /*
@@ -3572,7 +3572,7 @@ dissect_enip_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
 
    /* Append session and command to the protocol tree */
    proto_item_append_text( ti, ", Session: 0x%08X, %s", tvb_get_letohl( tvb, 4 ),
-      val_to_str( encap_cmd, encap_cmd_vals, "Unknown Command (0x%04x)" ) );
+      val_to_str(pinfo->pool,  encap_cmd, encap_cmd_vals, "Unknown Command (0x%04x)" ) );
 
    /*
    ** For some commands we want to add some info to the info column
@@ -3733,7 +3733,7 @@ dissect_dlr(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
    /* Add frame type to col info */
    col_add_str(pinfo->cinfo, COL_INFO,
-       val_to_str(dlr_frametype, dlr_frame_type_vals, "Unknown (0x%04x)") );
+       val_to_str(pinfo->pool, dlr_frametype, dlr_frame_type_vals, "Unknown (0x%04x)") );
 
    if ( dlr_frametype == DLR_FT_BEACON )
    {
@@ -4478,7 +4478,7 @@ proto_register_enip(void)
 
       { &hf_tcpip_port_count, { "Port Count", "cip.tcpip.port_count", FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL } },
       { &hf_tcpip_port_name, { "Port Name", "cip.tcpip.port_name", FT_STRING, BASE_NONE, NULL, 0, NULL, HFILL } },
-      { &hf_tcpip_port_number, { "Port Number", "cip.tcpip.port_number", FT_UINT16, BASE_DEC, NULL, 0, NULL, HFILL } },
+      { &hf_tcpip_port_number, { "Port Number", "cip.tcpip.port_number", FT_UINT16, BASE_PT_TCP, NULL, 0, NULL, HFILL } },
       { &hf_tcpip_port_protocol, { "Protocol", "cip.tcpip.protocol", FT_UINT8, BASE_DEC | BASE_EXT_STRING, &ipproto_val_ext, 0, NULL, HFILL } },
       { &hf_tcpip_port_admin_state, { "Admin State", "cip.tcpip.admin_state", FT_BOOLEAN, BASE_NONE, TFS(&tfs_open_closed), 0, NULL, HFILL } },
 

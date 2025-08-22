@@ -536,6 +536,7 @@ dissect_zmtp_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* 
     proto_tree *zmtp_tree;
     proto_item *root_ti;
     int offset = 0;
+    char* str_flags;
 
     /* Protocol column */
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "zmtp");
@@ -587,10 +588,10 @@ dissect_zmtp_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* 
         flags_ti = proto_tree_add_bitmask(zmtp_tree, tvb, offset, hf_zmtp_flags,
                                           ett_zmtp_flags, flags_fields, ENC_BIG_ENDIAN);
     }
-	offset += 1;
-    col_append_fstr(pinfo->cinfo, COL_INFO, "%s ",
-                    val_to_str(flags, flags_vals, "Unknown(%u)"));
-    proto_item_append_text(root_ti, " (%s)", val_to_str(flags, flags_vals, "Unknown(%u)"));
+    offset += 1;
+    str_flags = val_to_str(pinfo->pool, flags, flags_vals, "Unknown(%u)");
+    col_append_fstr(pinfo->cinfo, COL_INFO, "%s ", str_flags);
+    proto_item_append_text(root_ti, " (%s)", str_flags);
 
     uint64_t length;
 
@@ -710,6 +711,11 @@ dissect_zmtp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_
     return tvb_reported_length(tvb);
 }
 
+static void
+apply_zmtp_prefs(void)
+{
+    global_zmtp_port_range = prefs_get_range_value("zmtp", "tcp.port");
+}
 
 void
 proto_register_zmtp(void)
@@ -848,7 +854,7 @@ proto_register_zmtp(void)
     expert_zmtp = expert_register_protocol(proto_zmtp);
     expert_register_field_array(expert_zmtp, ei, array_length(ei));
 
-    zmtp_module = prefs_register_protocol(proto_zmtp, proto_reg_handoff_zmtp);
+    zmtp_module = prefs_register_protocol(proto_zmtp, apply_zmtp_prefs);
 
     zmtp_tcp_protocols_uat = uat_new("ZMTP TCP Protocols",
         sizeof(zmtp_tcp_protocol_t),
@@ -873,12 +879,6 @@ proto_register_zmtp(void)
                                     "ZMTP Data Type", proto_zmtp, FT_UINT16, BASE_DEC);
 
     credentials_tap = register_tap("credentials");
-}
-
-static void
-apply_zmtp_prefs(void)
-{
-    global_zmtp_port_range = prefs_get_range_value("zmtp", "tcp.port");
 }
 
 void

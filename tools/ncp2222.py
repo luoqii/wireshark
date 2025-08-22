@@ -6215,6 +6215,13 @@ static int hf_nds_port;
 static int hf_mv_string;
 static int hf_nds_syntax;
 static int hf_value_string;
+static int hf_server_distinguished_name;
+static int hf_distinguished_name;
+static int hf_subject;
+static int hf_delimiter;
+static int hf_relative_distinguished_name;
+static int hf_root_distinguished_name;
+static int hf_parent_distinguished_name;
 static int hf_nds_buffer_size;
 static int hf_nds_ver;
 static int hf_nds_nflags;
@@ -6568,7 +6575,7 @@ static expert_field ei_ncp_value_too_large;
 
     # Print the errors table
     print("/* Error strings. */")
-    print("static const char *ncp_errors[] = {")
+    print("static const char * const ncp_errors[] = {")
     for code in errors_used_list:
         print('    /* %02d (0x%04x) */ "%s",' % (errors_used_hash[code], code, errors[code]))
     print("};\n")
@@ -6594,7 +6601,7 @@ static expert_field ei_ncp_value_too_large;
 
     # Print the groups table
     print("/* Group strings. */")
-    print("static const char *ncp_groups[] = {")
+    print("static const char * const ncp_groups[] = {")
     for group in groups_used_list:
         print('    /* %02d (%s) */ "%s",' % (groups_used_hash[group], group, groups[group]))
     print("};\n")
@@ -7670,6 +7677,27 @@ proto_register_ncp2222(void)
 
     { &hf_value_string,
     { "Value", "ncp.value_string", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }},
+
+    { &hf_server_distinguished_name,
+    { "Server Distinguished Name", "ncp.server_distinguished_name", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }},
+
+    { &hf_distinguished_name,
+    { "Distinguished Name", "ncp.distinguished_name", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }},
+
+    { &hf_subject,
+    { "Subject", "ncp.subject", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }},
+
+    { &hf_delimiter,
+    { "Delimiter", "ncp.delimiter", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }},
+
+    { &hf_relative_distinguished_name,
+    { "Relative Distinguished Name", "ncp.relative_distinguished_name", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }},
+
+    { &hf_root_distinguished_name,
+    { "Root Distinguished Name", "ncp.root_distinguished_name", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }},
+
+    { &hf_parent_distinguished_name,
+    { "Parent Distinguished Name", "ncp.parent_distinguished_name", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }},
 
     { &hf_nds_stream_name,
     { "Stream Name", "ncp.nds_stream_name", FT_STRING, BASE_NONE, NULL, 0x0, NULL, HFILL }},

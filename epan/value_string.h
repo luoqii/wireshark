@@ -104,13 +104,8 @@ enum { \
 /* ----- ----- */
 
 WS_DLL_PUBLIC
-const char *
-val_to_str(const uint32_t val, const value_string *vs, const char *fmt)
-G_GNUC_PRINTF(3, 0);
-
-WS_DLL_PUBLIC
 char *
-val_to_str_wmem(wmem_allocator_t *scope, const uint32_t val, const value_string *vs, const char *fmt)
+val_to_str(wmem_allocator_t *scope, const uint32_t val, const value_string *vs, const char *fmt)
 G_GNUC_PRINTF(4, 0);
 
 WS_DLL_PUBLIC
@@ -125,10 +120,6 @@ WS_DLL_PUBLIC
 const char *
 try_val_to_str_idx(const uint32_t val, const value_string *vs, int *idx);
 
-WS_DLL_PUBLIC
-const char *
-char_val_to_str(char val, const value_string *vs, const char *msg);
-
 /* 64-BIT VALUE TO STRING MATCHING */
 
 typedef struct _val64_string {
@@ -138,8 +129,8 @@ typedef struct _val64_string {
 
 WS_DLL_PUBLIC
 const char *
-val64_to_str(const uint64_t val, const val64_string *vs, const char *fmt)
-G_GNUC_PRINTF(3, 0);
+val64_to_str_wmem(wmem_allocator_t* scope, const uint64_t val, const val64_string *vs, const char *fmt)
+G_GNUC_PRINTF(4, 0);
 
 WS_DLL_PUBLIC
 const char *
@@ -195,13 +186,8 @@ void
 value_string_ext_free(value_string_ext *vse);
 
 WS_DLL_PUBLIC
-const char *
-val_to_str_ext(const uint32_t val, value_string_ext *vse, const char *fmt)
-G_GNUC_PRINTF(3, 0);
-
-WS_DLL_PUBLIC
 char *
-val_to_str_ext_wmem(wmem_allocator_t *scope, const uint32_t val, value_string_ext *vse, const char *fmt)
+val_to_str_ext(wmem_allocator_t *scope, const uint32_t val, value_string_ext *vse, const char *fmt)
 G_GNUC_PRINTF(4, 0);
 
 WS_DLL_PUBLIC
@@ -252,11 +238,6 @@ void
 val64_string_ext_free(val64_string_ext *vse);
 
 WS_DLL_PUBLIC
-const char *
-val64_to_str_ext(const uint64_t val, val64_string_ext *vse, const char *fmt)
-G_GNUC_PRINTF(3, 0);
-
-WS_DLL_PUBLIC
 char *
 val64_to_str_ext_wmem(wmem_allocator_t *scope, const uint64_t val, val64_string_ext *vse, const char *fmt)
 G_GNUC_PRINTF(4, 0);
@@ -282,8 +263,8 @@ typedef struct _string_string {
 
 WS_DLL_PUBLIC
 const char *
-str_to_str(const char *val, const string_string *vs, const char *fmt)
-G_GNUC_PRINTF(3, 0);
+str_to_str_wmem(wmem_allocator_t* scope, const char *val, const string_string *vs, const char *fmt)
+G_GNUC_PRINTF(4, 0);
 
 WS_DLL_PUBLIC
 const char *
@@ -303,8 +284,8 @@ typedef struct _range_string {
 
 WS_DLL_PUBLIC
 const char *
-rval_to_str(const uint32_t val, const range_string *rs, const char *fmt)
-G_GNUC_PRINTF(3, 0);
+rval_to_str_wmem(wmem_allocator_t* scope, const uint32_t val, const range_string *rs, const char *fmt)
+G_GNUC_PRINTF(4, 0);
 
 WS_DLL_PUBLIC
 const char *
@@ -347,8 +328,8 @@ typedef struct _bytes_string {
 
 WS_DLL_PUBLIC
 const char *
-bytesval_to_str(const uint8_t *val, const size_t val_len, const bytes_string *bs, const char *fmt)
-G_GNUC_PRINTF(4, 0);
+bytesval_to_str_wmem(wmem_allocator_t* scope, const uint8_t *val, const size_t val_len, const bytes_string *bs, const char *fmt)
+G_GNUC_PRINTF(5, 0);
 
 WS_DLL_PUBLIC
 const char *
@@ -356,14 +337,32 @@ try_bytesval_to_str(const uint8_t *val, const size_t val_len, const bytes_string
 
 WS_DLL_PUBLIC
 const char *
-bytesprefix_to_str(const uint8_t *haystack, const size_t haystack_len, const bytes_string *bs, const char *fmt)
-G_GNUC_PRINTF(4, 0);
+bytesprefix_to_str(wmem_allocator_t* scope, const uint8_t *haystack, const size_t haystack_len, const bytes_string *bs, const char *fmt)
+G_GNUC_PRINTF(5, 0);
 
 WS_DLL_PUBLIC
 const char *
 try_bytesprefix_to_str(const uint8_t *haystack, const size_t haystack_len, const bytes_string *bs);
 
+WS_DLL_PUBLIC
+void register_external_value_string(const char* name, const value_string* vs);
+
+WS_DLL_PUBLIC
+value_string* vs_get_external_value_string(const char* name);
+
+WS_DLL_PUBLIC
+void register_external_value_string_ext(const char* name, const value_string_ext* vse);
+
+WS_DLL_PUBLIC
+value_string_ext* get_external_value_string_ext(const char* name);
+
 /* MISC (generally do not use) */
+
+WS_DLL_LOCAL
+void value_string_externals_init(void);
+
+WS_DLL_LOCAL
+void value_string_externals_cleanup(void);
 
 WS_DLL_LOCAL
 bool

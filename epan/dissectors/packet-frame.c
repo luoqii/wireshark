@@ -98,6 +98,7 @@ static int hf_frame_wtap_encap;
 static int hf_frame_cb_pen;
 static int hf_frame_cb_copy_allowed;
 static int hf_frame_comment;
+static int hf_frame_encoding;
 
 static int ett_frame;
 static int ett_ifname;
@@ -145,6 +146,12 @@ static const value_string packet_word_reception_types[] = {
 	{ PACK_FLAGS_RECEPTION_TYPE_MULTICAST,   "Multicast" },
 	{ PACK_FLAGS_RECEPTION_TYPE_BROADCAST,   "Broadcast" },
 	{ PACK_FLAGS_RECEPTION_TYPE_PROMISCUOUS, "Promiscuous" },
+	{ 0, NULL }
+};
+
+static const value_string packet_char_enc_types[] = {
+	{ PACKET_CHAR_ENC_CHAR_ASCII, "ASCII" },
+	{ PACKET_CHAR_ENC_CHAR_EBCDIC, "EBCDIC" },
 	{ 0, NULL }
 };
 
@@ -844,7 +851,7 @@ dissect_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void* 
 		if (pinfo->abs_ts.nsecs < 0 || pinfo->abs_ts.nsecs >= 1000000000) {
 			expert_add_info_format(pinfo, ti, &ei_arrive_time_out_of_range,
 							  "Arrival Time: Fractional second %09ld is invalid,"
-							  " the valid range is 0-1000000000",
+							  " the valid range is 0-999999999",
 							  (long) pinfo->abs_ts.nsecs);
 		}
 		if (do_frame_dissection) {
@@ -934,10 +941,10 @@ dissect_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void* 
 			proto_item_set_generated(ti);
 		}
 
-		ti = proto_tree_add_boolean(fh_tree, hf_frame_marked, tvb, 0, 0,pinfo->fd->marked);
+		ti = proto_tree_add_boolean(fh_tree, hf_frame_marked, tvb, 0, 0, pinfo->fd->marked);
 		proto_item_set_generated(ti);
 
-		ti = proto_tree_add_boolean(fh_tree, hf_frame_ignored, tvb, 0, 0,pinfo->fd->ignored);
+		ti = proto_tree_add_boolean(fh_tree, hf_frame_ignored, tvb, 0, 0, pinfo->fd->ignored);
 		proto_item_set_generated(ti);
 	}
 
@@ -1157,6 +1164,8 @@ dissect_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void* 
 		ti = proto_tree_add_string(fh_tree, hf_frame_protocols, tvb, 0, 0, wmem_strbuf_get_str(val));
 		proto_item_set_generated(ti);
 	}
+
+	proto_tree_add_uint(fh_tree, hf_frame_encoding, tvb, 0, 0, pinfo->fd->encoding);
 
 	/* Add the columns as fields. We have to do this here, so that
 	 * they're available for postdissectors that want all the fields.
@@ -1540,6 +1549,11 @@ proto_register_frame(void)
 		    FT_BOOLEAN, BASE_NONE, TFS(&tfs_allowed_not_allowed), 0x0,
 		    "Whether the custom block will be written or not", HFILL }},
 
+		{ &hf_frame_encoding,
+		  { "Character encoding", "frame.encoding",
+		    FT_UINT32, BASE_DEC, VALS(packet_char_enc_types), 0x0,
+		    "Character encoding (ASCII, EBCDIC...)", HFILL }},
+
 	};
 
 	static hf_register_info hf_encap =
@@ -1559,7 +1573,7 @@ proto_register_frame(void)
 
 	static ei_register_info ei[] = {
 		{ &ei_comments_text, { "frame.comment.expert", PI_COMMENTS_GROUP, PI_COMMENT, "Formatted comment", EXPFILL }},
-		{ &ei_arrive_time_out_of_range, { "frame.time_invalid", PI_SEQUENCE, PI_NOTE, "Arrival Time: Fractional second out of range (0-1000000000)", EXPFILL }},
+		{ &ei_arrive_time_out_of_range, { "frame.time_invalid", PI_SEQUENCE, PI_NOTE, "Arrival Time: Fractional second out of range (0-999999999)", EXPFILL }},
 		{ &ei_incomplete, { "frame.incomplete", PI_UNDECODED, PI_NOTE, "Incomplete dissector", EXPFILL }},
 		{ &ei_len_lt_caplen, { "frame.len_lt_caplen", PI_MALFORMED, PI_ERROR, "Frame length is less than captured length", EXPFILL }}
 	};

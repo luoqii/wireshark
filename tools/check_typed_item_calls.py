@@ -14,7 +14,7 @@ from pathlib import Path
 
 # This utility scans the dissector code for various issues.
 # TODO:
-# - Create maps from type -> display types for hf items (see display (FIELDDISPLAY)) in docs/README.dissector
+# - Create maps from type -> display types for hf items (see display (FIELDDISPLAY (1.2))) in docs/README.dissector
 
 
 # Try to exit soon after Ctrl-C is pressed.
@@ -36,6 +36,11 @@ def name_has_one_of(name, substring_list):
         if name.lower().find(word) != -1:
             return True
     return False
+
+# TODO: show in red and automatically inc errors_found
+def show_error(**kwargs):
+    print(kwargs)
+
 
 # An individual call to an API we are interested in.
 # Used by APICheck below.
@@ -146,7 +151,7 @@ compatible_encoding_args = {
                           'ENC_CP866',
                           'ENC_ASCII_7BITS',
                           'ENC_T61',
-                          'ENC_BCD_DIGITS_0_9', 'ENC_BCD_SKIP_FIRST',
+                          'ENC_BCD_DIGITS_0_9', 'ENC_BCD_SKIP_FIRST', 'ENC_BCD_ODD_NUM_DIG',
                           'ENC_LITTLE_ENDIAN', 'ENC_BIG_ENDIAN',   # These are allowed if ENC_BCD_DIGITS_0_9 is set..
                           'ENC_KEYPAD_ABC_TBCD',
                           'ENC_KEYPAD_BC_TBCD',
@@ -154,7 +159,11 @@ compatible_encoding_args = {
                           'ENC_EUC_KR',
                           'ENC_DECT_STANDARD_8BITS',
                           'ENC_DECT_STANDARD_4BITS_TBCD',
-                          'ENC_STR_HEX',       # Should also have at least one ENC_SEP_* flag!
+                          # Are these right..?
+                          #'ENC_STR_HEX',       # Should also have at least one ENC_SEP_* flag!
+                          #'ENC_STR_NUM',       # Should also have at least one ENC_SEP_* flag!
+                          #'ENC_STRING',        # OR of previous 2 values
+
                           'ENC_LITTLE_ENDIAN'  # Only meaniningful for some encodings (ENC_UTF_16, ENC_UCS_2, ENC_UCS_4)
                           ]),
 
@@ -503,8 +512,8 @@ class ProtoTreeAddItemCheck(APICheck):
                                             'BASE_SHOW_UTF_8_PRINTABLE',
                                             'is_mdns ? ENC_UTF_8|ENC_NA : ENC_ASCII|ENC_NA',
                                             'xl_encoding',
-                                            'my_frame_data->encoding_client', 'my_frame_data->encoding_results'
-
+                                            'my_frame_data->encoding_client', 'my_frame_data->encoding_results',
+                                            'seq_info->txt_enc'
                                           }:
                                 global warnings_found
 
@@ -533,6 +542,17 @@ class ProtoTreeAddItemCheck(APICheck):
                                 self.fun_name + ' called for', call.hf_name, ' - ',
                                 'item type is', items_defined[call.hf_name].item_type, 'but call has len', call.length)
                             warnings_found += 1
+
+                    # If have mask and length is too short, that is likely to be a problem.
+                    # N.B. shouldn't be from width of field, but how many bytes a mask spans (e.g., 0x0ff0 spans 2 bytes)
+                    if (item_lengths[items_defined[call.hf_name].item_type] > call.length and
+                        items_defined[call.hf_name].mask_value != 0 and
+                        int((items_defined[call.hf_name].mask_width + 7)/8) > call.length):
+
+                        print('Warning:', self.file + ':' + str(call.line_number),
+                            self.fun_name + ' called for', call.hf_name, ' - ',
+                            'item type is', items_defined[call.hf_name].item_type, 'but call has len', call.length, 'and mask is', hex(items_defined[call.hf_name].mask_value))
+                        warnings_found += 1
 
                 # Checking that encoding arg is compatible with item type
                 check_call_enc_matches_item(items_defined, call, self)
@@ -1300,11 +1320,11 @@ class ExpertEntry:
 
         # Some immediate checks (already covered by other scripts)
         if group not in valid_groups:
-            print('Error:', filename, 'Expert group', group, 'is not in', valid_groups)
+            print('Error:', filename, name, 'Expert group', group, 'is not in', valid_groups)
             errors_found += 1
 
         if severity not in valid_levels:
-            print('Error:', filename, 'Expert severity', severity, 'is not in', valid_levels)
+            print('Error:', filename, name, 'Expert severity', severity, 'is not in', valid_levels)
             errors_found += 1
 
         # Checks on the summary field
@@ -1477,13 +1497,23 @@ class Item:
 
         if item_type == 'FT_IPv4':
             if label.endswith('6') or filter.endswith('6'):
-                print('Warning: ' + filename, hf, 'filter ' + filter + 'label', label, 'but is a v4 field')
+                print('Warning: ' + filename, hf, 'filter ' + filter + 'label "'+ label + '" but is a v4 field')
                 warnings_found += 1
         if item_type == 'FT_IPv6':
             if label.endswith('4') or filter.endswith('4'):
-                print('Warning: ' + filename, hf, 'filter ' + filter + 'label', label, 'but is a v6 field')
+                print('Warning: ' + filename, hf, 'filter ' + filter + 'label "' + label + '" but is a v6 field')
                 warnings_found += 1
 
+        # Could/should this entry use one of the port type display types?
+        if False:
+            if item_type == 'FT_UINT16' and not display.startswith('BASE_PT_') and display != 'BASE_CUSTOM':
+                desc = str(self).lower()
+                # TODO: use re to avoid matching 'transport' ?
+                if desc.lower().find('port') != -1:
+                    if desc.find('udp') != -1 or desc.find('tcp') != -1 or desc.find('sctp') -1:
+                        print('Warning: ' + filename, hf, 'filter "' + filter + '" label "' + label + '" field might be a transport port - should use e.g., BASE_PT_UDP as display??')
+                        print(self)
+                        warnings_found += 1
 
 
     def __str__(self):
@@ -1508,7 +1538,7 @@ class Item:
                 print('Warning: ' + self.filename, self.hf, 'filter "' + self.filter + '"', label_name, '"' + label + '"', 'has unbalanced parens/braces/brackets')
                 warnings_found += 1
         if self.item_type != 'FT_NONE' and label.endswith(':'):
-            print('Warning: ' + self.filename, self.hf, 'filter "' + self.filter + '"', label_name, '"' + label + '"', 'ends with an unnecessary colon')
+            print('Warning: ' + self.filename, self.hf, 'filter "' + self.filter + '"', label_name, '"' + label + '"', 'with type', self.item_type, 'ends with an unnecessary colon')
             warnings_found += 1
 
     def check_blurb_vs_label(self):
@@ -1894,8 +1924,8 @@ class Item:
     def check_string_display(self):
         global warnings_found
         if self.item_type in { 'FT_STRING', 'FT_STRINGZ', 'FT_UINT_STRING'}:
-            if self.display.find('BASE_NONE')==-1:
-                print('Warning:', self.filename, self.hf, 'type is', self.item_type, 'display must be BASE_NONE, is instead', self.display)
+            if self.display.find('BASE_NONE')==-1 and self.display.find('BASE_STR_WSP')==-1:
+                print('Warning:', self.filename, self.hf, 'type is', self.item_type, 'display must be BASE_NONE or BASE_STR_WSP, is instead', self.display)
                 warnings_found += 1
 
 

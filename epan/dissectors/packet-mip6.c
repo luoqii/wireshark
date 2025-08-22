@@ -2004,7 +2004,7 @@ dissect_mip6_opt_vsm_3gpp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, v
         break;
     /* 12, MSISDN */
     case 12:
-        dissect_e164_cc(tvb, tree, offset, E164_ENC_BCD);
+        dissect_e164_cc(tvb, pinfo, tree, offset, E164_ENC_BCD);
         proto_tree_add_item_ret_display_string(tree, hf_mip6_opt_3gpp_msisdn, tvb, offset, len, ENC_BCD_DIGITS_0_9|ENC_LITTLE_ENDIAN, pinfo->pool, &digit_str);
         proto_item_append_text(hdr_item, " %s", digit_str);
         break;
@@ -3540,7 +3540,7 @@ dissect_pmip6_opt_acc_net_id(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
         sub_opt_len = tvb_get_uint8(tvb,offset);
         offset++;
 
-        proto_item_append_text(ti, ": %s (t=%d,l=%d)", val_to_str(sub_opt, mmip6_opt_acc_net_id_sub_opt_vals, "Unknown ANI Type (%02d)"), sub_opt, sub_opt_len);
+        proto_item_append_text(ti, ": %s (t=%d,l=%d)", val_to_str(pinfo->pool, sub_opt, mmip6_opt_acc_net_id_sub_opt_vals, "Unknown ANI Type (%02d)"), sub_opt, sub_opt_len);
         proto_item_set_len(ti, sub_opt_len+2);
 
         switch(sub_opt){
@@ -3829,7 +3829,7 @@ dissect_mip6(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     /* Process mobility header */
     type = tvb_get_uint8(tvb, MIP6_TYPE_OFF);
-    col_add_str(pinfo->cinfo, COL_INFO, val_to_str_ext(type, &mip6_mh_types_ext, "Unknown Mobility Header (%u)"));
+    col_add_str(pinfo->cinfo, COL_INFO, val_to_str_ext(pinfo->pool, type, &mip6_mh_types_ext, "Unknown Mobility Header (%u)"));
     switch (type) {
     case MIP6_BRR:
         /* 0 Binding Refresh Request */

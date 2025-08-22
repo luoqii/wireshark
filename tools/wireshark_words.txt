@@ -208,6 +208,7 @@ backedup
 backend
 backhaul
 backoff
+backout
 backw
 bacnet
 bangladesh
@@ -230,6 +231,7 @@ behaviour
 behaviours
 beijing
 belgacom
+berbgbr
 berhad
 berkeley
 bgpsec
@@ -342,6 +344,7 @@ ccpch
 ccsds
 ccsid
 cctrch
+cdiag
 cdma2000
 cdmacallmode
 cdmachanneldata
@@ -492,6 +495,7 @@ congctrl
 connectionless
 connid
 connp
+conntag
 conout
 const
 constr
@@ -512,6 +516,7 @@ copyfile
 corba
 corbin
 corosync
+correl
 correlator
 corrigendum
 cosem
@@ -522,6 +527,7 @@ cp56time2a
 cpdlc
 cpich
 cplusplus
+cpmcistate
 cppcheck
 cpstate
 cpubus
@@ -755,6 +761,7 @@ dlmap
 dlmapc
 dlsch
 dlstatus
+dlvol
 dmacros
 dmefs
 dmepi
@@ -791,6 +798,7 @@ drsuapi
 dsmcc
 dstmode
 dstport
+dszza
 dtnum
 dtwin
 dumpcap
@@ -896,6 +904,7 @@ errored
 errorlog
 errorportinfo
 erspan
+esipa
 españa
 esperanto
 essar
@@ -916,6 +925,7 @@ ettarr
 etwdump
 etype
 eucjpms
+euicc
 europe
 eutra
 eutran
@@ -1184,6 +1194,7 @@ hytec
 iabtnl
 ibsdh
 icapability
+iccid
 icelandic
 icmpv
 icontrol
@@ -1268,6 +1279,7 @@ inmarsat
 inoage
 inode
 inodes
+inout
 inspiron
 installers
 instantiate
@@ -1632,8 +1644,10 @@ mqauth
 mqbacf
 mqcacf
 mqcach
+mqcfstatus
 mqcft
 mqcmd
+mqgacf
 mqiacf
 mqiach
 mqiamo
@@ -1783,6 +1797,7 @@ nordic
 nordig
 noreply
 norge
+normalise
 normalised
 nortel
 notarized
@@ -2047,6 +2062,7 @@ postfix
 powercontrol
 pppdump
 pppoe
+pproxy
 prach
 pradesh
 preambles
@@ -2151,6 +2167,7 @@ quadro
 quadruplet
 quadruplets
 qualcomm
+quals
 quantifiers
 quantization
 quantized
@@ -2564,9 +2581,11 @@ smime
 sminfo
 smpdirected
 smpte
+smreq
 smrse
 smscb
 sname
+snapdir
 snaplen
 snarf
 snow3g
@@ -2655,6 +2674,7 @@ strcmp
 strdup
 streamid
 strfunc
+stringified
 stringz
 stringzpad
 strlen
@@ -2718,6 +2738,7 @@ superseding
 superset
 suppfeat
 svalidator
+svalue
 svcparam
 svcparams
 sverige
@@ -2826,6 +2847,7 @@ tipcv
 titlebar
 tlvlen
 tlvtype
+tmflags
 tname
 tobago
 toggled
@@ -2847,6 +2869,7 @@ tostring
 totemsrp
 touchlink
 touchpad
+tovol
 toyota
 traceroute
 traff
@@ -2929,6 +2952,7 @@ uinteger
 ulmap
 ulong
 ulsch
+ulvol
 umask
 unack
 unacked
@@ -3098,6 +3122,7 @@ uploaded
 uploading
 uploads
 uptime
+uring
 urlencoded
 urllib
 urnti
@@ -3113,6 +3138,7 @@ userdata
 userinfo
 userlist
 userplane
+ushort
 utf8mb
 utf8string
 utilization

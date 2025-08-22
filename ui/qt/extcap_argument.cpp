@@ -944,14 +944,27 @@ int ExtcapArgument::argNr() const
     return _number;
 }
 
-QString ExtcapArgument::prefKey(const QString & device_name)
+QString ExtcapArgument::prefKey(const QString & device_name,
+    const QString & option_name, const QString & option_value)
 {
     pref_t * pref = NULL;
+    QString id;
 
     if (_argument == 0 || ! _argument->save)
         return QString();
 
-    pref = extcap_pref_for_argument(device_name.toStdString().c_str(), _argument);
+    id = device_name;
+    /* If we are doing a sub-option: append an ID to the interface name */
+    if (!option_name.isEmpty())
+    {
+        /* Remove all illegal characters from option value */
+        QRegularExpression regex("[^a-z0-9._]");
+        QStringList option_uid = { "", option_name, option_value.toLower().replace(regex, "") };
+
+        id.append(option_uid.join("_"));
+    }
+
+    pref = extcap_pref_for_argument(id.toStdString().c_str(), _argument);
     if (pref != NULL)
         return QString(prefs_get_name(pref));
 
@@ -962,6 +975,14 @@ bool ExtcapArgument::isRequired()
 {
     if (_argument != NULL)
         return _argument->is_required;
+
+    return false;
+}
+
+bool ExtcapArgument::isSufficient()
+{
+    if (_argument != NULL)
+        return _argument->is_sufficient;
 
     return false;
 }
@@ -1014,6 +1035,8 @@ ExtcapArgument * ExtcapArgument::create(extcap_arg * argument, QObject *parent)
         result = new ExtcapArgumentFileSelection(argument, parent);
     else if (argument->arg_type == EXTCAP_ARG_MULTICHECK)
         result = new ExtArgMultiSelect(argument, parent);
+    else if (argument->arg_type == EXTCAP_ARG_TABLE)
+        result = new ExtArgTable(argument, parent);
     else if (argument->arg_type == EXTCAP_ARG_TIMESTAMP)
         result = new ExtArgTimestamp(argument, parent);
     else

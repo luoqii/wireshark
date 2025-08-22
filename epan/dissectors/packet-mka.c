@@ -881,7 +881,7 @@ dissect_announcement(proto_tree *mka_tree, packet_info *pinfo, tvbuff_t *tvb, in
     }
 
     ti = proto_tree_add_none_format(announcement_set_tree, hf_mka_tlv_entry, tvb, offset + offset2, tlv_length + 2, "TLV entry: %s",
-                                    val_to_str(tlv_type, macsec_tlvs, "unknown TLV type: %d"));
+                                    val_to_str(pinfo->pool, tlv_type, macsec_tlvs, "unknown TLV type: %d"));
     tlv_tree = proto_item_add_subtree(ti, ett_mka_tlv);
 
     proto_tree_add_item(tlv_tree, hf_mka_tlv_type, tvb, offset + offset2, 1, ENC_NA);
@@ -898,8 +898,8 @@ dissect_announcement(proto_tree *mka_tree, packet_info *pinfo, tvbuff_t *tvb, in
           uint16_t cipher_suite_cap = tvb_get_uint16(tvb, offset + offset2 + tlv_item_offset, ENC_BIG_ENDIAN) & 0x0003;
 
           ti = proto_tree_add_none_format(tlv_tree, hf_mka_tlv_entry, tvb, offset + offset2, tlv_length + 2, "Cipher Suite: %s, %s",
-                                          val64_to_str(cipher_suite_id, macsec_cipher_suite_vals, "Unknown Cipher Suite (0x%" PRIx64 ")"),
-                                          val_to_str(cipher_suite_cap, macsec_capability_type_vals, "Unknown Capability (%d)"));
+                                          val64_to_str_wmem(pinfo->pool, cipher_suite_id, macsec_cipher_suite_vals, "Unknown Cipher Suite (0x%" PRIx64 ")"),
+                                          val_to_str(pinfo->pool, cipher_suite_cap, macsec_capability_type_vals, "Unknown Capability (%d)"));
           cipher_suite_entry = proto_item_add_subtree(ti, ett_mka_cipher_suite_entry);
 
           proto_tree_add_item(cipher_suite_entry, hf_mka_tlv_cipher_suite_impl_cap, tvb, offset + offset2 + tlv_item_offset, 2, ENC_BIG_ENDIAN);

@@ -24,7 +24,7 @@
  * https://tools.ietf.org/html/draft-huitema-quic-ts-02
  * https://tools.ietf.org/html/draft-ietf-quic-ack-frequency-07 (and also draft-04/05)
  * https://tools.ietf.org/html/draft-banks-quic-cibir-01
- * https://tools.ietf.org/html/draft-ietf-quic-multipath-13 (and also >= draft-07)
+ * https://tools.ietf.org/html/draft-ietf-quic-multipath-15 (and also >= draft-07)
 
  *
  * Currently supported QUIC version(s): draft-21, draft-22, draft-23, draft-24,
@@ -228,6 +228,7 @@ static dissector_handle_t quic_handle;
 static dissector_handle_t tls13_handshake_handle;
 
 static dissector_table_t quic_proto_dissector_table;
+static dissector_table_t quic_datagram_proto_dissector_table; // Dissector of QUIC DATAGRAM frames
 
 /* Fields for showing reassembly results for fragments of QUIC stream data. */
 static const fragment_items quic_stream_fragment_items = {
@@ -442,6 +443,7 @@ struct quic_info_data {
     quic_cid_t      client_odcid;   /**< Original DCID, if there has been a Retry seen. */
     dissector_handle_t app_handle;  /**< Application protocol handle (NULL if unknown). */
     dissector_handle_t zrtt_app_handle;  /**< Application protocol handle (NULL if unknown) for 0-RTT data. */
+    dissector_handle_t app_datagram_handle;  /**< Application protocol handle for datagrams (NULL if unknown). */
     wmem_map_t     *client_streams; /**< Map from Stream ID -> STREAM info (uint64_t -> quic_stream_state), sent by the client. */
     wmem_map_t     *server_streams; /**< Map from Stream ID -> STREAM info (uint64_t -> quic_stream_state), sent by the server. */
     wmem_list_t    *streams_list;   /**< Ordered list of QUIC Stream ID in this connection (both directions). Used by "Follow QUIC Stream" functionality */
@@ -709,8 +711,8 @@ static const value_string quic_v2_long_packet_type_vals[] = {
 #define FT_PATH_ACK_ECN             0x15228c01
 #define FT_PATH_ABANDON             0x15228c05
 #define FT_PATH_STATUS              0x15228c06 /* multipath-draft-05 */
-#define FT_PATH_BACKUP              0x15228c07 /* multipath-draft-06 */
-#define FT_PATH_AVAILABLE           0x15228c08 /* multipath-draft-06 */
+#define FT_PATH_BACKUP_AVAILABLE    0x15228c07 /* multipath-draft-06 rename with draft-15 */
+#define FT_PATH_STATUS_AVAILABLE    0x15228c08 /* multipath-draft-06 rename with draft-15 */
 #define FT_PATH_NEW_CONNECTION_ID   0x15228c09 /* multipath-draft-07 */
 #define FT_PATH_RETIRE_CONNECTION_ID 0x15228c0a /* multipath-draft-07 */
 #define FT_MAX_PATHS                0x15228c0b /* multipath-draft-07 */
@@ -754,8 +756,8 @@ static const range_string quic_frame_type_vals[] = {
     { 0x15228c00, 0x15228c01, "PATH_ACK" }, /* >= multipath-draft-05 */
     { 0x15228c05, 0x15228c05, "PATH_ABANDON" }, /* >= multipath-draft-05 */
     { 0x15228c06, 0x15228c06, "PATH_STATUS" }, /* = multipath-draft-05 */
-    { 0x15228c07, 0x15228c07, "PATH_BACKUP" }, /* >= multipath-draft-06 */
-    { 0x15228c08, 0x15228c08, "PATH_AVAILABLE" }, /* >= multipath-draft-06 */
+    { 0x15228c07, 0x15228c07, "PATH_BACKUP_AVAILABLE" }, /* >= multipath-draft-06 */
+    { 0x15228c08, 0x15228c08, "PATH_STATUS_AVAILABLE" }, /* >= multipath-draft-06 */
     { 0x15228c09, 0x15228c09, "PATH_NEW_CONNECTION_ID" }, /* >= multipath-draft-07 */
     { 0x15228c0a, 0x15228c0a, "PATH_RETIRE_CONNECTION_ID" }, /* >= multipath-draft-07 */
     { 0x15228c0b, 0x15228c0b, "MAX_PATHS" }, /* >= multipath-draft-07 */
@@ -2902,7 +2904,7 @@ dissect_quic_frame_type(tvbuff_t *tvb, packet_info *pinfo, proto_tree *quic_tree
 
             // Transport Error codes higher than 0x3fff are for Private Use.
             if (frame_type == FT_CONNECTION_CLOSE_TPT && error_code <= 0x3fff) {
-                proto_item_append_text(ti_ft, " Error code: %s", rval_to_str((uint32_t)error_code, quic_transport_error_code_vals, "Unknown (%d)"));
+                proto_item_append_text(ti_ft, " Error code: %s", rval_to_str_wmem(pinfo->pool, (uint32_t)error_code, quic_transport_error_code_vals, "Unknown (%d)"));
             } else {
                 proto_item_append_text(ti_ft, " Error code: %#" PRIx64, error_code);
             }
@@ -2927,6 +2929,15 @@ dissect_quic_frame_type(tvbuff_t *tvb, packet_info *pinfo, proto_tree *quic_tree
                 length = (uint32_t) tvb_reported_length_remaining(tvb, offset);
             }
             proto_tree_add_item(ft_tree, hf_quic_dg, tvb, offset, (uint32_t)length, ENC_NA);
+            if (quic_info->app_datagram_handle) {
+                tvbuff_t *next_tvb = tvb_new_subset_remaining(tvb, offset);
+                proto_tree *top_tree = proto_tree_get_parent_tree(quic_tree);
+                quic_datagram_info datagram_info = {
+                    .quic_info = quic_info,
+                    .from_server = from_server,
+                };
+                call_dissector_with_data(quic_info->app_datagram_handle, next_tvb, pinfo, top_tree, &datagram_info);
+            }
             offset += (uint32_t)length;
         }
         break;
@@ -2961,8 +2972,8 @@ dissect_quic_frame_type(tvbuff_t *tvb, packet_info *pinfo, proto_tree *quic_tree
         }
         break;
         case FT_PATH_STATUS:
-        case FT_PATH_BACKUP:
-        case FT_PATH_AVAILABLE:{
+        case FT_PATH_BACKUP_AVAILABLE:
+        case FT_PATH_STATUS_AVAILABLE:{
             int32_t length;
 
             col_append_str(pinfo->cinfo, COL_INFO, ", PS");
@@ -3082,14 +3093,14 @@ quic_decrypt_message(quic_pp_cipher *pp_cipher, tvbuff_t *head, unsigned header_
 
     memcpy(nonce, pp_cipher->pp_iv, TLS13_AEAD_NONCE_LENGTH);
     /* Packet number is left-padded with zeroes and XORed with write_iv */
-    phton64(nonce + sizeof(nonce) - 8, pntoh64(nonce + sizeof(nonce) - 8) ^ packet_number);
+    phtonu64(nonce + sizeof(nonce) - 8, pntohu64(nonce + sizeof(nonce) - 8) ^ packet_number);
     /* QUIC Multipath draft-07 also uses the lower 32 bits of the Path ID
      * (CID sequence number prior to draft-07), which MUST NOT go over 2^32
      * when multipath is used; also, the nonce must be at least 12 bytes.
      */
     if (dgram_info && dgram_info->conn && quic_multipath_negotiated(dgram_info->conn)) {
         DISSECTOR_ASSERT_CMPINT(TLS13_AEAD_NONCE_LENGTH, >=, 12);
-        phton32(nonce + sizeof(nonce) - 12, pntoh32(nonce + sizeof(nonce) - 12) ^ (UINT32_MAX & dgram_info->path_id));
+        phtonu32(nonce + sizeof(nonce) - 12, pntohu32(nonce + sizeof(nonce) - 12) ^ (UINT32_MAX & dgram_info->path_id));
     }
 
     gcry_cipher_reset(pp_cipher->pp_cipher);
@@ -3144,7 +3155,7 @@ quic_hkdf_expand_label(int hash_algo, uint8_t *secret, unsigned secret_len, cons
  * false is returned on error (see "error" parameter for the reason).
  */
 static bool
-quic_derive_initial_secrets(const quic_cid_t *cid,
+quic_derive_initial_secrets(wmem_allocator_t* allocator, const quic_cid_t *cid,
                             uint8_t client_initial_secret[HASH_SHA2_256_LENGTH],
                             uint8_t server_initial_secret[HASH_SHA2_256_LENGTH],
                             uint32_t version,
@@ -3232,7 +3243,7 @@ quic_derive_initial_secrets(const quic_cid_t *cid,
                            cid->cid, cid->len, secret);
     }
     if (err) {
-        *error = wmem_strdup_printf(wmem_packet_scope(), "Failed to extract secrets: %s", gcry_strerror(err));
+        *error = wmem_strdup_printf(allocator, "Failed to extract secrets: %s", gcry_strerror(err));
         return false;
     }
 
@@ -3344,12 +3355,12 @@ quic_ciphers_prepare(quic_ciphers *ciphers, int hash_algo, int cipher_algo, int 
 
 
 static bool
-quic_create_initial_decoders(const quic_cid_t *cid, const char **error, quic_info_data_t *quic_info)
+quic_create_initial_decoders(wmem_allocator_t* allocator, const quic_cid_t *cid, const char **error, quic_info_data_t *quic_info)
 {
     uint8_t         client_secret[HASH_SHA2_256_LENGTH];
     uint8_t         server_secret[HASH_SHA2_256_LENGTH];
 
-    if (!quic_derive_initial_secrets(cid, client_secret, server_secret, quic_info->version, error)) {
+    if (!quic_derive_initial_secrets(allocator, cid, client_secret, server_secret, quic_info->version, error)) {
         return false;
     }
 
@@ -3563,10 +3574,12 @@ quic_get_1rtt_hp_cipher(packet_info *pinfo, quic_info_data_t *quic_info, bool fr
         const char *proto_name = tls_get_alpn(pinfo);
         if (proto_name) {
             quic_info->app_handle = dissector_get_string_handle(quic_proto_dissector_table, proto_name);
+            quic_info->app_datagram_handle = dissector_get_string_handle(quic_datagram_proto_dissector_table, proto_name);
             // If no specific handle is found, alias "h3-*" to "h3" and "doq-*" to "doq"
             if (!quic_info->app_handle) {
                 if (g_str_has_prefix(proto_name, "h3-")) {
                     quic_info->app_handle = dissector_get_string_handle(quic_proto_dissector_table, "h3");
+                    quic_info->app_datagram_handle = dissector_get_string_handle(quic_datagram_proto_dissector_table, "h3");
                 } else if (g_str_has_prefix(proto_name, "doq-")) {
                     quic_info->app_handle = dissector_get_string_handle(quic_proto_dissector_table, "doq");
                 }
@@ -4132,7 +4145,7 @@ dissect_quic_long_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *quic_tre
             quic_connection_equal(&dcid, &conn->client_dcid_initial)) {
             /* Create new decryption context based on the Client Connection
              * ID from the *very first* Client Initial packet. */
-            quic_create_initial_decoders(&dcid, &error, conn);
+            quic_create_initial_decoders(pinfo->pool, &dcid, &error, conn);
         } else if (long_packet_type == QUIC_LPT_INITIAL && from_server &&
                    version != conn->version) {
             /* Compatibile Version Negotiation: the server (probably) updated the connection version.
@@ -4142,7 +4155,7 @@ dissect_quic_long_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *quic_tre
              */
             conn->version = version;
             quic_ciphers_reset(ciphers);
-            quic_create_initial_decoders(&conn->client_dcid_initial, &error, conn);
+            quic_create_initial_decoders(pinfo->pool, &conn->client_dcid_initial, &error, conn);
         } else if (long_packet_type == QUIC_LPT_0RTT) {
             early_data_secret_len = tls13_get_quic_secret(pinfo, false, TLS_SECRET_0RTT_APP, DIGEST_MIN_SIZE, DIGEST_MAX_SIZE, early_data_secret);
             if (early_data_secret_len == 0) {
@@ -5926,6 +5939,7 @@ proto_register_quic(void)
      * bytes, but in practice these do not exist yet.
      */
     quic_proto_dissector_table = register_dissector_table("quic.proto", "QUIC Protocol", proto_quic, FT_STRING, STRING_CASE_SENSITIVE);
+    quic_datagram_proto_dissector_table = register_dissector_table("quic.proto.datagram", "QUIC Protocol for DATAGRAM frames", proto_quic, FT_STRING, STRING_CASE_SENSITIVE);
 
     quic_follow_tap = register_tap("quic_follow");
 }

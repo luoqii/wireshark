@@ -835,7 +835,7 @@ static int dissect_edonkey_metatag(tvbuff_t *tvb, packet_info *pinfo,
             if (tag_type==real_tag_type)
                 proto_tree_add_uint(metatag_tree, hf_edonkey_metatag_namesize, tvb, offset+1, 2, tag_name_size);
             edonkey_tree_add_metatag_name(metatag_tree, tvb, tag_offset-tag_name_size, tag_name_size, special_tagtype);
-            proto_tree_add_item(metatag_tree, hf_edonkey_meta_tag_value_uint, tvb, tag_offset, 1, ENC_NA);
+            proto_tree_add_item(metatag_tree, hf_edonkey_meta_tag_value_uint, tvb, tag_offset, 1, ENC_LITTLE_ENDIAN);
             break;
 
         case EDONKEY_MTAG_BOOL:
@@ -847,7 +847,7 @@ static int dissect_edonkey_metatag(tvbuff_t *tvb, packet_info *pinfo,
             if (tag_type==real_tag_type)
                 proto_tree_add_uint(metatag_tree, hf_edonkey_metatag_namesize, tvb, offset+1, 2, tag_name_size);
             edonkey_tree_add_metatag_name(metatag_tree, tvb, tag_offset-tag_name_size, tag_name_size, special_tagtype);
-            proto_tree_add_item(metatag_tree, hf_edonkey_meta_tag_value_uint, tvb, tag_offset, 1, ENC_NA);
+            proto_tree_add_item(metatag_tree, hf_edonkey_meta_tag_value_uint, tvb, tag_offset, 1, ENC_LITTLE_ENDIAN);
             break;
 
         case EDONKEY_MTAG_BOOL_ARRAY:
@@ -3322,13 +3322,13 @@ void proto_register_edonkey(void) {
                 FT_BYTES, BASE_NONE, NULL, 0, "BSOB Tag Value", HFILL } },
         { &hf_kademlia_udp_port,
             { "UDP Port", "edonkey.kademlia.udp_port",
-                FT_UINT16, BASE_DEC, NULL, 0, "Kademlia UDP Port", HFILL } },
+                FT_UINT16, BASE_PT_UDP, NULL, 0, "Kademlia UDP Port", HFILL } },
         { &hf_kademlia_ip,
             { "IP", "edonkey.kademlia.ip",
                 FT_IPv4, BASE_NONE, NULL, 0, "eDonkey IP", HFILL } },
         { &hf_kademlia_tcp_port,
             { "TCP Port", "edonkey.kademlia.tcp_port",
-                FT_UINT16, BASE_DEC, NULL, 0, "Kademlia TCP Port", HFILL } },
+                FT_UINT16, BASE_PT_TCP, NULL, 0, "Kademlia TCP Port", HFILL } },
         { &hf_edonkey_tcp_flags,
             { "TCP Flags", "edonkey.tcp_flags",
                 FT_UINT32, BASE_HEX, NULL, 0, "eDonkey TCP Flags (ID Change)", HFILL } },
@@ -3387,10 +3387,10 @@ void proto_register_edonkey(void) {
                 FT_UINT32, BASE_HEX, NULL, 0x0, NULL, HFILL }},
         { &hf_edonkey_tcp_obfuscation_port, 
             { "TCP Obfuscation Port", "edonkey.tcp_obfuscation_port", 
-                FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+                FT_UINT16, BASE_PT_TCP, NULL, 0x0, NULL, HFILL }},
         { &hf_edonkey_udp_obfuscation_port, 
             { "UDP Obfuscation Port", "edonkey.udp_obfuscation_port", 
-                FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL }},
+                FT_UINT16, BASE_PT_UDP, NULL, 0x0, NULL, HFILL }},
         { &hf_edonkey_server_udp_key, 
             { "Server UDP Key", "edonkey.server_udp_key", 
                 FT_UINT32, BASE_HEX, NULL, 0x0, NULL, HFILL }},

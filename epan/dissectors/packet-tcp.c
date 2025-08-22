@@ -1681,15 +1681,15 @@ static int exp_pdu_tcp_dissector_data_populate_data(packet_info *pinfo _U_, void
 {
     struct tcpinfo* dissector_data = (struct tcpinfo*)data;
 
-    phton16(&tlv_buffer[0], EXP_PDU_TAG_TCP_INFO_DATA);
-    phton16(&tlv_buffer[2], EXP_PDU_TCP_INFO_DATA_LEN); /* tag length */
-    phton16(&tlv_buffer[4], EXP_PDU_TCP_INFO_VERSION);
-    phton32(&tlv_buffer[6], dissector_data->seq);
-    phton32(&tlv_buffer[10], dissector_data->nxtseq);
-    phton32(&tlv_buffer[14], dissector_data->lastackseq);
+    phtonu16(&tlv_buffer[0], EXP_PDU_TAG_TCP_INFO_DATA);
+    phtonu16(&tlv_buffer[2], EXP_PDU_TCP_INFO_DATA_LEN); /* tag length */
+    phtonu16(&tlv_buffer[4], EXP_PDU_TCP_INFO_VERSION);
+    phtonu32(&tlv_buffer[6], dissector_data->seq);
+    phtonu32(&tlv_buffer[10], dissector_data->nxtseq);
+    phtonu32(&tlv_buffer[14], dissector_data->lastackseq);
     tlv_buffer[18] = dissector_data->is_reassembled;
-    phton16(&tlv_buffer[19], dissector_data->flags);
-    phton16(&tlv_buffer[21], dissector_data->urgent_pointer);
+    phtonu16(&tlv_buffer[19], dissector_data->flags);
+    phtonu16(&tlv_buffer[21], dissector_data->urgent_pointer);
 
     return exp_pdu_tcp_dissector_data_size(pinfo, data);
 }
@@ -2540,7 +2540,7 @@ tcp_track_contiguity(uint32_t seq, uint32_t nextseq, struct tcp_analysis *tcpd) 
     while( (j<next_crlen) &&
            (GE_SEQ(nextseq,tcpd->fwd->tcp_analyze_seq_info->contiguous_ranges[j][0]))) {
 
-        // keep the highest RE boundary
+        // keep the highest RE boundary between nextseq and this range block
         if(GT_SEQ(tcpd->fwd->tcp_analyze_seq_info->contiguous_ranges[j][1],nextseq)) {
             tcpd->fwd->tcp_analyze_seq_info->contiguous_ranges[dstindex][1] = tcpd->fwd->tcp_analyze_seq_info->contiguous_ranges[j][1];
         }
@@ -2553,8 +2553,10 @@ tcp_track_contiguity(uint32_t seq, uint32_t nextseq, struct tcp_analysis *tcpd) 
 
     // proceed to the shrinking/merging
     for(int k=dstindex+1; k<1+crlen-toShrink; k++) {
-        tcpd->fwd->tcp_analyze_seq_info->contiguous_ranges[k][0] = tcpd->fwd->tcp_analyze_seq_info->contiguous_ranges[k+toShrink][0];
-        tcpd->fwd->tcp_analyze_seq_info->contiguous_ranges[k][1] = tcpd->fwd->tcp_analyze_seq_info->contiguous_ranges[k+toShrink][1];
+        if(k+toShrink<MAX_CONTIGUOUS_SEQUENCES) {
+            tcpd->fwd->tcp_analyze_seq_info->contiguous_ranges[k][0] = tcpd->fwd->tcp_analyze_seq_info->contiguous_ranges[k+toShrink][0];
+            tcpd->fwd->tcp_analyze_seq_info->contiguous_ranges[k][1] = tcpd->fwd->tcp_analyze_seq_info->contiguous_ranges[k+toShrink][1];
+        }
     }
 
     /* finally, update the array size */
@@ -6629,7 +6631,7 @@ dissect_tcpopt_mptcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* 
                         offset, 1, ENC_BIG_ENDIAN);
 
     subtype = tvb_get_uint8(tvb, offset) >> 4;
-    proto_item_append_text(main_item, ": %s", val_to_str(subtype, mptcp_subtype_vs, "Unknown (%d)"));
+    proto_item_append_text(main_item, ": %s", val_to_str(pinfo->pool, subtype, mptcp_subtype_vs, "Unknown (%d)"));
 
     /** preemptively allocate mptcpd when subtype won't allow to find a meta */
     if(!mptcpd && (subtype > TCPOPT_MPTCP_MP_JOIN)) {
@@ -8290,8 +8292,8 @@ capture_tcp(const unsigned char *pd, int offset, int len, capture_packet_info_t 
 
     capture_dissector_increment_count(cpinfo, proto_tcp);
 
-    src_port = pntoh16(&pd[offset]);
-    dst_port = pntoh16(&pd[offset+2]);
+    src_port = pntohu16(&pd[offset]);
+    dst_port = pntohu16(&pd[offset+2]);
 
     if (src_port > dst_port) {
         low_port = dst_port;
@@ -8611,6 +8613,32 @@ dissect_tcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
         if(tcp_analyze_seq && tcpd->fwd->tcp_analyze_seq_info) {
             tcpd->fwd->tcp_analyze_seq_info->num_sack_ranges = 0;
         }
+
+        /* Follow-up of the conversation over ICMP errors.
+         * When coming over an error packet (typically ICMP), we want to save the
+         * conversation type, and have a specific tracking then we can match with
+         * ordinary, non error packets.
+         */
+        if (pinfo->flags.in_error_pkt) {
+            /* Save the conversation type */
+            pinfo->track_ctype = CONVERSATION_TCP;
+
+            conversation_t *err_conv = NULL;
+            err_conv = find_conversation_err_pkts(pinfo->num, CONVERSATION_TCP, tcpd->stream, conv->conv_index);
+            if(!err_conv) {
+                /* Create the conversation tracking the ordinary TCP conversation */
+                err_conv = conversation_new_err_pkts(pinfo->num, CONVERSATION_TCP, tcpd->stream, conv->conv_index );
+
+                /* Align the setup_frame with the TCP conversation's one */
+                err_conv->setup_frame = conv->setup_frame;
+            }
+            else if (pinfo->num > err_conv->last_frame) {
+                /* If we have multiple error packets related to this same UDP conversation,
+                 * extend the tracker conversation.
+                 */
+                err_conv->last_frame = pinfo->num;
+            }
+        }
     }
 
     /* is there any manual analysis waiting ? */
@@ -8766,7 +8794,7 @@ dissect_tcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
               syncookie_ti = proto_item_add_subtree(item, ett_tcp_syncookie);
               proto_tree_add_bits_item(syncookie_ti, hf_tcp_syncookie_time, tvb, (offset + 4) * 8, 5, ENC_NA);
               proto_tree_add_bits_item(syncookie_ti, hf_tcp_syncookie_mss, tvb, (offset + 4) * 8 + 5, 3, ENC_NA);
-              proto_tree_add_item(syncookie_ti, hf_tcp_syncookie_hash, tvb, offset + 4 + 1, 3, ENC_NA);
+              proto_tree_add_item(syncookie_ti, hf_tcp_syncookie_hash, tvb, offset + 4 + 1, 3, ENC_BIG_ENDIAN);
             }
 
         } else {
@@ -9176,6 +9204,17 @@ dissect_tcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
                 phdr[0] = g_htonl(reported_len);
                 break;
 
+            case AT_ILNP_NID:
+                /* TCP now also runs atop ILNP :) */
+                phdr[0] = g_htonl(reported_len);
+                phdr[1] = g_htonl(IP_PROTO_TCP);
+                SET_CKSUM_VEC_PTR(cksum_vec[2], (const uint8_t*)phdr, 8);
+                // We don't care about the return, only want the
+                // intermediate partial value.
+                in_cksum_ret_partial(cksum_vec, 4, &partial_cksum_no_len);
+                phdr[0] = g_htonl(reported_len);
+                break;
+
             default:
                 /* TCP runs only atop IPv4 and IPv6.... */
                 DISSECTOR_ASSERT_NOT_REACHED();
@@ -9359,6 +9398,7 @@ dissect_tcp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
             tcpd->rev->mss = 536;
             break;
         case AT_IPv6:
+        case AT_ILNP_NID:
             tcpd->fwd->mss = 1220;
             tcpd->rev->mss = 1220;
             break;

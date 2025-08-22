@@ -114,7 +114,8 @@ typedef enum {
     CONVERSATION_OPENVPN,
     CONVERSATION_PROXY,
     CONVERSATION_GNSS,
-    CONVERSATION_DNP3
+    CONVERSATION_DNP3,
+    CONVERSATION_ILNP,          /* ILNP */
 } conversation_type;
 
 /*
@@ -165,6 +166,7 @@ typedef enum {
 #define ENDPOINT_IP		CONVERSATION_IP
 #define ENDPOINT_IPv6		CONVERSATION_IPv6
 #define ENDPOINT_ETH		CONVERSATION_ETH
+#define ENDPOINT_ILNP		CONVERSATION_ILNP
 
 typedef conversation_type endpoint_type;
 
@@ -324,6 +326,17 @@ WS_DLL_PUBLIC WS_RETNONNULL conversation_t *conversation_new(const uint32_t setu
 WS_DLL_PUBLIC WS_RETNONNULL conversation_t *conversation_new_by_id(const uint32_t setup_frame, const conversation_type ctype, const uint32_t id);
 
 /**
+ * Create a new conversation in the err_pkts table.
+ *
+ * @param setup_frame The first frame in the conversation.
+ * @param ctype The conversation type.
+ * @param id The conversation index.
+ * @param rid The reference conversation index, supposedly a member of one of the port_addr tables.
+ * @return The new conversation.
+ */
+WS_DLL_PUBLIC WS_RETNONNULL conversation_t *conversation_new_err_pkts(const uint32_t setup_frame, const conversation_type ctype, const uint32_t id, const uint32_t rid);
+
+/**
  *
  */
 WS_DLL_PUBLIC WS_RETNONNULL conversation_t *conversation_new_deinterlaced(const uint32_t setup_frame, const address *addr1, const address *addr2,
@@ -432,6 +445,8 @@ WS_DLL_PUBLIC conversation_t *find_conversation_deinterlacer(const uint32_t fram
 WS_DLL_PUBLIC conversation_t *find_conversation_deinterlacer_pinfo(const packet_info *pinfo);
 
 WS_DLL_PUBLIC conversation_t *find_conversation_by_id(const uint32_t frame, const conversation_type ctype, const uint32_t id);
+
+WS_DLL_PUBLIC conversation_t *find_conversation_err_pkts(const uint32_t frame, const conversation_type ctype, const uint32_t id, const uint32_t rid);
 
 /**  A helper function that calls find_conversation() using data from pinfo,
  *  and returns a conversation according to the runtime deinterlacing strategy.

@@ -494,10 +494,13 @@ prefs_register_module_or_subtree(module_t *parent, const char *name,
         module->description = description;
         module->help = help;
 
-        if (prefs_find_module(name) == NULL) {
-            wmem_tree_insert_string(prefs_modules, name, module,
-                                  WMEM_TREE_STRING_NOCASE);
+        /* Registering it as a module (not just as a subtree) twice is an
+         * error in the code for the same reason as below. */
+        if (prefs_find_module(name) != NULL) {
+            ws_error("Preference module \"%s\" is being registered twice", name);
         }
+        wmem_tree_insert_string(prefs_modules, name, module,
+                              WMEM_TREE_STRING_NOCASE);
 
         return module;
     }
@@ -3749,6 +3752,11 @@ prefs_register_modules(void)
         "Enables the legend of Plot",
         &prefs.gui_plot_enable_legend);
 
+    prefs_register_bool_preference(gui_module, "plot_enable_auto_scroll",
+        "Enables auto scroll of Plot",
+        "Enables auto scroll of Plot",
+        &prefs.gui_plot_enable_auto_scroll);
+
     prefs_register_bool_preference(gui_module, "show_byteview_in_dialog",
         "Show the byte view in the packet details dialog",
         "Show the byte view in the packet details dialog",
@@ -4514,6 +4522,7 @@ pre_init_prefs(void)
     /* set the default values for the plot dialog */
     prefs.gui_plot_automatic_update = true;
     prefs.gui_plot_enable_legend = true;
+    prefs.gui_plot_enable_auto_scroll = false;
 
     /* set the default values for the packet dialog */
     prefs.gui_packet_dialog_layout   = layout_vertical;
@@ -5954,41 +5963,7 @@ set_pref(char *pref_name, const char *value, void *private_data,
     } else if (deprecated_port_pref(pref_name, value)) {
          /* Handled within deprecated_port_pref() if found */
     } else if (strcmp(pref_name, "console.log.level") == 0) {
-
-        uint32_t mask;
-        enum ws_log_level level;
-
-        if (!ws_basestrtou32(value, NULL, &mask, 10)) {
-            ws_warning("%s is not a valid decimal number for %s.", value, pref_name);
-            return PREFS_SET_SYNTAX_ERR;
-        }
-
-        /*
-         * The lowest priority bit in the mask defines the level.
-         */
-        if (mask & G_LOG_LEVEL_DEBUG)
-            level = LOG_LEVEL_DEBUG;
-        else if (mask & G_LOG_LEVEL_INFO)
-            level = LOG_LEVEL_INFO;
-        else if (mask & G_LOG_LEVEL_MESSAGE)
-            level = LOG_LEVEL_MESSAGE;
-        else if (mask & G_LOG_LEVEL_WARNING)
-            level = LOG_LEVEL_WARNING;
-        else if (mask & G_LOG_LEVEL_CRITICAL)
-            level = LOG_LEVEL_CRITICAL;
-        else if (mask & G_LOG_LEVEL_ERROR)
-            level = LOG_LEVEL_ERROR;
-        else
-            level = LOG_LEVEL_NONE;
-
-        if (level == LOG_LEVEL_NONE) {
-            /* Some values (like zero) might not contain any meaningful bits.
-             * Throwing an error in that case seems appropriate. */
-            ws_warning("Value %s is not a valid log mask for %s.", value, pref_name);
-            return PREFS_SET_SYNTAX_ERR;
-        }
-
-        ws_log_set_level(level);
+        /* Handled on the command line within ws_log_parse_args() */
         return PREFS_SET_OK;
     } else {
         /* Handle deprecated "global" options that don't have a module

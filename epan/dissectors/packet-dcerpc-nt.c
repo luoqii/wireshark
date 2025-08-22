@@ -888,7 +888,7 @@ dissect_ntstatus(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
 	if (status != 0)
 		col_append_fstr(pinfo->cinfo, COL_INFO, ", %s",
-				val_to_str_ext(status, &NT_errors_ext,
+				val_to_str_ext(pinfo->pool, status, &NT_errors_ext,
 					   "Unknown error 0x%08x"));
 	if (pdata)
 		*pdata = status;
@@ -910,7 +910,7 @@ dissect_doserror(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
 	if (status != 0)
 		col_append_fstr(pinfo->cinfo, COL_INFO, ", %s",
-				val_to_str_ext(status, &DOS_errors_ext,
+				val_to_str_ext(pinfo->pool, status, &DOS_errors_ext,
 					   "Unknown error 0x%08x"));
 	if (pdata)
 		*pdata = status;
@@ -930,7 +930,7 @@ dissect_werror(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
 	if (status != 0)
 		col_append_fstr(pinfo->cinfo, COL_INFO, ", %s",
-				val_to_str_ext(status, &WERR_errors_ext,
+				val_to_str_ext(pinfo->pool, status, &WERR_errors_ext,
 					   "Unknown error 0x%08x"));
 	if (pdata)
 		*pdata = status;
@@ -952,7 +952,7 @@ dissect_hresult(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
 	if (status != 0)
 		col_append_fstr(pinfo->cinfo, COL_INFO, ", %s",
-				val_to_str_ext(status, &HRES_errors_ext,
+				val_to_str_ext(pinfo->pool, status, &HRES_errors_ext,
 					   "Unknown error 0x%08x"));
 	if (pdata)
 		*pdata = status;
@@ -1386,7 +1386,7 @@ dissect_ndr_nt_SID28(tvbuff_t *tvb, int offset, packet_info *pinfo,
 		return offset;
 	}
 
-	newoffset = dissect_nt_sid(tvb, offset, tree, name, &sid_str,
+	newoffset = dissect_nt_sid(tvb, pinfo, offset, tree, name, &sid_str,
 				hf_nt_domain_sid);
 	/* The dissected stuff can't be more than 28 bytes */
 	if ((newoffset - offset) > 28) {
@@ -1443,7 +1443,7 @@ dissect_ndr_nt_SID(tvbuff_t *tvb, int offset, packet_info *pinfo,
 	offset = dissect_ndr_uint3264 (tvb, offset, pinfo, tree, di, drep,
 			hf_nt_count, NULL);
 
-	offset = dissect_nt_sid(tvb, offset, tree, name, &sid_str,
+	offset = dissect_nt_sid(tvb, pinfo, offset, tree, name, &sid_str,
 				hf_nt_domain_sid);
 
 	/* dcv can be null, for example when this ndr structure is embedded

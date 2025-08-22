@@ -2218,7 +2218,7 @@ to generate a COL_INFO line for a frame.
 val_to_str() handles the most common case:
 
     const char *
-    val_to_str(uint32_t val, const value_string *vs, const char *fmt)
+    val_to_str(wmem_allocator_t* scope, uint32_t val, const value_string *vs, const char *fmt)
 
 If the value 'val' is found in the 'value_string' table pointed to by
 'vs', 'val_to_str' will return the corresponding string; otherwise, it
@@ -2226,7 +2226,7 @@ will use 'fmt' as an 'sprintf'-style format, with 'val' as an argument,
 to generate a string, and will return a pointer to that string.
 You can use it in a call to generate a COL_INFO line for a frame such as
 
-    col_add_fstr(COL_INFO, ", %s", val_to_str(val, table, "Unknown %d"));
+    col_add_fstr(COL_INFO, ", %s", val_to_str(pinfo->pool, val, table, "Unknown %d"));
 
 If you don't need to display 'val' in your fmt string, you can use
 val_to_str_const() which just takes a string constant instead and returns it
@@ -2893,8 +2893,8 @@ upon the conversation index and values inside the request packets.
     conversation = find_or_create_conversation(pinfo);
 
     request_key.conversation = conversation->index;
-    request_key.service = pntoh16(&rxh->serviceId);
-    request_key.callnumber = pntoh32(&rxh->callNumber);
+    request_key.service = pntohu16(&rxh->serviceId);
+    request_key.callnumber = pntohu32(&rxh->callNumber);
 
     request_val = (struct afs_request_val *)g_hash_table_lookup(
         afs_request_hash, &request_key);
@@ -2906,7 +2906,7 @@ upon the conversation index and values inside the request packets.
         *new_request_key = request_key;
 
         request_val = wmem_alloc(wmem_file_scope(), sizeof(struct afs_request_val));
-        request_val -> opcode = pntoh32(&afsh->opcode);
+        request_val -> opcode = pntohu32(&afsh->opcode);
         opcode = request_val->opcode;
 
         g_hash_table_insert(afs_request_hash, new_request_key, request_val);
@@ -2965,6 +2965,27 @@ Example:
         dissector_add_uint("udp.port", FOO_PORT, foo_handle);
     }
 
+2.2.8 Exported PDUs
+
+Wireshark supports Exported PDUs (Protocol Data Units), which allow pre-processed or extracted protocol payloads
+to be re-encapsulated and interpreted as individual packets. This is useful for cases where an external tool extracts
+sessions (e.g., VoIP, HTTP) and reinjects them into a capture for post-analysis.
+
+To handle Exported PDUs, Wireshark uses the `exported_pdu` dissector, which can wrap protocols like TCP, UDP, or any
+other payload into a new frame.
+
+An Exported PDU typically includes the following fields:
+
+- `pdu_type`: The protocol type of the encapsulated PDU.
+- `tvb`: The data buffer containing the payload.
+- `metadata`: (Optional) Custom information passed to the dissector.
+
+Plugins or dissectors can create and register exported PDUs using the internal API or by writing their data in PCAPNG
+format with `block_type` `0x00000BAD`.
+
+This mechanism improves modular analysis and allows tools to reuse Wireshark’s decoding logic.
+
+For more, see: `epan/exported_pdu.h`
 
 
 2.3 Dynamic conversation dissector registration.

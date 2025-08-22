@@ -521,7 +521,7 @@ void proto_report_dissector_bug(const char *format, ...)
 
 /* Encodings for BCD strings
  * Depending if the BCD string has even or odd number of digits
- * we may need to strip of the last digit/High nibble
+ * we may need to strip off the last digit/High nibble.
  */
 #define ENC_BCD_ODD_NUM_DIG     0x00010000
 #define ENC_BCD_SKIP_FIRST      0x00020000
@@ -1107,6 +1107,21 @@ void proto_init(GSList *register_all_plugin_protocols_list,
 
 /** Frees memory used by proto routines. Called at program shutdown */
 extern void proto_cleanup(void);
+
+typedef void (*proto_execute_in_directory_func)(void* param);
+
+/** Execute a function for a protocol in a specific directory.
+ * This will change the current working directory, then execute
+ * the function and then restore the current working directory to
+ * its previous value.  This is intended to be called during protocol
+ * initialization (i.e. not thread safe)
+ *
+ * @param dir The new current working directory
+ * @param func Function to be called once the directory has been successfully changed
+ * @param param Optional parameter to be passed into the handling function
+ */
+WS_DLL_PUBLIC void proto_execute_in_directory(const char* dir, proto_execute_in_directory_func func, void* param);
+
 
 /** This function takes a tree and a protocol id as parameter and
     will return true/false for whether the protocol or any of the filterable
@@ -3575,11 +3590,6 @@ proto_custom_set(proto_tree* tree, GSList *field_id,
  @return allocated display filter string.  Needs to be freed with g_free(...) */
 char *
 proto_custom_get_filter(struct epan_dissect *edt, GSList *field_id, int occurrence);
-
-/** @} */
-
-const char *
-hfinfo_char_value_format_display(int display, char buf[7], uint32_t value);
 
 #ifdef __cplusplus
 }

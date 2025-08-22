@@ -116,7 +116,7 @@ UE-NGAP-IDs/aMF-UE-NGAP-ID ABBREV=AMF_UE_NGAP_ID
 #.FN_FTR ProtocolIE-ID
   if (tree) {
     proto_item_append_text(proto_item_get_parent_nth(actx->created_item, 2), ": %s",
-                           val_to_str_ext(ngap_data->protocol_ie_id, &ngap_ProtocolIE_ID_vals_ext, "unknown (%d)"));
+                           val_to_str_ext(actx->pinfo->pool, ngap_data->protocol_ie_id, &ngap_ProtocolIE_ID_vals_ext, "unknown (%d)"));
   }
 #.END
 
@@ -863,7 +863,7 @@ RecommendedCellItem/timeStayedInCell DISPLAY=BASE_DEC|BASE_UNIT_STRING STRINGS=U
 
 #.FN_FTR TimeStamp
   if (timestamp_tvb) {
-    proto_item_append_text(actx->created_item, " (%s)", tvb_ntp_fmt_ts_sec(timestamp_tvb, 0));
+    proto_item_append_text(actx->created_item, " (%s)", tvb_ntp_fmt_ts_sec(actx->pinfo->pool, timestamp_tvb, 0));
   }
 
 #.TYPE_ATTR
@@ -1027,7 +1027,7 @@ PeriodicRegistrationUpdateTimer TYPE=FT_UINT8 DISPLAY=BASE_CUSTOM STRINGS=CF_FUN
 
 #.FN_FTR VolumeTimedReport-Item/startTimeStamp
   if (timestamp_tvb) {
-    proto_item_append_text(actx->created_item, " (%s)", tvb_ntp_fmt_ts_sec(timestamp_tvb, 0));
+    proto_item_append_text(actx->created_item, " (%s)", tvb_ntp_fmt_ts_sec(actx->pinfo->pool, timestamp_tvb, 0));
   }
 
 #.FN_BODY VolumeTimedReport-Item/endTimeStamp VAL_PTR = &timestamp_tvb
@@ -1036,7 +1036,7 @@ PeriodicRegistrationUpdateTimer TYPE=FT_UINT8 DISPLAY=BASE_CUSTOM STRINGS=CF_FUN
 
 #.FN_FTR VolumeTimedReport-Item/endTimeStamp
   if (timestamp_tvb) {
-    proto_item_append_text(actx->created_item, " (%s)", tvb_ntp_fmt_ts_sec(timestamp_tvb, 0));
+    proto_item_append_text(actx->created_item, " (%s)", tvb_ntp_fmt_ts_sec(actx->pinfo->pool, timestamp_tvb, 0));
   }
 
 #.FN_BODY NRPPa-PDU VAL_PTR = &parameter_tvb
@@ -1858,6 +1858,10 @@ id-SourceSN-to-TargetSN-QMCInfo                        ProtocolIE-ID
 id-QoERVQoEReportingPaths                              ProtocolIE-ID
 id-UserLocationInformationN3IWF-without-PortNumber     ProtocolIE-ID
 id-AUN3DeviceAccessInfo                                ProtocolIE-ID
+id-TAIMBSSupportList                                   ProtocolIE-ID
+id-ExtendedBackupAMFName                               ProtocolIE-ID
+id-ExtendedOldAMF                                      ProtocolIE-ID
+
 
 #.END
 
@@ -2175,6 +2179,7 @@ MBS-NGUFailureIndication                                 N ngap.ies id-MBS-NGUFa
 UserPlaneFailureIndication                               N ngap.ies id-UserPlaneFailureIndication
 UserLocationInformationN3IWF-without-PortNumber          N ngap.ies id-UserLocationInformationN3IWF-without-PortNumber
 AUN3DeviceAccessInfo                                     N ngap.ies id-AUN3DeviceAccessInfo
+Extended-AMFName                                         N ngap.ies id-ExtendedOldAMF
 
 #NGAP-PROTOCOL-EXTENSION
 
@@ -2313,6 +2318,8 @@ MN-only-MDT-collection                                 N ngap.extension id-MN-on
 UserPlaneFailureIndicationReport                       N ngap.extension id-UserPlaneFailureIndicationReport
 QMCConfigInfo                                          N ngap.extension id-SourceSN-to-TargetSN-QMCInfo
 QoERVQoEReportingPaths                                 N ngap.extension id-QoERVQoEReportingPaths
+TAIMBSSupportList                                      N ngap.extension id-TAIMBSSupportList
+Extended-AMFName                                       N ngap.extension id-ExtendedBackupAMFName
 
 #NGAP-ELEMENTARY-PROCEDURE
 

@@ -1325,7 +1325,7 @@ post_update_tecmp_control_messages_cb(void) {
 }
 
 static const char*
-resolve_control_message_id(uint16_t control_message_id) {
+resolve_control_message_id(wmem_allocator_t* allocator, uint16_t control_message_id) {
     const char *tmp = NULL;
 
     if (data_tecmp_ctrlmsgids != NULL) {
@@ -1339,11 +1339,11 @@ resolve_control_message_id(uint16_t control_message_id) {
 
     /* no configured or standardized name known */
     if (tmp != NULL) {
-        return wmem_strdup_printf(wmem_packet_scope(), "%s (0x%04x)", tmp, control_message_id);
+        return wmem_strdup_printf(allocator, "%s (0x%04x)", tmp, control_message_id);
     }
 
     /* just give back unknown */
-    return wmem_strdup_printf(wmem_packet_scope(), "Unknown (0x%04x)", control_message_id);
+    return wmem_strdup_printf(allocator, "Unknown (0x%04x)", control_message_id);
 }
 
 
@@ -1528,7 +1528,7 @@ dissect_tecmp_entry_header(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
     if (!first) {
         col_append_str(pinfo->cinfo, COL_INFO, ", ");
     }
-    col_append_str(pinfo->cinfo, COL_INFO, val_to_str(data_type, tecmp_data_type_names, "Unknown (%d)"));
+    col_append_str(pinfo->cinfo, COL_INFO, val_to_str(pinfo->pool, data_type, tecmp_data_type_names, "Unknown (%d)"));
 
     ti = proto_tree_add_item_ret_uint(tree, hf_tecmp_payload_interface_id, tvb, offset, 4, ENC_BIG_ENDIAN, &tmp);
     add_interface_id_text_and_name(ti, tmp, tvb, offset);
@@ -1665,7 +1665,7 @@ dissect_tecmp_status_config_vendor_data(tvbuff_t *tvb, packet_info *pinfo _U_, p
     int offset = 0;
     unsigned data_length = 0;
 
-    proto_item_append_text(ti_root, " (%s)", val_to_str(vendor_id, tecmp_vendor_ids, "(Unknown Vendor: %d)"));
+    proto_item_append_text(ti_root, " (%s)", val_to_str(pinfo->pool, vendor_id, tecmp_vendor_ids, "(Unknown Vendor: %d)"));
     tree = proto_item_add_subtree(ti_root, ett_tecmp_status_bus_vendor_data);
 
     switch (vendor_id) {
@@ -1711,7 +1711,7 @@ dissect_tecmp_status_bus_vendor_data(tvbuff_t *tvb, packet_info *pinfo _U_, prot
         NULL
     };
 
-    proto_item_append_text(ti_root, " (%s)", val_to_str(vendor_id, tecmp_vendor_ids, "(Unknown Vendor: %d)"));
+    proto_item_append_text(ti_root, " (%s)", val_to_str(pinfo->pool, vendor_id, tecmp_vendor_ids, "(Unknown Vendor: %d)"));
     tree = proto_item_add_subtree(ti_root, ett_tecmp_status_bus_vendor_data);
 
     switch (vendor_id) {
@@ -1853,7 +1853,7 @@ dissect_tecmp_status_device_vendor_data(tvbuff_t *tvb, packet_info *pinfo _U_, p
     nstime_t timestamp;
     int temperature = 0;
 
-    proto_item_append_text(ti_root, " (%s)", val_to_str(vendor_id, tecmp_vendor_ids, "(Unknown Vendor: %d)"));
+    proto_item_append_text(ti_root, " (%s)", val_to_str(pinfo->pool, vendor_id, tecmp_vendor_ids, "(Unknown Vendor: %d)"));
     tree = proto_item_add_subtree(ti_root, ett_tecmp_status_dev_vendor_data);
 
     switch (vendor_id) {
@@ -2035,11 +2035,11 @@ dissect_tecmp_control_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, u
         ti = proto_tree_add_item_ret_uint(tecmp_tree, hf_tecmp_payload_ctrl_msg_device_id, tvb, offset, 2, ENC_BIG_ENDIAN, &device_id);
         add_device_id_text(ti, (uint16_t)device_id);
         ctrl_msg_id = tvb_get_uint16(tvb, offset + 2, ENC_BIG_ENDIAN);
-        proto_tree_add_uint_format(tecmp_tree, hf_tecmp_payload_ctrl_msg_id, tvb, offset + 2, 2, ctrl_msg_id, "Type: %s", resolve_control_message_id(ctrl_msg_id));
+        proto_tree_add_uint_format(tecmp_tree, hf_tecmp_payload_ctrl_msg_id, tvb, offset + 2, 2, ctrl_msg_id, "Type: %s", resolve_control_message_id(pinfo->pool, ctrl_msg_id));
         offset += 4;
 
-        proto_item_append_text(root_ti, ", %s", resolve_control_message_id(ctrl_msg_id));
-        col_append_fstr(pinfo->cinfo, COL_INFO, ", %s", resolve_control_message_id(ctrl_msg_id));
+        proto_item_append_text(root_ti, ", %s", resolve_control_message_id(pinfo->pool, ctrl_msg_id));
+        col_append_fstr(pinfo->cinfo, COL_INFO, ", %s", resolve_control_message_id(pinfo->pool, ctrl_msg_id));
 
         /* offset includes 16 byte header, while length is only for payload */
         int bytes_left = length + (unsigned)16 - (offset - offset_orig);
@@ -2344,7 +2344,7 @@ dissect_tecmp_log_or_replay_stream(tvbuff_t *tvb, packet_info *pinfo, proto_tree
 
         length = tvb_get_uint16(tvb, offset + 12, ENC_BIG_ENDIAN);
         ti_tecmp = proto_tree_add_item(tree, proto_tecmp_payload, tvb, offset, (int)length + 16, ENC_NA);
-        proto_item_append_text(ti_tecmp, " (%s)", val_to_str(data_type, tecmp_data_type_names, "Unknown (%d)"));
+        proto_item_append_text(ti_tecmp, " (%s)", val_to_str(pinfo->pool, data_type, tecmp_data_type_names, "Unknown (%d)"));
         tecmp_tree = proto_item_add_subtree(ti_tecmp, ett_tecmp_payload);
 
         offset += dissect_tecmp_entry_header(tvb, pinfo, tecmp_tree, offset, tecmp_msg_type, data_type, first, &dataflags, &interface_id, &timestamp_ns);

@@ -2024,8 +2024,8 @@ static tap_packet_status lbmr_match_packet(packet_info * pinfo, const lbmr_tag_e
     if ((pinfo->dst.type != AT_IPv4) || (pinfo->dst.len != 4) ||
         (pinfo->src.type != AT_IPv4) || (pinfo->src.len != 4))
         return (TAP_PACKET_DONT_REDRAW);
-    dest_addr_h = pntoh32(pinfo->dst.data);
-    src_addr_h = pntoh32(pinfo->src.data);
+    dest_addr_h = pntohu32(pinfo->dst.data);
+    src_addr_h = pntohu32(pinfo->src.data);
 
     if (IN_MULTICAST(dest_addr_h))
     {
@@ -2975,7 +2975,7 @@ static tap_packet_status lbmr_topic_queries_pattern_stats_tree_packet(stats_tree
     tick_stat_node(tree, lbmr_stat_tree_name_topic_queries_pattern, 0, false);
     pattern_str = wmem_strdup_printf(pinfo->pool, "%s (%s)",
         info->pattern,
-        val_to_str(info->type, lbm_wildcard_pattern_type_short, "UNKN[0x%02x]"));
+        val_to_str(pinfo->pool, info->type, lbm_wildcard_pattern_type_short, "UNKN[0x%02x]"));
     pattern_node = tick_stat_node(tree, pattern_str, lbmr_stats_tree_handle_topic_queries_pattern, true);
     tick_stat_node(tree, address_to_str(pinfo->pool, &pinfo->net_src), pattern_node, true);
     return (TAP_PACKET_REDRAW);
@@ -3002,7 +3002,7 @@ static tap_packet_status lbmr_topic_queries_pattern_receiver_stats_tree_packet(s
     receiver_node = tick_stat_node(tree, address_to_str(pinfo->pool, &pinfo->net_src), lbmr_stats_tree_handle_topic_queries_pattern_receiver, true);
     pattern_str = wmem_strdup_printf(pinfo->pool, "%s (%s)",
         info->pattern,
-        val_to_str(info->type, lbm_wildcard_pattern_type_short, "UNKN[0x%02x]"));
+        val_to_str(pinfo->pool, info->type, lbm_wildcard_pattern_type_short, "UNKN[0x%02x]"));
     tick_stat_node(tree, pattern_str, receiver_node, true);
     return (TAP_PACKET_REDRAW);
 }
@@ -3463,7 +3463,7 @@ static int dissect_lbmr_tmr(tvbuff_t * tvb, int offset, packet_info * pinfo, pro
             break;
     }
     ti = proto_tree_add_none_format(tree, hf_lbmr_tmr, tvb, offset, tmr_len, "%s: %s%s, Length %" PRIu16,
-        name, val_to_str(tmr_type, lbmr_tmr_type, "Unknown (0x%02x)"), info_string, tmr_len);
+        name, val_to_str(pinfo->pool, tmr_type, lbmr_tmr_type, "Unknown (0x%02x)"), info_string, tmr_len);
     tinfo_tree = proto_item_add_subtree(ti, ett_lbmr_tmr);
     proto_tree_add_item(tinfo_tree, hf_lbmr_tmr_len, tvb, offset + O_LBMR_TMR_T_LEN, L_LBMR_TMR_T_LEN, ENC_BIG_ENDIAN);
     proto_tree_add_item(tinfo_tree, hf_lbmr_tmr_type, tvb, offset + O_LBMR_TMR_T_TYPE, L_LBMR_TMR_T_TYPE, ENC_BIG_ENDIAN);
@@ -4119,7 +4119,7 @@ static int dissect_lbmr_tir_entry(tvbuff_t * tvb, int offset, packet_info * pinf
     curr_offset += L_LBMR_TIR_T;
 
     ti = proto_tree_add_none_format(tree, hf_lbmr_tir, tvb, offset, reclen, "%s: %s, Length %u, Index %" PRIu32 ", TTL %" PRIu16,
-        name, val_to_str((transport & LBMR_TIR_TRANSPORT), lbmr_transport_type, "Unknown (0x%02x)"), tlen, idx, ttl);
+        name, val_to_str(pinfo->pool, (transport & LBMR_TIR_TRANSPORT), lbmr_transport_type, "Unknown (0x%02x)"), tlen, idx, ttl);
     tinfo_tree = proto_item_add_subtree(ti, ett_lbmr_tir);
     proto_tree_add_item(tinfo_tree, hf_lbmr_tir_name, tvb, offset, namelen, ENC_ASCII);
     proto_tree_add_item(tinfo_tree, hf_lbmr_tir_transport_opts, tvb, tinfo_offset + O_LBMR_TIR_T_TRANSPORT, L_LBMR_TIR_T_TRANSPORT, ENC_BIG_ENDIAN);
@@ -5182,17 +5182,17 @@ static int dissect_lbmr(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, 
         proto_item * ext_type_item = NULL;
 
         ext_type = tvb_get_uint8(tvb, O_LBMR_HDR_EXT_TYPE_T_EXT_TYPE);
-        ext_string = val_to_str(ext_type, lbmr_ext_packet_type, "Unknown(0x%02x)");
+        ext_string = val_to_str(pinfo->pool, ext_type, lbmr_ext_packet_type, "Unknown(0x%02x)");
         col_append_sep_fstr(pinfo->cinfo, COL_INFO, " ", "ExtType %s", ext_string);
         if (tag_name != NULL)
         {
             ti = proto_tree_add_protocol_format(tree, proto_lbmr, tvb, O_LBMR_HDR_EXT_TYPE_T_VER_TYPE, -1, "LBM Topic Resolution Protocol (Tag: %s): Version %u, Type 0x%x (%s), ExtType %s",
-                tag_name, ver, type, val_to_str(type, lbmr_packet_type, "Unknown(0x%02x)"), ext_string);
+                tag_name, ver, type, val_to_str(pinfo->pool, type, lbmr_packet_type, "Unknown(0x%02x)"), ext_string);
         }
         else
         {
             ti = proto_tree_add_protocol_format(tree, proto_lbmr, tvb, O_LBMR_HDR_EXT_TYPE_T_VER_TYPE, -1, "LBM Topic Resolution Protocol: Version %u, Type 0x%x (%s), ExtType %s",
-                ver, type, val_to_str(type, lbmr_packet_type, "Unknown(0x%02x)"), ext_string);
+                ver, type, val_to_str(pinfo->pool, type, lbmr_packet_type, "Unknown(0x%02x)"), ext_string);
         }
         lbmr_tree = proto_item_add_subtree(ti, ett_lbmr);
         if (tag_name != NULL)
@@ -5307,12 +5307,12 @@ static int dissect_lbmr(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, 
                 if (tag_name != NULL)
                 {
                     ti = proto_tree_add_protocol_format(tree, proto_lbmr, tvb, O_LBMR_HDR_T_VER_TYPE, -1, "LBM Topic Resolution Protocol (Tag: %s): Version %u, Type 0x%x (%s) QQRs %u, QIRs %" PRIu16,
-                        tag_name, ver, type, val_to_str(type, lbmr_packet_type, "Unknown(0x%02x)"), tqrs, tirs);
+                        tag_name, ver, type, val_to_str(pinfo->pool, type, lbmr_packet_type, "Unknown(0x%02x)"), tqrs, tirs);
                 }
                 else
                 {
                     ti = proto_tree_add_protocol_format(tree, proto_lbmr, tvb, O_LBMR_HDR_T_VER_TYPE, -1, "LBM Topic Resolution Protocol: Version %u, Type 0x%x (%s) QQRs %u, QIRs %" PRIu16,
-                        ver, type, val_to_str(type, lbmr_packet_type, "Unknown(0x%02x)"), tqrs, tirs);
+                        ver, type, val_to_str(pinfo->pool, type, lbmr_packet_type, "Unknown(0x%02x)"), tqrs, tirs);
                 }
                 break;
             default:
@@ -5321,17 +5321,17 @@ static int dissect_lbmr(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, 
                     if (rd_keepalive)
                     {
                         ti = proto_tree_add_protocol_format(tree, proto_lbmr, tvb, O_LBMR_HDR_T_VER_TYPE, -1, "LBM Topic Resolution Protocol (Tag: %s): Version %u, Type 0x%x (%s) Unicast Resolver Keepalive",
-                            tag_name, ver, type, val_to_str(type, lbmr_packet_type, "Unknown(0x%02x)"));
+                            tag_name, ver, type, val_to_str(pinfo->pool, type, lbmr_packet_type, "Unknown(0x%02x)"));
                     }
                     else if (topic_mgmt)
                     {
                         ti = proto_tree_add_protocol_format(tree, proto_lbmr, tvb, O_LBMR_HDR_T_VER_TYPE, -1, "LBM Topic Resolution Protocol (Tag: %s): Version %u, Type 0x%x (%s) Topic Management",
-                            tag_name, ver, type, val_to_str(type, lbmr_packet_type, "Unknown(0x%02x)"));
+                            tag_name, ver, type, val_to_str(pinfo->pool, type, lbmr_packet_type, "Unknown(0x%02x)"));
                     }
                     else
                     {
                         ti = proto_tree_add_protocol_format(tree, proto_lbmr, tvb, O_LBMR_HDR_T_VER_TYPE, -1, "LBM Topic Resolution Protocol (Tag: %s): Version %u, Type 0x%x (%s) TQRs %u, TIRs %" PRIu16,
-                            tag_name, ver, type, val_to_str(type, lbmr_packet_type, "Unknown(0x%02x)"), tqrs, tirs);
+                            tag_name, ver, type, val_to_str(pinfo->pool, type, lbmr_packet_type, "Unknown(0x%02x)"), tqrs, tirs);
                     }
                 }
                 else
@@ -5339,17 +5339,17 @@ static int dissect_lbmr(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, 
                     if (rd_keepalive)
                     {
                         ti = proto_tree_add_protocol_format(tree, proto_lbmr, tvb, O_LBMR_HDR_T_VER_TYPE, -1, "LBM Topic Resolution Protocol: Version %u, Type 0x%x (%s) Unicast Resolver Keepalive",
-                            ver, type, val_to_str(type, lbmr_packet_type, "Unknown(0x%02x)"));
+                            ver, type, val_to_str(pinfo->pool, type, lbmr_packet_type, "Unknown(0x%02x)"));
                     }
                     else if (topic_mgmt)
                     {
                         ti = proto_tree_add_protocol_format(tree, proto_lbmr, tvb, O_LBMR_HDR_T_VER_TYPE, -1, "LBM Topic Resolution Protocol: Version %u, Type 0x%x (%s) Topic Management",
-                            ver, type, val_to_str(type, lbmr_packet_type, "Unknown(0x%02x)"));
+                            ver, type, val_to_str(pinfo->pool, type, lbmr_packet_type, "Unknown(0x%02x)"));
                     }
                     else
                     {
                         ti = proto_tree_add_protocol_format(tree, proto_lbmr, tvb, O_LBMR_HDR_T_VER_TYPE, -1, "LBM Topic Resolution Protocol: Version %u, Type 0x%x (%s) TQRs %u, TIRs %" PRIu16,
-                            ver, type, val_to_str(type, lbmr_packet_type, "Unknown(0x%02x)"), tqrs, tirs);
+                            ver, type, val_to_str(pinfo->pool, type, lbmr_packet_type, "Unknown(0x%02x)"), tqrs, tirs);
                     }
                 }
                 break;
@@ -5550,7 +5550,7 @@ void proto_register_lbmr(void)
         { &hf_lbmr_tir_tcp_session_id,
             { "Session ID", "lbmr.tir.tcp.session_id", FT_UINT32, BASE_HEX, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_tir_tcp_port,
-            { "Source Port", "lbmr.tir.tcp.port", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL } },
+            { "Source Port", "lbmr.tir.tcp.port", FT_UINT16, BASE_PT_TCP, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_tir_lbtrm,
             { "LBTRM Transport", "lbmr.tir.lbtrm", FT_NONE, BASE_NONE, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_tir_lbtrm_src_addr,
@@ -5560,7 +5560,7 @@ void proto_register_lbmr(void)
         { &hf_lbmr_tir_lbtrm_session_id,
             { "Session ID", "lbmr.tir.lbtrm.sessid", FT_UINT32, BASE_HEX, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_tir_lbtrm_udp_dest_port,
-            { "Destination Port", "lbmr.tir.lbtrm.dport", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL } },
+            { "Destination Port", "lbmr.tir.lbtrm.dport", FT_UINT16, BASE_PT_UDP, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_tir_lbtrm_src_ucast_port,
             { "Source Port", "lbmr.tir.lbtrm.sport", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_tir_lbtru,
@@ -5630,7 +5630,7 @@ void proto_register_lbmr(void)
         { &hf_lbmr_topt_ume_store_tcp_port,
             { "Store TCP Port", "lbmr.topt.ume.store_tcp_port", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_topt_ume_src_tcp_port,
-            { "Source TCP Port", "lbmr.topt.ume.src_tcp_port", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL } },
+            { "Source TCP Port", "lbmr.topt.ume.src_tcp_port", FT_UINT16, BASE_PT_TCP, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_topt_ume_store_tcp_addr,
             { "Store TCP Address", "lbmr.topt.ume.store_tcp_addr", FT_IPv4, BASE_NONE, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_topt_ume_src_tcp_addr,
@@ -5656,7 +5656,7 @@ void proto_register_lbmr(void)
         { &hf_lbmr_topt_ume_store_grp_idx,
             { "Group Index", "lbmr.topt.ume_store.grp_idx", FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_topt_ume_store_store_tcp_port,
-            { "Store TCP Port", "lbmr.topt.ume_store.store_tcp_port", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL } },
+            { "Store TCP Port", "lbmr.topt.ume_store.store_tcp_port", FT_UINT16, BASE_PT_TCP, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_topt_ume_store_store_idx,
             { "Store Index", "lbmr.topt.ume_store.store_idx", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_topt_ume_store_store_ip_addr,
@@ -5692,7 +5692,7 @@ void proto_register_lbmr(void)
         { &hf_lbmr_topt_latejoin_flags_acktosrc,
             { "Send ACKs to Source", "lbmr.topt.latejoin.flags.acktosrc", FT_BOOLEAN, L_LBMR_TOPIC_OPT_LATEJOIN_T_FLAGS * 8, TFS(&tfs_set_notset), LBMR_TOPIC_OPT_LATEJOIN_FLAG_ACKTOSRC, "If set, ACKs are sent to source", HFILL } },
         { &hf_lbmr_topt_latejoin_src_tcp_port,
-            { "Source TCP Port", "lbmr.topt.latejoin.src_tcp_port", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL } },
+            { "Source TCP Port", "lbmr.topt.latejoin.src_tcp_port", FT_UINT16, BASE_PT_TCP, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_topt_latejoin_reserved,
             { "Reserved", "lbmr.topt.latejoin.reserved", FT_UINT16, BASE_HEX, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_topt_latejoin_src_ip_addr,
@@ -5810,7 +5810,7 @@ void proto_register_lbmr(void)
         { &hf_lbmr_topt_ulb_src_ip_addr,
             { "Source IP Address", "lbmr.topt.ulb.src_ip_addr", FT_IPv4, BASE_NONE, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_topt_ulb_src_tcp_port,
-            { "Source TCP Port", "lbmr.topt.ulb.src_tcp_port", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL } },
+            { "Source TCP Port", "lbmr.topt.ulb.src_tcp_port", FT_UINT16, BASE_PT_TCP, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_topt_ulb_reserved,
             { "Reserved", "lbmr.topt.ulb.reserved", FT_UINT16, BASE_HEX, NULL, 0x0, NULL, HFILL } },
         { &hf_lbmr_topt_ctxinstq,

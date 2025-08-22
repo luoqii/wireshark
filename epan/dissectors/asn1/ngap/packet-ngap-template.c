@@ -1,7 +1,7 @@
 /* packet-ngap.c
  * Routines for NG-RAN NG Application Protocol (NGAP) packet dissection
  * Copyright 2018, Anders Broman <anders.broman@ericsson.com>
- * Copyright 2018-2024, Pascal Quantin <pascal@wireshark.org>
+ * Copyright 2018-2025, Pascal Quantin <pascal@wireshark.org>
  *
  * Wireshark - Network traffic analyzer
  * By Gerald Combs <gerald@wireshark.org>
@@ -9,7 +9,7 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
- * References: 3GPP TS 38.413 v18.4.0 (2024-09)
+ * References: 3GPP TS 38.413 v18.6.0 (2025-06)
  */
 
 #include "config.h"
@@ -913,7 +913,7 @@ ngap_stats_tree_packet(stats_tree* st, packet_info* pinfo _U_,
 
     tick_stat_node(st, st_str_packets, 0, false);
     stats_tree_tick_pivot(st, st_node_packet_types,
-                          val_to_str(pi->ngap_mtype, mtype_names,
+                          val_to_str(pinfo->pool, pi->ngap_mtype, mtype_names,
                                      "Unknown packet type (%d)"));
     return TAP_PACKET_REDRAW;
 }
@@ -1082,10 +1082,10 @@ dissect_ngap_media_type(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
     goto found;
   cur_tok = json_get_array(json_data, tokens, "pduSessionList");
   if (cur_tok) {
-    int i, count;
-    count = json_get_array_len(cur_tok);
-    for (i = 0; i < count; i++) {
-      jsmntok_t *array_tok = json_get_array_index(cur_tok, i);
+    const int count = json_get_array_len(cur_tok);
+    jsmntok_t* array_tok = json_get_array_index(cur_tok, 0);
+    for (int i = 0; i < count; i++, array_tok = json_get_next_object(array_tok)) {
+
       if (find_n2_info_content(json_data, array_tok, "n2InfoContent",
                                content_info->content_id, &subdissector))
         goto found;

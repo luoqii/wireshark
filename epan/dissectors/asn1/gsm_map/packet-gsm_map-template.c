@@ -233,7 +233,7 @@ static uint8_t sms_encoding;
 static int dissect_invokeData(proto_tree *tree, tvbuff_t *tvb, int offset, asn1_ctx_t *actx);
 static int dissect_returnResultData(proto_tree *tree, tvbuff_t *tvb, int offset, asn1_ctx_t *actx);
 static int dissect_returnErrorData(proto_tree *tree, tvbuff_t *tvb, int offset, asn1_ctx_t *actx);
-const char* gsm_map_opr_code(uint32_t val, proto_item *item);
+static const char* gsm_map_opr_code(uint32_t val, proto_item *item);
 
 typedef struct {
   struct tcap_private_t * tcap_private;
@@ -1023,7 +1023,7 @@ dissect_gsm_map_msisdn(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree)
       switch(na){
       case 1:
           /* international number */
-          dissect_e164_msisdn(tvb, tree, 1, tvb_reported_length(tvb)-1, E164_ENC_BCD);
+          dissect_e164_msisdn(tvb, pinfo, tree, 1, tvb_reported_length(tvb)-1, E164_ENC_BCD);
       break;
       default:
           proto_tree_add_item(tree, hf_gsm_map_address_digits, tvb, 1, -1, ENC_BCD_DIGITS_0_9|ENC_LITTLE_ENDIAN);
@@ -3419,7 +3419,6 @@ void proto_register_gsm_map(void) {
   gsm_map_tap = register_tap("gsm_map");
 
 #include "packet-gsm_map-dis-tab.c"
-  oid_add_from_string("ericsson-gsm-Map-Ext","1.2.826.0.1249.58.1.0" );
   oid_add_from_string("accessTypeNotAllowed-id","1.3.12.2.1107.3.66.1.2");
   /*oid_add_from_string("map-ac networkLocUp(1) version3(3)","0.4.0.0.1.0.1.3" );
    *

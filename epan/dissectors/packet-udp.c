@@ -854,8 +854,8 @@ capture_udp(const unsigned char *pd _U_, int offset _U_, int len _U_, capture_pa
 
     capture_dissector_increment_count(cpinfo, proto_udp);
 
-    src_port = pntoh16(&pd[offset]);
-    dst_port = pntoh16(&pd[offset+2]);
+    src_port = pntohu16(&pd[offset]);
+    dst_port = pntohu16(&pd[offset+2]);
 
     if (src_port > dst_port) {
         low_port = dst_port;
@@ -1123,6 +1123,15 @@ dissect(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, uint32_t ip_proto)
                 SET_CKSUM_VEC_PTR(cksum_vec[2], (const uint8_t *)&phdr, 8);
                 break;
 
+            case AT_ILNP_NID:
+                if (ip_proto == IP_PROTO_UDP)
+                    phdr[0] = g_htonl(udph->uh_ulen);
+                else
+                    phdr[0] = g_htonl(reported_len);
+                phdr[1] = g_htonl(ip_proto);
+                SET_CKSUM_VEC_PTR(cksum_vec[2], (const uint8_t *)&phdr, 8);
+                break;
+
             default:
                 /* UDP runs only atop IPv4 and IPv6.... */
                 DISSECTOR_ASSERT_NOT_REACHED();
@@ -1265,6 +1274,31 @@ dissect(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, uint32_t ip_proto)
          */
         pinfo->stream_id = udpd->stream;
 
+        /* Follow-up of the conversation over ICMP errors.
+         * When coming over an error packet (typically ICMP), we want to save the
+         * conversation type, and have a specific tracking then we can match with
+         * ordinary, non error packets.
+         */
+        if (pinfo->flags.in_error_pkt) {
+            /* Save the conversation type */
+            pinfo->track_ctype = CONVERSATION_UDP;
+
+            conversation_t *err_conv = NULL;
+            err_conv = find_conversation_err_pkts(pinfo->num, CONVERSATION_UDP, udpd->stream, conv->conv_index);
+            if(!err_conv) {
+                /* Create the conversation tracking the ordinary UDP conversation */
+                err_conv = conversation_new_err_pkts(pinfo->num, CONVERSATION_UDP, udpd->stream, conv->conv_index);
+
+                /* Align the setup_frame with the UDP conversation's one */
+                err_conv->setup_frame = conv->setup_frame;
+            }
+            else if (pinfo->num > err_conv->last_frame) {
+                /* If we have multiple error packets related to this same UDP conversation,
+                 * extend the tracker conversation.
+                 */
+                err_conv->last_frame = pinfo->num;
+            }
+        }
     }
 
     tap_queue_packet(udp_tap, pinfo, udph);

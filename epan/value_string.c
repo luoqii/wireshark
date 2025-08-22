@@ -22,6 +22,12 @@
 
 #include <wsutil/wslog.h>
 
+ /*
+  * List of registered value strings for use outside of dissectors
+  */
+static GHashTable* registered_vs;
+static GHashTable* registered_vs_ext;
+
 
 /* Sort function that can be used with dynamically created value_strings */
 int
@@ -43,22 +49,8 @@ value_str_value_compare(const void* a, const void* b)
 /* Tries to match val against each element in the value_string array vs.
    Returns the associated string ptr on a match.
    Formats val with fmt, and returns the resulting string, on failure. */
-const char *
-val_to_str(const uint32_t val, const value_string *vs, const char *fmt)
-{
-    const char *ret;
-
-    DISSECTOR_ASSERT(fmt != NULL);
-
-    ret = try_val_to_str(val, vs);
-    if (ret != NULL)
-        return ret;
-
-    return wmem_strdup_printf(wmem_packet_scope(), fmt, val);
-}
-
 char *
-val_to_str_wmem(wmem_allocator_t *scope, const uint32_t val, const value_string *vs, const char *fmt)
+val_to_str(wmem_allocator_t *scope, const uint32_t val, const value_string *vs, const char *fmt)
 {
     const char *ret;
 
@@ -122,26 +114,10 @@ try_val_to_str(const uint32_t val, const value_string *vs)
     return try_val_to_str_idx(val, vs, &ignore_me);
 }
 
-const char *
-char_val_to_str(char val, const value_string *vs, const char *msg)
-{
-    const char *ret;
-    char buf[7];
-
-    DISSECTOR_ASSERT(msg != NULL);
-
-    ret = try_val_to_str(val, vs);
-    if (ret != NULL)
-        return ret;
-
-    return wmem_strdup_printf(wmem_packet_scope(), "%s: %s",
-            msg, hfinfo_char_value_format_display(BASE_HEX, buf, val));
-}
-
 /* 64-BIT VALUE STRING */
 
 const char *
-val64_to_str(const uint64_t val, const val64_string *vs, const char *fmt)
+val64_to_str_wmem(wmem_allocator_t* scope, const uint64_t val, const val64_string *vs, const char *fmt)
 {
     const char *ret;
 
@@ -151,7 +127,7 @@ val64_to_str(const uint64_t val, const val64_string *vs, const char *fmt)
     if (ret != NULL)
         return ret;
 
-    return wmem_strdup_printf(wmem_packet_scope(), fmt, val);
+    return wmem_strdup_printf(scope, fmt, val);
 }
 
 const char *
@@ -338,22 +314,8 @@ try_val_to_str_idx_ext(const uint32_t val, value_string_ext *vse, int *idx)
 }
 
 /* Like val_to_str for extended value strings */
-const char *
-val_to_str_ext(const uint32_t val, value_string_ext *vse, const char *fmt)
-{
-    const char *ret;
-
-    DISSECTOR_ASSERT(fmt != NULL);
-
-    ret = try_val_to_str_ext(val, vse);
-    if (ret != NULL)
-        return ret;
-
-    return wmem_strdup_printf(wmem_packet_scope(), fmt, val);
-}
-
 char *
-val_to_str_ext_wmem(wmem_allocator_t *scope, const uint32_t val, value_string_ext *vse, const char *fmt)
+val_to_str_ext(wmem_allocator_t *scope, const uint32_t val, value_string_ext *vse, const char *fmt)
 {
     const char *ret;
 
@@ -618,21 +580,6 @@ try_val64_to_str_idx_ext(const uint64_t val, val64_string_ext *vse, int *idx)
     return NULL;
 }
 
-/* Like val_to_str for extended value strings */
-const char *
-val64_to_str_ext(const uint64_t val, val64_string_ext *vse, const char *fmt)
-{
-    const char *ret;
-
-    DISSECTOR_ASSERT(fmt != NULL);
-
-    ret = try_val64_to_str_ext(val, vse);
-    if (ret != NULL)
-        return ret;
-
-    return wmem_strdup_printf(wmem_packet_scope(), fmt, val);
-}
-
 char *
 val64_to_str_ext_wmem(wmem_allocator_t *scope, const uint64_t val, val64_string_ext *vse, const char *fmt)
 {
@@ -808,7 +755,7 @@ _try_val64_to_str_ext_init(const uint64_t val, val64_string_ext *vse)
 
 /* Like val_to_str except for string_string */
 const char *
-str_to_str(const char *val, const string_string *vs, const char *fmt)
+str_to_str_wmem(wmem_allocator_t* scope, const char *val, const string_string *vs, const char *fmt)
 {
     const char *ret;
 
@@ -818,7 +765,7 @@ str_to_str(const char *val, const string_string *vs, const char *fmt)
     if (ret != NULL)
         return ret;
 
-    return wmem_strdup_printf(wmem_packet_scope(), fmt, val);
+    return wmem_strdup_printf(scope, fmt, val);
 }
 
 /* Like try_val_to_str_idx except for string_string */
@@ -856,7 +803,7 @@ try_str_to_str(const char *val, const string_string *vs)
 
 /* Like val_to_str except for range_string */
 const char *
-rval_to_str(const uint32_t val, const range_string *rs, const char *fmt)
+rval_to_str_wmem(wmem_allocator_t* scope, const uint32_t val, const range_string *rs, const char *fmt)
 {
     const char *ret = NULL;
 
@@ -866,7 +813,7 @@ rval_to_str(const uint32_t val, const range_string *rs, const char *fmt)
     if(ret != NULL)
         return ret;
 
-    return wmem_strdup_printf(wmem_packet_scope(), fmt, val);
+    return wmem_strdup_printf(scope, fmt, val);
 }
 
 /* Like val_to_str_const except for range_string */
@@ -968,7 +915,7 @@ try_time_val_to_str(const nstime_t *val, const time_value_string *vs)
 
 /* Like val_to_str except for bytes_string */
 const char *
-bytesval_to_str(const uint8_t *val, const size_t val_len, const bytes_string *bs, const char *fmt)
+bytesval_to_str_wmem(wmem_allocator_t* scope, const uint8_t *val, const size_t val_len, const bytes_string *bs, const char *fmt)
 {
     const char *ret;
 
@@ -983,7 +930,7 @@ bytesval_to_str(const uint8_t *val, const size_t val_len, const bytes_string *bs
      * Though for bytes I guess most of the time you want to show "Unknown"
      * anyway rather than "Unknown (\x13\x37...)"
      */
-    return wmem_strdup(wmem_packet_scope(), fmt);
+    return wmem_strdup(scope, fmt);
 }
 
 /* Like try_val_to_str except for bytes_string */
@@ -1007,7 +954,7 @@ try_bytesval_to_str(const uint8_t *val, const size_t val_len, const bytes_string
 /* Like val_to_str, but tries to find a prefix (instead of an exact) match
    of any prefix from the bytes_string array bs against the haystack. */
 const char *
-bytesprefix_to_str(const uint8_t *haystack, const size_t haystack_len, const bytes_string *bs, const char *fmt)
+bytesprefix_to_str(wmem_allocator_t* scope, const uint8_t *haystack, const size_t haystack_len, const bytes_string *bs, const char *fmt)
 {
     const char *ret;
 
@@ -1018,7 +965,7 @@ bytesprefix_to_str(const uint8_t *haystack, const size_t haystack_len, const byt
         return ret;
 
     /* XXX See note at bytesval_to_str. */
-    return wmem_strdup(wmem_packet_scope(), fmt);
+    return wmem_strdup(scope, fmt);
 }
 
 /* Like try_val_to_str, but tries to find a prefix (instead of an exact) match
@@ -1040,6 +987,49 @@ try_bytesprefix_to_str(const uint8_t *haystack, const size_t haystack_len, const
 
     return NULL;
 }
+
+void
+value_string_externals_init(void)
+{
+    registered_vs = g_hash_table_new(g_str_hash, g_str_equal);
+    registered_vs_ext = g_hash_table_new(g_str_hash, g_str_equal);
+}
+
+void value_string_externals_cleanup(void)
+{
+    g_hash_table_destroy(registered_vs);
+    g_hash_table_destroy(registered_vs_ext);
+}
+
+void
+register_external_value_string(const char* name, const value_string* vs)
+{
+    g_hash_table_insert(registered_vs, (void*)name, (void*)vs);
+}
+
+value_string*
+vs_get_external_value_string(const char* name)
+{
+    value_string* ret = (value_string*)g_hash_table_lookup(registered_vs, name);
+    DISSECTOR_ASSERT(ret != NULL);
+    return ret;
+}
+
+void
+register_external_value_string_ext(const char* name, const value_string_ext* vse)
+{
+    g_hash_table_insert(registered_vs_ext, (void*)name, (void*)vse);
+}
+
+value_string_ext*
+get_external_value_string_ext(const char* name)
+{
+    value_string_ext* ret = (value_string_ext*)g_hash_table_lookup(registered_vs_ext, name);
+    DISSECTOR_ASSERT(ret != NULL);
+    return ret;
+}
+
+
 
 /* MISC */
 

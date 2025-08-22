@@ -9,30 +9,37 @@
 # extracting artifacts somewhere under CMAKE_BINARY_DIR, but CMake
 # doesn't allow source or build paths in INTERFACE_INCLUDE_DIRECTORIES.
 #
-if (NOT IS_DIRECTORY ${WIRESHARK_BASE_DIR})
-# IS_WRITABLE requires CMake 3.29
-# if (NOT IS_DIRECTORY ${WIRESHARK_BASE_DIR} OR NOT IS_WRITABLE ${WIRESHARK_BASE_DIR})
-  message(FATAL_ERROR "Please make sure ${WIRESHARK_BASE_DIR} is a directory that is writable by you.")
+
+if (APPLE)
+  if (NOT IS_DIRECTORY ${WIRESHARK_BASE_DIR})
+  # IS_WRITABLE requires CMake 3.29
+  # if (NOT IS_DIRECTORY ${WIRESHARK_BASE_DIR} OR NOT IS_WRITABLE ${WIRESHARK_BASE_DIR})
+    message(FATAL_ERROR "Please make sure ${WIRESHARK_BASE_DIR} is a directory that is writable by you.")
+  endif()
+  set(ARTIFACTS_DIR ${WIRESHARK_BASE_DIR}/macos-universal-master)
+  set(download_prefix "https://dev-libs.wireshark.org/macos/packages")
+  # Make sure we look for our fetched artifacts first.
+  set(Asciidoctor_ROOT ${ARTIFACTS_DIR})
+  file(MAKE_DIRECTORY ${ARTIFACTS_DIR}/etc/xml)
+  set(WIRESHARK_XML_CATALOG_PATH ${ARTIFACTS_DIR}/etc/xml/catalog.xml)
+  set(OSX_APP_LIBPREFIX ${ARTIFACTS_DIR})
+elseif(WIN32)
+  set(ARTIFACTS_DIR ${_PROJECT_LIB_DIR})
+  set(download_prefix "https://dev-libs.wireshark.org/windows/packages")
+  # Make sure we look for our fetched artifacts first.
+  set(asciidoctor_version "2.0.23-1")
+  set(Asciidoctor_ROOT ${ARTIFACTS_DIR}/asciidoctor-bundle-${asciidoctor_version}-x64-windows-ws)
+  set(WIRESHARK_XML_CATALOG_PATH ${Asciidoctor_ROOT}/etc/xml/catalog.xml)
+else()
+  message(FATAL_ERROR "No artifacts for this system")
 endif()
 
 set(DOWNLOAD_DIR ${CMAKE_SOURCE_DIR}/_download)
 file(MAKE_DIRECTORY ${DOWNLOAD_DIR})
-set(ARTIFACTS_DIR ${WIRESHARK_BASE_DIR}/macos-universal-master)
+
 file(MAKE_DIRECTORY ${ARTIFACTS_DIR})
-file(MAKE_DIRECTORY ${ARTIFACTS_DIR}/etc/xml)
 list(APPEND CMAKE_PREFIX_PATH ${ARTIFACTS_DIR})
 set(manifest_file ${ARTIFACTS_DIR}/manifest.txt)
-
-# Make sure we look for our fetched artifacts first.
-set(Asciidoctor_ROOT ${ARTIFACTS_DIR})
-set(WIRESHARK_XML_CATALOG_PATH ${ARTIFACTS_DIR}/etc/xml/catalog.xml)
-
-if(APPLE)
-  set(download_prefix "https://dev-libs.wireshark.org/macos/packages")
-  set(OSX_APP_LIBPREFIX ${ARTIFACTS_DIR})
-else()
-  message(FATAL_ERROR "No artifacts for this system")
-endif()
 
 set(artifacts)
 
@@ -96,9 +103,22 @@ function(update_artifacts)
     return()
   endif()
   # Start with a clean slate.
-  foreach(subdir IN ITEMS bin etc include lib libexec share)
-    file(REMOVE_RECURSE "${ARTIFACTS_DIR}/${subdir}")
-  endforeach()
+  if(APPLE)
+    foreach(subdir IN ITEMS bin etc include lib libexec share)
+      file(REMOVE_RECURSE "${ARTIFACTS_DIR}/${subdir}")
+    endforeach()
+  elseif(WIN32)
+    # XXX We need to do this more cleanly. We might want to install our Windows
+    # libraries in a common root similar to what we do for macOS.
+    file(GLOB artifact_dirs
+      ${ARTIFACTS_DIR}/asciidoctor-bundle-*-windows-ws
+      ${ARTIFACTS_DIR}/falcosecurity-libs-*-ws
+      ${ARTIFACTS_DIR}/falcosecurity-plugins-*-ws
+    )
+    foreach(subdir IN ITEMS asciidoctor-bundle-${asciidoctor_version}-x64-windows-ws)
+      file(REMOVE_RECURSE "${ARTIFACTS_DIR}/${subdir}")
+    endforeach()
+  endif()
   download_artifacts(download_ok)
   if(${download_ok})
     # XXX Should we generate the manifest file using configure_file?
@@ -112,12 +132,12 @@ if(APPLE)
   add_artifact(brotli/brotli-1.1.0-1-macos-universal.tar.xz afb52675ff9d26a44776b1c53ddb03cf6079ee452ee12a6d2844a58256e7704b)
   add_artifact(c-ares/c-ares-1.34.5-1-macos-universal.tar.xz 158fc19f00529a568738cad60c47bc19374de18935fe12ac5f39364ba2cb0b90)
   add_artifact(glib/glib-bundle-2.84.1-2-macos-universal.tar.xz 4f0d13491cdb1ae1036db190fa9ea60c0781d53453925f727aec1a3b3b93abe7)
-  add_artifact(gnutls/gnutls-bundle-3.8.9-1-macos-universal.tar.xz f713df06de9b077ba60d21fc1e0558382a76718fa2853f0e8155639e744f9e9b)
+  add_artifact(gnutls/gnutls-bundle-3.8.10-1-macos-universal.tar.xz 1d030f5ee68e29de8982386e6b0ad2c1eb2e1e31e50ca3e6d0c4a9cf6c7ed050)
   add_artifact(libgcrypt/libgcrypt-bundle-1.11.0-1-macos-universal.tar.xz a93c989a18be505f78021be45abc1740b4a5cb55505a539fd0b4b1d970b6d183)
   add_artifact(libilbc/libilbc-2.0.2-1-macos-universal.tar.xz cf7c5f34c2101af1fe5b788cce6425b258cdaec03dc3301c4a8d2774a0c06801)
   add_artifact(libmaxminddb/libmaxminddb-1.12.2-1-macos-universal.tar.xz 722af5c180940cf0fcb7588ec2e824a56cc7dc6ed752c9ec263481c78345c187)
   add_artifact(libsmi/libsmi-0.4.8-1-macos-universal.tar.xz 3ebe3d5525bf356eafb1ed29cb9469f13a0b5b7cdae1e81f23da9b996e11a1cc)
-  add_artifact(libssh/libssh-0.11.1-1-macos-universal.tar.xz c7c54b66c92f3197cfb7d5154eb6c279c7178ee0e120397aa5107db2118cb661)
+  add_artifact(libssh/libssh-0.11.2-1-macos-universal.tar.xz 5b59e31bb5d4c4372f5a46d8af025a228796ff979a5e0d7aeda26d633b8e5fdb)
   add_artifact(lua/lua-5.4.7-1-macos-universal.tar.xz 8027d98a0782b4ccb8b75fe99d1431bd57be9a0ab819d73cdf66e654cd31fae8)
   add_artifact(lz4/lz4-1.10.0-1-macos-universal.tar.xz f4bf1eb9a67f27afeb4f35d9ffc171493a34792b76c239581cdd2b58fec62711)
   add_artifact(minizip-ng/minizip-ng-4.0.10-1-macos-universal.tar.xz 8da7dc1f6bc97a0ad177a9753ee08353aac03a7d5ae736e49f1a3f5f921f4440)
@@ -129,6 +149,7 @@ if(APPLE)
   add_artifact(snappy/snappy-1.2.2-1-macos-universal.tar.xz f68155652ba367f44ff66aacff88679d577e483a1a4bdc167799bd78951daf85)
   add_artifact(spandsp/spandsp-0.0.6-1-macos-universal.tar.xz 8d3371e79eeff754f93320080fb9efd4aa80ed2718411c98360a0c431ff88563)
   add_artifact(speexdsp/speexdsp-1.2.1-1-macos-universal.tar.xz 001933a7631fdafa0cca621891a8ad33ccc91fc33d756753a38a7d3f324ce397)
+  add_artifact(xxhash/xxhash-0.8.3-1-macos-universal.tar.xz ae61f3faffe5d17179b593891d4294908b4c4afa7be18823a4ff60e80c8ef70f)
   add_artifact(zlib-ng/zlib-ng-2.2.4-1-macos-universal.tar.xz 52f1f054be4c97320b4417ebad5d4d8e278f615efac8fbec94abb4986100cbb0)
   add_artifact(zstd/zstd-1.5.7-1-macos-universal.tar.xz a7bfa6fdc228badbe30da5b89fc875e1c9bad52ee692df117aba9721798249d0)
 
@@ -136,9 +157,32 @@ if(APPLE)
   add_external_artifact(https://github.com/docbook/xslt10-stylesheets/releases/download/release%2F1.79.2/docbook-xsl-1.79.2.zip 853dce096f5b32fe0b157d8018d8fecf92022e9c79b5947a98b365679c7e31d7 etc/xml)
   add_external_artifact(https://github.com/docbook/xslt10-stylesheets/releases/download/release%2F1.79.2/docbook-xsl-nons-1.79.2.zip ba41126fbf4021e38952f3074dc87cdf1e50f3981280c7a619f88acf31456822 etc/xml)
 
-  if(BUILD_stratoshark OR BUILD_falcodump)
+  file(MAKE_DIRECTORY ${ARTIFACTS_DIR}/sparkle)
+  add_external_artifact(https://github.com/sparkle-project/Sparkle/releases/download/2.7.1/Sparkle-2.7.1.tar.xz f7385c3e8c70c37e5928939e6246ac9070757b4b37a5cb558afa1b0d5ef189de sparkle)
+
+  if(BUILD_stratoshark OR BUILD_strato OR BUILD_falcodump)
     add_artifact(falcosecurity-libs/falcosecurity-libs-bundle-0.21.0-1-macos-universal.tar.xz b0ac98e6f1906f891a8aa8c552639a1d6595aee26adfb730da9ff643d5e4bfaf)
-    add_artifact(falcosecurity-libs/falcosecurity-plugins-2025-06-11-1-macos-universal.tar.xz e23c3b3c469f9cc84d509d7880653b8e0743d11a20105188402fec5cef0fde9d)
+    add_artifact(falcosecurity-libs/falcosecurity-plugins-2025-08-20-1-macos-universal.tar.xz 7391aa5337914acaac1fd4756ec95c075ca1ece65c0fa6f60d3e34ba24844f4c)
+  endif()
+elseif(WIN32)
+# To do:
+# - Move the rest of win-setup.ps1 here.
+  add_artifact(asciidoctor/asciidoctor-bundle-${asciidoctor_version}-x64-windows-ws.7z d1dae73dd61ded005b8f1f2d7d19bd08e6edbeed216428e8ab898267229d150b)
+
+  add_external_artifact(https://docbook.org/xml/5.0.1/docbook-5.0.1.zip 7af9df452410e035a3707883e43039b4062f09dc2f49f2e986da3e4c0386e3c7 asciidoctor-bundle-${asciidoctor_version}-x64-windows-ws/etc/xml)
+  add_external_artifact(https://github.com/docbook/xslt10-stylesheets/releases/download/release%2F1.79.2/docbook-xsl-1.79.2.zip 853dce096f5b32fe0b157d8018d8fecf92022e9c79b5947a98b365679c7e31d7 asciidoctor-bundle-${asciidoctor_version}-x64-windows-ws/etc/xml)
+  add_external_artifact(https://github.com/docbook/xslt10-stylesheets/releases/download/release%2F1.79.2/docbook-xsl-nons-1.79.2.zip ba41126fbf4021e38952f3074dc87cdf1e50f3981280c7a619f88acf31456822 asciidoctor-bundle-${asciidoctor_version}-x64-windows-ws/etc/xml)
+
+  if(WIRESHARK_TARGET_PLATFORM STREQUAL "x64")
+    if(BUILD_stratoshark OR BUILD_strato OR BUILD_falcodump)
+      add_artifact(falcosecurity-libs/falcosecurity-libs-0.21.0-1-x64-ws.7z 917eca3b676e1201d48acfbb72660fcd7af4ce40fe5112bb1ce689d957c18c4a)
+      add_artifact(falcosecurity-libs/falcosecurity-plugins-2025-08-20-1-x64-ws.7z 1c1fc0f94767a79a7d12478b73a937fd363931ebcd457cd1fab437a11410e076)
+    endif()
+  else()
+    if(BUILD_stratoshark OR BUILD_strato OR BUILD_falcodump)
+      add_artifact(falcosecurity-libs/falcosecurity-libs-0.21.0-1-arm64-ws.7z 222a691e704989144c91b08612ab7e0af1a6721a7f0bc3ac17452de3342a654e)
+      add_artifact(falcosecurity-libs/falcosecurity-plugins-2025-08-20-1-arm64-ws.7z e2f36b0056139f51d11bbc1fc81a811809ddf54964508e45c62a96d74722c718)
+    endif()
   endif()
 endif()
 
@@ -148,3 +192,4 @@ unset(manifest_file)
 unset(download_prefix)
 unset(artifacts)
 unset(external_artifacts)
+unset(asciidoctor_version)

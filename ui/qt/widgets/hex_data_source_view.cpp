@@ -52,6 +52,7 @@ HexDataSourceView::HexDataSourceView(const QByteArray &data, packet_char_enc enc
     encoding_(encoding),
     hovered_byte_offset_(-1),
     marked_byte_offset_(-1),
+    selected_byte_offset_(-1),
     proto_start_(0),
     proto_len_(0),
     field_start_(0),
@@ -127,7 +128,7 @@ void HexDataSourceView::createContextMenu()
 
     QActionGroup * encoding_actions = new QActionGroup(this);
     if (application_flavor_is_wireshark()) {
-        action_bytes_enc_from_packet_ = encoding_actions->addAction(tr("Show text based on packet"));
+        action_bytes_enc_from_packet_ = encoding_actions->addAction(tr("Show text as frame encoding"));
     } else {
         action_bytes_enc_from_packet_ = encoding_actions->addAction(tr("Show text based on event"));
     }
@@ -205,6 +206,11 @@ void HexDataSourceView::markField(int start, int length, bool scroll_to)
         scrollToByte(start);
     }
     viewport()->update();
+}
+
+void HexDataSourceView::saveSelected(int start)
+{
+    selected_byte_offset_ = start;
 }
 
 void HexDataSourceView::markAppendix(int start, int length)
@@ -345,6 +351,7 @@ void HexDataSourceView::mousePressEvent (QMouseEvent *event) {
     const int byte_offset = byteOffsetAtPixel(event->pos());
     setUpdatesEnabled(false);
     emit byteSelected(byte_offset);
+    selected_byte_offset_ = byte_offset;
     if (hover_mode && byte_offset >= 0) {
         // Switch to marked mode.
         hovered_byte_offset_ = -1;
@@ -373,6 +380,8 @@ void HexDataSourceView::leaveEvent(QEvent *event)
 {
     hovered_byte_offset_ = -1;
     emit byteHovered(hovered_byte_offset_);
+
+    emit byteSelected(selected_byte_offset_);
 
     viewport()->update();
     QAbstractScrollArea::leaveEvent(event);
@@ -513,6 +522,7 @@ void HexDataSourceView::drawLine(QPainter *painter, const int offset, const int 
         int np_start = 0;
         int np_len = 0;
         char c;
+        int bytes_enc;
 
         for (int tvb_pos = offset; tvb_pos <= max_tvb_pos; tvb_pos++) {
             /* insert a space every separator_interval_ bytes */
@@ -523,10 +533,29 @@ void HexDataSourceView::drawLine(QPainter *painter, const int offset, const int 
                 }
             }
 
-            if (recent.gui_bytes_encoding != BYTES_ENC_EBCDIC && encoding_ == PACKET_CHAR_ENC_CHAR_ASCII) {
-                c = data_[tvb_pos];
+            if (recent.gui_bytes_encoding == BYTES_ENC_FROM_PACKET) {
+                switch (encoding_) {
+                case PACKET_CHAR_ENC_CHAR_ASCII:
+                    bytes_enc = BYTES_ENC_ASCII;
+                    break;
+                case PACKET_CHAR_ENC_CHAR_EBCDIC:
+                    bytes_enc = BYTES_ENC_EBCDIC;
+                    break;
+                default:
+                    ws_assert_not_reached();
+                }
             } else {
+                bytes_enc = recent.gui_bytes_encoding;
+            }
+
+            switch (bytes_enc) {
+            case BYTES_ENC_EBCDIC:
                 c = EBCDIC_to_ASCII1(data_[tvb_pos]);
+                break;
+            case BYTES_ENC_ASCII:
+            default:
+                c = data_[tvb_pos];
+                break;
             }
 
             if (g_ascii_isprint(c)) {

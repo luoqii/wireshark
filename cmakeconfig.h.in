@@ -133,12 +133,6 @@
 /* Enable libnl support */
 #cmakedefine HAVE_LIBNL 1
 
-/* libnl version 1 */
-#cmakedefine HAVE_LIBNL1 1
-
-/* libnl version 2 */
-#cmakedefine HAVE_LIBNL2 1
-
 /* libnl version 3 */
 #cmakedefine HAVE_LIBNL3 1
 
@@ -150,6 +144,10 @@
 
 /* Define to 1 if libsmi exports a version string (and that symbol is visible). */
 #cmakedefine HAVE_SMI_VERSION_STRING 1
+
+/* Define to use xxhash library */
+#cmakedefine HAVE_XXHASH 1
+#define XXHASH_VERSION_STRING "${XXHASH_VERSION_STRING}"
 
 /* Define to use zlib library */
 #cmakedefine HAVE_ZLIB 1
@@ -220,6 +218,12 @@
 
 /* VHT_CAPABILITY is supported */
 #cmakedefine HAVE_NL80211_VHT_CAPABILITY 1
+
+/* HE_CAPABILITY is supported */
+#cmakedefine HAVE_NL80211_HE_CAPABILITY 1
+
+/* EHT_CAPABILITY is supported */
+#cmakedefine HAVE_NL80211_EHT_CAPABILITY 1
 
 /* Define to 1 if you have macOS frameworks */
 #cmakedefine HAVE_MACOS_FRAMEWORKS 1

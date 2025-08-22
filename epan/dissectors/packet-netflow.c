@@ -1755,9 +1755,63 @@ static const value_string v10_template_types_ixia[] = {
     {  327, "SIP Content Type"},
     {  328, "SIP Route"},
     {  329, "SIP Geolocation"},
+    {  330, "Diameter Message" },
+    {  331, "Diameter CommandCode"},
+    {  332, "Diameter Request"},
+    {  333, "Diameter Response"},
+    {  334, "Diameter ApplicationId"},
+    {  335, "Diameter OriginHost"},
+    {  336, "Diameter OriginRealm"},
+    {  337, "Diameter DestinationHost"},
+    {  338, "Diameter DestinationRealm"},
+    {  339, "Diameter UserName"},
+    {  340, "Diameter SCAddress"},
+    {  341, "Diameter AuthenticationVectorRAND"},
+    {  342, "Diameter AuthenticationVectorXRES"},
+    {  343, "Diameter AuthenticationVectorAUTN"},
+    {  344, "Diameter AuthenticationVectorKASME"},
+    {  345, "Diameter SubscriptionDataAMBRMaxRequestedBandwidthUL"},
+    {  346, "Diameter SubscriptionDataAMBRMaxRequestedBandwidthDL"},
+    {  347, "Diameter APNConfigurationProfile"},
+    {  348, "Diameter AccessRestrictionDataFlags"},
+    {  349, "Diameter RouteRecord"},
+    {  350, "Diameter FramedIPAddress"},
+    {  351, "Diameter 3GPPUserLocationInfo"},
+    {  352, "Diameter CalledStationId"},
+    {  353, "Diameter QoSClassIdentifier"},
+    {  354, "Diameter QoSMaxRequestedBandwidthDL"},
+    {  355, "Diameter QoSMaxRequestedBandwidthUL"},
+    {  356, "Diameter QoSGuaranteedBitrateUL"},
+    {  357, "Diameter QoSGuaranteedBitrateDL"},
+    {  358, "Diameter QoSAPNAggregateMaxBitrateUL"},
+    {  359, "Diameter QoSAPNAggregateMaxBitrateDL"},
+    {  360, "Diameter IntegrityKey"},
+    {  361, "Diameter ConfidentialityKey"},
+    {  362, "Diameter Result Code"},
+    {  363, "Diameter Subscriber Id Data"},
+    {  364, "SessionFingerprint"},
+    {  365, "SessionParseErrors"},
+    {  366, "httpHeaders"},
+    {  367, "httpHeaderField"},
+    {  368, "httpHeaderValue"},
+    {  369, "sipPackets"},
+    {  370, "sipHeaders"},
+    {  371, "sipType"},
+    {  372, "sipHeaderField"},
+    {  373, "sipHeaderValue"},
+    {  374, "IP Scrambling"},
+    {  375, "JA4 Fingerprint Part A"},
+    {  376, "JA4 Fingerprint Part B"},
+    {  377, "JA4 Fingerprint Part C"},
     {  378, "Extended HTTP URI"},
     {  379, "App Octet Delta Count"},
     {  380, "Reverse App Octet Delta Count"},
+    {  381, "GTP ULI nrCellId"},
+    {  382, "RAT Type Name"},
+    {  383, "Mobile Country Name"},
+    {  384, "Mobile Network Name"},
+    {  385, "IMEI Mobile Device Model"},
+    {  386, "IMEI Mobile Device Manufacturer"},
     { 0, NULL }
 };
 static value_string_ext v10_template_types_ixia_ext = VALUE_STRING_EXT_INIT(v10_template_types_ixia);
@@ -2376,8 +2430,8 @@ static value_string_ext selector_algorithm_ext = VALUE_STRING_EXT_INIT(selector_
 
 static const value_string performance_monitor_specials[] = {
     { 0xFFFFFFFF, "Not Measured"},
-    { 0xFFFF, "Not Measured"},
-    { 0xFF, "Not Measured"},
+    { 0xFFFF,     "Not Measured"},
+    { 0xFF,       "Not Measured"},
     { 0, NULL }
 };
 
@@ -3687,6 +3741,12 @@ static int      hf_pie_ixia_ja4c;
 static int      hf_pie_ixia_uri_extended;
 static int      hf_pie_ixia_app_octet_delta_count;
 static int      hf_pie_ixia_reverse_app_octet_delta_count;
+static int      hf_pie_ixia_gtp_uli_cell_nr_cellid;
+static int      hf_pie_ixia_gtp_rat_type_name;
+static int      hf_pie_ixia_gtp_mobile_country_name;
+static int      hf_pie_ixia_gtp_mobile_network_name;
+static int      hf_pie_ixia_gtp_mobile_device_model;
+static int      hf_pie_ixia_gtp_mobile_device_manufacturer;
 
 static int      hf_pie_netscaler;
 static int      hf_pie_netscaler_roundtriptime;
@@ -11429,6 +11489,30 @@ dissect_v9_v10_pdu_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *pdutree, 
             ti = proto_tree_add_item(pdutree, hf_pie_ixia_reverse_app_octet_delta_count,
                                      tvb, offset, length, ENC_BIG_ENDIAN);
             break;
+        case ((VENDOR_IXIA << 16) | 381):
+            ti = proto_tree_add_item(pdutree, hf_pie_ixia_gtp_uli_cell_nr_cellid,
+                                     tvb, offset, length, ENC_BIG_ENDIAN);
+            break;
+        case ((VENDOR_IXIA << 16) | 382):
+            ti = proto_tree_add_item(pdutree, hf_pie_ixia_gtp_rat_type_name,
+                                     tvb, offset, length, ENC_ASCII);
+            break;
+        case ((VENDOR_IXIA << 16) | 383):
+            ti = proto_tree_add_item(pdutree, hf_pie_ixia_gtp_mobile_country_name,
+                                     tvb, offset, length, ENC_ASCII);
+            break;
+        case ((VENDOR_IXIA << 16) | 384):
+            ti = proto_tree_add_item(pdutree, hf_pie_ixia_gtp_mobile_network_name,
+                                     tvb, offset, length, ENC_ASCII);
+            break;
+        case ((VENDOR_IXIA << 16) | 385):
+            ti = proto_tree_add_item(pdutree, hf_pie_ixia_gtp_mobile_device_model,
+                                     tvb, offset, length, ENC_ASCII);
+            break;
+        case ((VENDOR_IXIA << 16) | 386):
+            ti = proto_tree_add_item(pdutree, hf_pie_ixia_gtp_mobile_device_manufacturer,
+                                     tvb, offset, length, ENC_ASCII);
+            break;
             /* END Ixia Communications */
 
             /* START Netscaler Communications */
@@ -13049,7 +13133,7 @@ dissect_v9_v10_template_fields(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree
             proto_tree_add_item(field_tree, *v9_template_type_hf_list[fields_type],
                                 tvb, offset, 2, ENC_BIG_ENDIAN);
             proto_item_append_text(field_item, ": %s",
-                                   val_to_str_ext(type, v9_template_type_vse_list[fields_type], "Unknown(%d)"));
+                                   val_to_str_ext(pinfo->pool, type, v9_template_type_vse_list[fields_type], "Unknown(%d)"));
         } else { /* v10 */
             proto_tree_add_item(field_tree, hf_cflow_template_ipfix_pen_provided,
                                 tvb, offset, 2, ENC_BIG_ENDIAN);
@@ -13058,7 +13142,7 @@ dissect_v9_v10_template_fields(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree
                 rp_ti = proto_tree_add_item(field_tree, *v10_template_type_hf_list[fields_type],
                                             tvb, offset, 2, ENC_BIG_ENDIAN);
                 proto_item_append_text(field_item, ": %s",
-                                       val_to_str_ext(type&0x7fff, v10_template_type_vse_list[fields_type], "Unknown(%d)"));
+                                       val_to_str_ext(pinfo->pool, type&0x7fff, v10_template_type_vse_list[fields_type], "Unknown(%d)"));
                 if (pen == REVPEN) {
                     proto_item_append_text(rp_ti, " [Reverse]");
                     proto_item_append_text(field_item, " [Reverse]");
@@ -13069,7 +13153,7 @@ dissect_v9_v10_template_fields(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree
                     proto_tree_add_item(field_tree, *v10_template_type_hf_list[fields_type_pen],
                                         tvb, offset, 2, ENC_BIG_ENDIAN);
                     proto_item_append_text(field_item, ": %s",
-                                           val_to_str_ext(type&0x7fff, v10_template_type_vse_list[fields_type_pen], "Unknown(%d)"));
+                                           val_to_str_ext(pinfo->pool, type&0x7fff, v10_template_type_vse_list[fields_type_pen], "Unknown(%d)"));
                 } else { /* Private Enterprise */
                     proto_item *pen_ti;
                     pen_ti = proto_tree_add_item(field_tree, hf_cflow_template_ipfix_field_type_enterprise,
@@ -19819,14 +19903,14 @@ proto_register_netflow(void)
         /* ixia, 3054 / 302 */
         {&hf_pie_ixia_gtp_up_TEID,
          {"GTP Uplink TEID", "cflow.pie.ixia.gtp-uplink-TEID",
-          FT_UINT32, BASE_DEC, NULL, 0x0,
+          FT_UINT64, BASE_DEC, NULL, 0x0,
           "Mobile Session Uplink Tunnel Endpoint ID", HFILL}
         },
 
         /* ixia, 3054 / 303 */
         {&hf_pie_ixia_gtp_down_TEID,
          {"GTP Downlink TEID", "cflow.pie.ixia.gtp-downlink-TEID",
-          FT_UINT32, BASE_DEC, NULL, 0x0,
+          FT_UINT64, BASE_DEC, NULL, 0x0,
           "Mobile Session Downlink Tunnel Endpoint ID", HFILL}
         },
 
@@ -20377,6 +20461,48 @@ proto_register_netflow(void)
          {"Reverse App Octet Delta Count", "cflow.pie.ixia.reverse-app-octet-delta-count",
           FT_UINT64, BASE_DEC, NULL, 0x0,
           "In bi-directional flows, application octet delta count for the server back to client", HFILL}
+        },
+
+        /* ixia, 3054 / 381 */
+        {&hf_pie_ixia_gtp_uli_cell_nr_cellid,
+         {"GTP ULI nrCellId", "cflow.pie.ixia.gtp-uli-nrCellId",
+          FT_UINT64, BASE_DEC, NULL, 0x0,
+          NULL, HFILL}
+        },
+
+        /* ixia, 3054 / 382 */
+        {&hf_pie_ixia_gtp_rat_type_name,
+         {"GTP RAT Type Name", "cflow.pie.ixia.gtp-rat-type-name",
+          FT_STRING, BASE_NONE, NULL, 0x0,
+          NULL, HFILL}
+        },
+
+        /* ixia, 3054 / 383 */
+        {&hf_pie_ixia_gtp_mobile_country_name,
+         {"GTP Mobile Country Name", "cflow.pie.ixia.gtp-mobile-country-name",
+          FT_STRING, BASE_NONE, NULL, 0x0,
+          NULL, HFILL}
+        },
+
+        /* ixia, 3054 / 384 */
+        {&hf_pie_ixia_gtp_mobile_network_name,
+         {"GTP Mobile Network Name", "cflow.pie.ixia.gtp-mobile-network-name",
+          FT_STRING, BASE_NONE, NULL, 0x0,
+          NULL, HFILL}
+        },
+
+        /* ixia, 3054 / 385 */
+        {&hf_pie_ixia_gtp_mobile_device_model,
+         {"GTP Mobile Device Model", "cflow.pie.ixia.gtp-mobile-device-model",
+          FT_STRING, BASE_NONE, NULL, 0x0,
+          NULL, HFILL}
+        },
+
+        /* ixia, 3054 / 386 */
+        {&hf_pie_ixia_gtp_mobile_device_manufacturer,
+         {"GTP Mobile Device Manufacturer", "cflow.pie.ixia.gtp-mobile-device-manufacturer",
+          FT_STRING, BASE_NONE, NULL, 0x0,
+          NULL, HFILL}
         },
 
         /* Netscaler root (a hidden item to allow filtering) */

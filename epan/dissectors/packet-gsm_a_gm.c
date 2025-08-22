@@ -4883,7 +4883,7 @@ de_sm_pco(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, uint32_t offset, 
 				break;
 			case 0x000E:
 				if ((link_dir == P2P_DIR_DL) && (e_len > 0)) {
-					dissect_e164_msisdn(tvb, pco_tree, curr_offset, e_len, E164_ENC_BCD);
+					dissect_e164_msisdn(tvb, pinfo, pco_tree, curr_offset, e_len, E164_ENC_BCD);
 				}
 				break;
 			case 0x0010:
@@ -10183,6 +10183,17 @@ proto_register_gsm_a_gm(void)
 	/* subdissector code */
 	gprs_sm_pco_subdissector_table = register_dissector_table("sm_pco.protocol",
 		"GPRS SM PCO PPP protocol", proto_a_gm, FT_UINT16, BASE_HEX);
+
+	register_external_value_string("gsm_a_bssmap_msg_strings", gsm_a_bssmap_msg_strings);
+	register_external_value_string("gsm_a_dtap_msg_mm_strings", gsm_a_dtap_msg_mm_strings);
+	register_external_value_string("gsm_a_dtap_msg_rr_strings", gsm_a_dtap_msg_rr_strings);
+	register_external_value_string("gsm_a_dtap_msg_cc_strings", gsm_a_dtap_msg_cc_strings);
+	register_external_value_string("gsm_a_dtap_msg_gmm_strings", gsm_a_dtap_msg_gmm_strings);
+	register_external_value_string("gsm_a_dtap_msg_sms_strings", gsm_a_dtap_msg_sms_strings);
+	register_external_value_string("gsm_a_dtap_msg_sm_strings", gsm_a_dtap_msg_sm_strings);
+	register_external_value_string("gsm_a_dtap_msg_ss_strings", gsm_a_dtap_msg_ss_strings);
+	register_external_value_string("gsm_a_dtap_msg_tp_strings", gsm_a_dtap_msg_tp_strings);
+	register_external_value_string("gsm_a_rr_short_pd_msg_strings", gsm_a_rr_short_pd_msg_strings);
 }
 
 void

@@ -27,6 +27,10 @@
 #include <wsutil/pint.h>
 #include <wsutil/unicode-utils.h>
 #include <wsutil/dtoa.h>
+#include <wsutil/filesystem.h>
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
 
 #include <ftypes/ftypes.h>
 
@@ -257,6 +261,7 @@ static void fill_label_ieee_11073_float(const field_info *fi, char *label_str, s
 static const char *hfinfo_number_value_format_display(const header_field_info *hfinfo, int display, char buf[NUMBER_LABEL_LENGTH], uint32_t value);
 static const char *hfinfo_number_value_format_display64(const header_field_info *hfinfo, int display, char buf[NUMBER_LABEL_LENGTH], uint64_t value);
 static const char *hfinfo_char_vals_format(const header_field_info *hfinfo, char buf[32], uint32_t value);
+static const char* hfinfo_char_value_format_display(int display, char buf[7], uint32_t value);
 static const char *hfinfo_number_vals_format(const header_field_info *hfinfo, char buf[NUMBER_LABEL_LENGTH], uint32_t value);
 static const char *hfinfo_number_vals_format64(const header_field_info *hfinfo, char buf[NUMBER_LABEL_LENGTH], uint64_t value);
 static const char *hfinfo_number_value_format(const header_field_info *hfinfo, char buf[NUMBER_LABEL_LENGTH], uint32_t value);
@@ -450,6 +455,8 @@ static GHashTable* prefixes;
 	DISSECTOR_ASSERT_HINT(gpa_hfinfo.hfi[hfindex] != NULL, "Unregistered hf!");	\
 	hfinfo = gpa_hfinfo.hfi[hfindex];
 
+#define PROTO_PRE_ALLOC_HF_FIELDS_MEM (300000+PRE_ALLOC_EXPERT_FIELDS_MEM)
+
 /* List which stores protocols and fields that have been registered */
 typedef struct _gpa_hfinfo_t {
 	uint32_t            len;
@@ -460,7 +467,7 @@ typedef struct _gpa_hfinfo_t {
 static gpa_hfinfo_t gpa_hfinfo;
 
 /* Hash table of abbreviations and IDs */
-static GHashTable *gpa_name_map;
+static wmem_map_t *gpa_name_map;
 static header_field_info *same_name_hfinfo;
 
 /* Hash table protocol aliases. const char * -> const char * */
@@ -472,11 +479,6 @@ static GHashTable *gpa_protocol_aliases;
  */
 static char *last_field_name;
 static header_field_info *last_hfinfo;
-
-static void save_same_name_hfinfo(void *data)
-{
-	same_name_hfinfo = (header_field_info*)data;
-}
 
 /* Points to the first element of an array of bits, indexed by
    a subtree item type; that array element is true if subtrees of
@@ -523,6 +525,7 @@ static const char *reserved_filter_names[] = {
 };
 
 static GHashTable *proto_reserved_filter_names;
+static GQueue* saved_dir_queue;
 
 static int
 proto_compare_name(const void *p1_arg, const void *p2_arg)
@@ -577,12 +580,13 @@ proto_init(GSList *register_all_plugin_protocols_list,
 	   void *client_data)
 {
 	proto_cleanup_base();
+	saved_dir_queue = g_queue_new();
 
-	proto_names        = g_hash_table_new(g_str_hash, g_str_equal);
-	proto_short_names  = g_hash_table_new(g_str_hash, g_str_equal);
-	proto_filter_names = g_hash_table_new(g_str_hash, g_str_equal);
+	proto_names        = g_hash_table_new(wmem_str_hash, g_str_equal);
+	proto_short_names  = g_hash_table_new(wmem_str_hash, g_str_equal);
+	proto_filter_names = g_hash_table_new(wmem_str_hash, g_str_equal);
 
-	proto_reserved_filter_names = g_hash_table_new(g_str_hash, g_str_equal);
+	proto_reserved_filter_names = g_hash_table_new(wmem_str_hash, g_str_equal);
 	for (const char **ptr = reserved_filter_names; *ptr != NULL; ptr++) {
 		/* GHashTable has no key destructor so the cast is safe. */
 		g_hash_table_add(proto_reserved_filter_names, *(char **)ptr);
@@ -591,8 +595,9 @@ proto_init(GSList *register_all_plugin_protocols_list,
 	gpa_hfinfo.len           = 0;
 	gpa_hfinfo.allocated_len = 0;
 	gpa_hfinfo.hfi           = NULL;
-	gpa_name_map             = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, save_same_name_hfinfo);
-	gpa_protocol_aliases     = g_hash_table_new(g_str_hash, g_str_equal);
+	gpa_name_map             = wmem_map_new(wmem_epan_scope(), wmem_str_hash, g_str_equal);
+	wmem_map_reserve(gpa_name_map, PROTO_PRE_ALLOC_HF_FIELDS_MEM);
+	gpa_protocol_aliases     = g_hash_table_new(wmem_str_hash, g_str_equal);
 	deregistered_fields      = g_ptr_array_new();
 	deregistered_data        = g_ptr_array_new();
 	deregistered_slice       = g_ptr_array_new();
@@ -669,7 +674,10 @@ proto_cleanup_base(void)
 
 	/* Free the abbrev/ID hash table */
 	if (gpa_name_map) {
-		g_hash_table_destroy(gpa_name_map);
+		// XXX - We don't have a wmem_map_destroy, but
+		// it does get cleaned up when epan scope is
+		// destroyed
+		//g_hash_table_destroy(gpa_name_map);
 		gpa_name_map = NULL;
 	}
 	if (gpa_protocol_aliases) {
@@ -746,6 +754,12 @@ proto_cleanup_base(void)
 
 	if (prefixes)
 		g_hash_table_destroy(prefixes);
+
+	if (saved_dir_queue != NULL) {
+		g_queue_clear_full(saved_dir_queue, g_free);
+		g_queue_free(saved_dir_queue);
+		saved_dir_queue = NULL;
+	}
 }
 
 void
@@ -756,6 +770,51 @@ proto_cleanup(void)
 
 	g_slist_free(dissector_plugins);
 	dissector_plugins = NULL;
+}
+
+static bool
+ws_pushd(const char* dir)
+{
+	//Save the current working directory
+	const char* save_wd = get_current_working_dir();
+	if (save_wd != NULL)
+		g_queue_push_head(saved_dir_queue, g_strdup(save_wd));
+
+	//Change to the new one
+#ifdef _WIN32
+	SetCurrentDirectory(utf_8to16(dir));
+	return true;
+#else
+	return (chdir(dir) == 0);
+#endif
+}
+
+static bool
+ws_popd(void)
+{
+	int ret = 0;
+	char* saved_wd = g_queue_pop_head(saved_dir_queue);
+	if (saved_wd == NULL)
+		return false;
+
+	//Restore the previous one
+#ifdef _WIN32
+	SetCurrentDirectory(utf_8to16(saved_wd));
+#else
+	ret = chdir(saved_wd);
+#endif
+	g_free(saved_wd);
+	return (ret == 0);
+}
+
+void
+proto_execute_in_directory(const char* dir, proto_execute_in_directory_func func, void* param)
+{
+	if (ws_pushd(dir))
+	{
+		func(param);
+		ws_popd();
+	}
 }
 
 static bool
@@ -976,7 +1035,7 @@ prefix_hash (const void *key) {
 		}
 	}
 
-	tmp = g_str_hash(copy);
+	tmp = wmem_str_hash(copy);
 	g_free(copy);
 	return tmp;
 }
@@ -1044,7 +1103,7 @@ proto_registrar_get_byname(const char *field_name)
 		return last_hfinfo;
 	}
 
-	hfinfo = (header_field_info *)g_hash_table_lookup(gpa_name_map, field_name);
+	hfinfo = (header_field_info *)wmem_map_lookup(gpa_name_map, field_name);
 
 	if (hfinfo) {
 		g_free(last_field_name);
@@ -1063,7 +1122,7 @@ proto_registrar_get_byname(const char *field_name)
 		return NULL;
 	}
 
-	hfinfo = (header_field_info *)g_hash_table_lookup(gpa_name_map, field_name);
+	hfinfo = (header_field_info *)wmem_map_lookup(gpa_name_map, field_name);
 
 	if (hfinfo) {
 		g_free(last_field_name);
@@ -6251,7 +6310,7 @@ static void
 proto_tree_set_eui64(field_info *fi, const uint64_t value)
 {
 	uint8_t v[FT_EUI64_LEN];
-	phton64(v, value);
+	phtonu64(v, value);
 	fvalue_set_bytes_data(fi->value, v, FT_EUI64_LEN);
 }
 
@@ -6897,8 +6956,13 @@ static size_t label_find_name_pos(const item_label_t *rep)
 {
 	size_t name_pos = 0;
 
+	/* If the value_pos is too small or too large, we can't find the expected format */
+	if (rep->value_pos <= 2 || rep->value_pos >= sizeof(rep->representation)) {
+		return 0;
+	}
+
 	/* Check if the format looks like "label: value", then set name_pos before ':'. */
-	if (rep->value_pos > 2 && rep->representation[rep->value_pos-2] == ':') {
+	if (rep->representation[rep->value_pos-2] == ':') {
 		name_pos = rep->value_pos - 2;
 	}
 
@@ -7022,7 +7086,7 @@ hfinfo_remove_from_gpa_name_map(const header_field_info *hfinfo)
 
 	if (!hfinfo->same_name_next && hfinfo->same_name_prev_id == -1) {
 		/* No hfinfo with the same name */
-		g_hash_table_steal(gpa_name_map, hfinfo->abbrev);
+		wmem_map_remove(gpa_name_map, hfinfo->abbrev);
 		return;
 	}
 
@@ -7035,7 +7099,7 @@ hfinfo_remove_from_gpa_name_map(const header_field_info *hfinfo)
 		same_name_prev->same_name_next = hfinfo->same_name_next;
 		if (!hfinfo->same_name_next) {
 			/* It's always the latest added hfinfo which is stored in gpa_name_map */
-			g_hash_table_insert(gpa_name_map, (void *) (same_name_prev->abbrev), same_name_prev);
+			wmem_map_insert(gpa_name_map, (void *) (same_name_prev->abbrev), same_name_prev);
 		}
 	}
 }
@@ -8256,31 +8320,7 @@ proto_register_protocol(const char *name, const char *short_name,
 	protocol_t *protocol;
 	header_field_info *hfinfo;
 
-	/*
-	 * Make sure there's not already a protocol with any of those
-	 * names.  Crash if there is, as that's an error in the code
-	 * or an inappropriate plugin.
-	 * This situation has to be fixed to not register more than one
-	 * protocol with the same name.
-	 */
-
-	if (g_hash_table_lookup(proto_names, name)) {
-		/* ws_error will terminate the program */
-		REPORT_DISSECTOR_BUG("Duplicate protocol name \"%s\"!"
-			" This might be caused by an inappropriate plugin or a development error.", name);
-	}
-
-	if (g_hash_table_lookup(proto_short_names, short_name)) {
-		REPORT_DISSECTOR_BUG("Duplicate protocol short_name \"%s\"!"
-			" This might be caused by an inappropriate plugin or a development error.", short_name);
-	}
-
 	check_protocol_filter_name_or_fail(filter_name);
-
-	if (g_hash_table_lookup(proto_filter_names, filter_name)) {
-		REPORT_DISSECTOR_BUG("Duplicate protocol filter_name \"%s\"!"
-			" This might be caused by an inappropriate plugin or a development error.", filter_name);
-	}
 
 	/*
 	 * Add this protocol to the list of known protocols;
@@ -8299,9 +8339,26 @@ proto_register_protocol(const char *name, const char *short_name,
 
 	/* List will be sorted later by name, when all protocols completed registering */
 	protocols = g_list_prepend(protocols, protocol);
-	g_hash_table_insert(proto_names, (void *)name, protocol);
-	g_hash_table_insert(proto_filter_names, (void *)filter_name, protocol);
-	g_hash_table_insert(proto_short_names, (void *)short_name, protocol);
+	/*
+	 * Make sure there's not already a protocol with any of those
+	 * names.  Crash if there is, as that's an error in the code
+	 * or an inappropriate plugin.
+	 * This situation has to be fixed to not register more than one
+	 * protocol with the same name.
+	 */
+	if (!g_hash_table_insert(proto_names, (void *)name, protocol)) {
+		/* ws_error will terminate the program */
+		REPORT_DISSECTOR_BUG("Duplicate protocol name \"%s\"!"
+			" This might be caused by an inappropriate plugin or a development error.", name);
+	}
+	if (!g_hash_table_insert(proto_filter_names, (void *)filter_name, protocol)) {
+		REPORT_DISSECTOR_BUG("Duplicate protocol filter_name \"%s\"!"
+			" This might be caused by an inappropriate plugin or a development error.", filter_name);
+	}
+	if (!g_hash_table_insert(proto_short_names, (void *)short_name, protocol)) {
+		REPORT_DISSECTOR_BUG("Duplicate protocol short_name \"%s\"!"
+			" This might be caused by an inappropriate plugin or a development error.", short_name);
+	}
 
 	/* Here we allocate a new header_field_info struct */
 	hfinfo = g_slice_new(header_field_info);
@@ -8412,7 +8469,7 @@ proto_deregister_protocol(const char *short_name)
 	protocols = g_list_remove(protocols, protocol);
 
 	g_ptr_array_add(deregistered_fields, gpa_hfinfo.hfi[proto_id]);
-	g_hash_table_steal(gpa_name_map, protocol->filter_name);
+	wmem_map_remove(gpa_name_map, protocol->filter_name);
 
 	g_free(last_field_name);
 	last_field_name = NULL;
@@ -8849,9 +8906,7 @@ proto_set_cant_toggle(const int proto_id)
 static int
 proto_register_field_common(protocol_t *proto, header_field_info *hfi, const int parent)
 {
-	if (proto != NULL) {
-		g_ptr_array_add(proto->fields, hfi);
-	}
+	g_ptr_array_add(proto->fields, hfi);
 
 	return proto_register_field_init(hfi, parent);
 }
@@ -8867,18 +8922,26 @@ proto_register_field_array(const int parent, hf_register_info *hf, const int num
 
 	proto = find_protocol_by_id(parent);
 
+	/* if (proto == NULL) - error or return? */
+
 	if (proto->fields == NULL) {
+		/* Ironically, the NEW_PROTO_TREE_API was removed shortly before
+		 * GLib introduced g_ptr_array_new_from_array, which might have
+		 * given a reason to actually use it. (#17774)
+		 */
 		proto->fields = g_ptr_array_sized_new(num_records);
 	}
 
 	for (i = 0; i < num_records; i++, ptr++) {
 		/*
 		 * Make sure we haven't registered this yet.
-		 * Most fields have variables associated with them
-		 * that are initialized to -1; some have array elements,
-		 * or possibly uninitialized variables, so we also allow
-		 * 0 (which is unlikely to be the field ID we get back
-		 * from "proto_register_field_init()").
+		 * Most fields have variables associated with them that
+		 * are initialized to 0; some are initialized to -1 (which
+		 * was the standard before 4.4).
+		 *
+		 * XXX - Since this is called almost 300000 times at startup,
+		 * it might be nice to compare to only 0 and require
+		 * dissectors to pass in zero for unregistered fields.
 		 */
 		if (*ptr->p_id != -1 && *ptr->p_id != 0) {
 			REPORT_DISSECTOR_BUG(
@@ -8914,7 +8977,7 @@ proto_deregister_field (const int parent, int hf_id)
 		hfi = (header_field_info *)g_ptr_array_index(proto->fields, i);
 		if (hfi->id == hf_id) {
 			/* Found the hf_id in this protocol */
-			g_hash_table_steal(gpa_name_map, hfi->abbrev);
+			wmem_map_remove(gpa_name_map, hfi->abbrev);
 			g_ptr_array_remove_index_fast(proto->fields, i);
 			g_ptr_array_add(deregistered_fields, gpa_hfinfo.hfi[hf_id]);
 			return;
@@ -9205,6 +9268,24 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 	if (!hfinfo->abbrev || !hfinfo->abbrev[0])
 		REPORT_DISSECTOR_BUG("Field '%s' does not have an abbreviation", hfinfo->name);
 
+	/* TODO: This check is a significant percentage of startup time (~10%),
+	   although not nearly as slow as what's enabled by ENABLE_CHECK_FILTER.
+	   It might be nice to have a way to disable this check when, e.g.,
+	   running TShark many times with the same configuration. */
+	/* Check that the filter name (abbreviation) is legal;
+	 * it must contain only alphanumerics, '-', "_", and ".". */
+	unsigned char c;
+	c = module_check_valid_name(hfinfo->abbrev, false);
+	if (c) {
+		if (c == '.') {
+			REPORT_DISSECTOR_BUG("Invalid leading, duplicated or trailing '.' found in filter name '%s'", hfinfo->abbrev);
+		} else if (g_ascii_isprint(c)) {
+			REPORT_DISSECTOR_BUG("Invalid character '%c' in filter name '%s'", c, hfinfo->abbrev);
+		} else {
+			REPORT_DISSECTOR_BUG("Invalid byte \\%03o in filter name '%s'", c, hfinfo->abbrev);
+		}
+	}
+
 	/*  These types of fields are allowed to have value_strings,
 	 *  true_false_strings or a protocol_t struct
 	 */
@@ -9401,7 +9482,7 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 							ftype_name(hfinfo->type));
 					break;
 				default:
-					tmp_str = val_to_str_wmem(NULL, hfinfo->display, hf_display, "(Unknown: 0x%x)");
+					tmp_str = val_to_str(NULL, hfinfo->display, hf_display, "(Unknown: 0x%x)");
 					REPORT_DISSECTOR_BUG("Field '%s' (%s) is a character value (%s)"
 						" but is being displayed as %s",
 						hfinfo->name, hfinfo->abbrev,
@@ -9432,7 +9513,7 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 				case BASE_OCT:
 				case BASE_DEC_HEX:
 				case BASE_HEX_DEC:
-					tmp_str = val_to_str_wmem(NULL, hfinfo->display, hf_display, "(Bit count: %d)");
+					tmp_str = val_to_str(NULL, hfinfo->display, hf_display, "(Bit count: %d)");
 					REPORT_DISSECTOR_BUG("Field '%s' (%s) is signed (%s) but is being displayed unsigned (%s)",
 						hfinfo->name, hfinfo->abbrev,
 						ftype_name(hfinfo->type), tmp_str);
@@ -9448,7 +9529,7 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 		case FT_UINT56:
 		case FT_UINT64:
 			if (IS_BASE_PORT(hfinfo->display)) {
-				tmp_str = val_to_str_wmem(NULL, hfinfo->display, hf_display, "(Unknown: 0x%x)");
+				tmp_str = val_to_str(NULL, hfinfo->display, hf_display, "(Unknown: 0x%x)");
 				if (hfinfo->type != FT_UINT16) {
 					REPORT_DISSECTOR_BUG("Field '%s' (%s) has 'display' value %s but it can only be used with FT_UINT16, not %s",
 						hfinfo->name, hfinfo->abbrev,
@@ -9469,7 +9550,7 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 			}
 
 			if (hfinfo->display == BASE_OUI) {
-				tmp_str = val_to_str_wmem(NULL, hfinfo->display, hf_display, "(Unknown: 0x%x)");
+				tmp_str = val_to_str(NULL, hfinfo->display, hf_display, "(Unknown: 0x%x)");
 				if (hfinfo->type != FT_UINT24) {
 					REPORT_DISSECTOR_BUG("Field '%s' (%s) has 'display' value %s but it can only be used with FT_UINT24, not %s",
 						hfinfo->name, hfinfo->abbrev,
@@ -9525,7 +9606,7 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 					break;
 
 				default:
-					tmp_str = val_to_str_wmem(NULL, hfinfo->display, hf_display, "(Unknown: 0x%x)");
+					tmp_str = val_to_str(NULL, hfinfo->display, hf_display, "(Unknown: 0x%x)");
 					REPORT_DISSECTOR_BUG("Field '%s' (%s) is an integral value (%s)"
 						" but is being displayed as %s",
 						hfinfo->name, hfinfo->abbrev,
@@ -9546,7 +9627,7 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 				case SEP_SPACE:
 					break;
 				default:
-					tmp_str = val_to_str_wmem(NULL, hfinfo->display, hf_display, "(Bit count: %d)");
+					tmp_str = val_to_str(NULL, hfinfo->display, hf_display, "(Bit count: %d)");
 					REPORT_DISSECTOR_BUG("Field '%s' (%s) is an byte array but is being displayed as %s instead of BASE_NONE, SEP_DOT, SEP_DASH, SEP_COLON, or SEP_SPACE",
 						hfinfo->name, hfinfo->abbrev, tmp_str);
 					//wmem_free(NULL, tmp_str);
@@ -9565,7 +9646,7 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 		case FT_PROTOCOL:
 		case FT_FRAMENUM:
 			if (hfinfo->display != BASE_NONE) {
-				tmp_str = val_to_str_wmem(NULL, hfinfo->display, hf_display, "(Bit count: %d)");
+				tmp_str = val_to_str(NULL, hfinfo->display, hf_display, "(Bit count: %d)");
 				REPORT_DISSECTOR_BUG("Field '%s' (%s) is an %s but is being displayed as %s instead of BASE_NONE",
 					hfinfo->name, hfinfo->abbrev,
 					ftype_name(hfinfo->type), tmp_str);
@@ -9582,7 +9663,7 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 
 		case FT_ABSOLUTE_TIME:
 			if (!FIELD_DISPLAY_IS_ABSOLUTE_TIME(hfinfo->display)) {
-				tmp_str = val_to_str_wmem(NULL, hfinfo->display, hf_display, "(Bit count: %d)");
+				tmp_str = val_to_str(NULL, hfinfo->display, hf_display, "(Bit count: %d)");
 				REPORT_DISSECTOR_BUG("Field '%s' (%s) is a %s but is being displayed as %s instead of as a time",
 					hfinfo->name, hfinfo->abbrev, ftype_name(hfinfo->type), tmp_str);
 				//wmem_free(NULL, tmp_str);
@@ -9604,7 +9685,7 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 					break;
 
 				default:
-					tmp_str = val_to_str_wmem(NULL, hfinfo->display, hf_display, "(Unknown: 0x%x)");
+					tmp_str = val_to_str(NULL, hfinfo->display, hf_display, "(Unknown: 0x%x)");
 					REPORT_DISSECTOR_BUG("Field '%s' (%s) is an string value (%s)"
 						" but is being displayed as %s",
 						hfinfo->name, hfinfo->abbrev,
@@ -9629,7 +9710,7 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 					break;
 
 				default:
-					tmp_str = val_to_str_wmem(NULL, hfinfo->display, hf_display, "(Unknown: 0x%x)");
+					tmp_str = val_to_str(NULL, hfinfo->display, hf_display, "(Unknown: 0x%x)");
 					REPORT_DISSECTOR_BUG("Field '%s' (%s) is an IPv4 value (%s)"
 						" but is being displayed as %s",
 						hfinfo->name, hfinfo->abbrev,
@@ -9648,7 +9729,7 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 				case BASE_CUSTOM:
 					break;
 				default:
-					tmp_str = val_to_str_wmem(NULL, hfinfo->display, hf_display, "(Unknown: 0x%x)");
+					tmp_str = val_to_str(NULL, hfinfo->display, hf_display, "(Unknown: 0x%x)");
 					REPORT_DISSECTOR_BUG("Field '%s' (%s) is a float value (%s)"
 						" but is being displayed as %s",
 						hfinfo->name, hfinfo->abbrev,
@@ -9667,7 +9748,7 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 		case FT_IEEE_11073_SFLOAT:
 		case FT_IEEE_11073_FLOAT:
 			if (FIELD_DISPLAY(hfinfo->display) != BASE_NONE) {
-				tmp_str = val_to_str_wmem(NULL, hfinfo->display, hf_display, "(Bit count: %d)");
+				tmp_str = val_to_str(NULL, hfinfo->display, hf_display, "(Bit count: %d)");
 				REPORT_DISSECTOR_BUG("Field '%s' (%s) is an %s but is being displayed as %s instead of BASE_NONE",
 					hfinfo->name, hfinfo->abbrev,
 					ftype_name(hfinfo->type),
@@ -9685,7 +9766,7 @@ tmp_fld_check_assert(header_field_info *hfinfo)
 			break;
 		default:
 			if (hfinfo->display != BASE_NONE) {
-				tmp_str = val_to_str_wmem(NULL, hfinfo->display, hf_display, "(Bit count: %d)");
+				tmp_str = val_to_str(NULL, hfinfo->display, hf_display, "(Bit count: %d)");
 				REPORT_DISSECTOR_BUG("Field '%s' (%s) is an %s but is being displayed as %s instead of BASE_NONE",
 					hfinfo->name, hfinfo->abbrev,
 					ftype_name(hfinfo->type),
@@ -9799,7 +9880,6 @@ register_string_errors(void)
 	proto_set_cant_toggle(proto_string_errors);
 }
 
-#define PROTO_PRE_ALLOC_HF_FIELDS_MEM (300000+PRE_ALLOC_EXPERT_FIELDS_MEM)
 static int
 proto_register_field_init(header_field_info *hfinfo, const int parent)
 {
@@ -9830,23 +9910,11 @@ proto_register_field_init(header_field_info *hfinfo, const int parent)
 	hfinfo->id = gpa_hfinfo.len - 1;
 
 	/* if we have real names, enter this field in the name tree */
-	if ((hfinfo->name[0] != 0) && (hfinfo->abbrev[0] != 0 )) {
+	/* Already checked in tmp_fld_check_assert */
+	/*if ((hfinfo->name[0] != 0) && (hfinfo->abbrev[0] != 0 )) */
+	{
 
 		header_field_info *same_name_next_hfinfo;
-		unsigned char c;
-
-		/* Check that the filter name (abbreviation) is legal;
-		 * it must contain only alphanumerics, '-', "_", and ".". */
-		c = proto_check_field_name(hfinfo->abbrev);
-		if (c) {
-			if (c == '.') {
-				REPORT_DISSECTOR_BUG("Invalid leading, duplicated or trailing '.' found in filter name '%s'", hfinfo->abbrev);
-			} else if (g_ascii_isprint(c)) {
-				REPORT_DISSECTOR_BUG("Invalid character '%c' in filter name '%s'", c, hfinfo->abbrev);
-			} else {
-				REPORT_DISSECTOR_BUG("Invalid byte \\%03o in filter name '%s'", c, hfinfo->abbrev);
-			}
-		}
 
 		/* We allow multiple hfinfo's to be registered under the same
 		 * abbreviation. This was done for X.25, as, depending
@@ -9856,12 +9924,9 @@ proto_register_field_init(header_field_info *hfinfo, const int parent)
 		 * with one name regardless of whether the packets
 		 * are modulo-8 or modulo-128 packets. */
 
-		same_name_hfinfo = NULL;
-
-		g_hash_table_insert(gpa_name_map, (void *) (hfinfo->abbrev), hfinfo);
-		/* GLIB 2.x - if it is already present
-		 * the previous hfinfo with the same name is saved
-		 * to same_name_hfinfo by value destroy callback */
+		/* wmem_map_insert - if key is already present the previous
+		 * hfinfo with the same key/name is returned, otherwise NULL */
+		same_name_hfinfo = wmem_map_insert(gpa_name_map, (void *) (hfinfo->abbrev), hfinfo);
 		if (same_name_hfinfo) {
 			/* There's already a field with this name.
 			 * Put the current field *before* that field
@@ -9952,39 +10017,48 @@ mark_truncated(char *label_str, size_t name_pos, const size_t size, size_t *valu
 	 * name_pos==0 means that we have only data or only a field_name
 	 */
 
-	if (name_pos < size - trunc_len) {
-		memmove(label_str + name_pos + trunc_len, label_str + name_pos, size - name_pos - trunc_len);
-		if (name_pos == 0) {
-			/* Copy the trunc_str after the first byte, so that we don't have a leading space in the label. */
-			memcpy(label_str, trunc_str + 1, trunc_len);
-		} else {
-			memcpy(label_str + name_pos, trunc_str, trunc_len);
-		}
-		/* in general, label_str is UTF-8
-		   we can truncate it only at the beginning of a new character
-		   we go backwards from the byte right after our buffer and
-		    find the next starting byte of a UTF-8 character, this is
-		    where we cut
-		   there's no need to use g_utf8_find_prev_char(), the search
-		    will always succeed since we copied trunc_str into the
-		    buffer */
-		/* g_utf8_prev_char does not deference the memory address
-		 * passed in (until after decrementing it, so it is perfectly
-		 * legal to pass in a pointer one past the last element.
-		 */
-		last_char = g_utf8_prev_char(label_str + size);
-		*last_char = '\0';
+	ws_assert(size > trunc_len);
 
-		if (value_pos && *value_pos > 0) {
-			if (name_pos == 0) {
-				*value_pos += trunc_len;
-			} else {
-				/* Move one back to include trunc_str in the value. */
-				*value_pos -= 1;
-			}
+	if (name_pos >= size - trunc_len) {
+		/* No room for trunc_str after the field_name, put it first. */
+		name_pos = 0;
+	}
+
+	memmove(label_str + name_pos + trunc_len, label_str + name_pos, size - name_pos - trunc_len);
+	if (name_pos == 0) {
+		/* Copy the trunc_str after the first byte, so that we don't have a leading space in the label. */
+		memcpy(label_str, trunc_str + 1, trunc_len);
+	} else {
+		memcpy(label_str + name_pos, trunc_str, trunc_len);
+	}
+	/* in general, label_str is UTF-8
+	   we can truncate it only at the beginning of a new character
+	   we go backwards from the byte right after our buffer and
+	    find the next starting byte of a UTF-8 character, this is
+	    where we cut
+	   there's no need to use g_utf8_find_prev_char(), the search
+	    will always succeed since we copied trunc_str into the
+	    buffer */
+	/* g_utf8_prev_char does not deference the memory address
+	 * passed in (until after decrementing it, so it is perfectly
+	 * legal to pass in a pointer one past the last element.
+	 */
+	last_char = g_utf8_prev_char(label_str + size);
+	*last_char = '\0';
+
+	if (value_pos && *value_pos > 0) {
+		if (name_pos == 0) {
+			*value_pos += trunc_len;
+		} else {
+			/* Move one back to include trunc_str in the value. */
+			*value_pos -= 1;
 		}
-	} else if (name_pos < size)
-		(void) g_strlcpy(label_str + name_pos, trunc_str, size - name_pos);
+	}
+
+	/* Check if value_pos is past label_str. */
+	if (value_pos && *value_pos >= size) {
+		*value_pos = size - 1;
+	}
 }
 
 static void

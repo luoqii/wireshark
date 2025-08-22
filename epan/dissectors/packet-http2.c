@@ -254,6 +254,9 @@ typedef struct {
     const char *imsi;
     const char *referenceid;
     const char *location;
+    const char *protocol;
+    dissector_handle_t next_handle;	/**< Protocol from extended CONNECT */
+    http_upgrade_info_t *upgrade_info; /**< Data for new protocol */
 } http2_stream_info_t;
 #endif
 /* struct to hold data per HTTP/2 session */
@@ -452,6 +455,7 @@ static int hf_http2_headers_status;
 static int hf_http2_headers_path;
 static int hf_http2_headers_method;
 static int hf_http2_headers_scheme;
+static int hf_http2_headers_protocol;
 static int hf_http2_headers_accept;
 static int hf_http2_headers_accept_charset;
 static int hf_http2_headers_accept_encoding;
@@ -767,6 +771,12 @@ register_static_headers(void) {
         {
             &hf_http2_headers_scheme,
                 {":scheme", "http2.headers.scheme",
+                 FT_STRING, BASE_NONE, NULL, 0x0,
+                 NULL, HFILL}
+        },
+        {
+            &hf_http2_headers_protocol,
+                {":protocol", "http2.headers.protocol",
                  FT_STRING, BASE_NONE, NULL, 0x0,
                  NULL, HFILL}
         },
@@ -1233,7 +1243,6 @@ static reassembly_table http2_streaming_reassembly_table;
 #define HTTP2_WINDOW_UPDATE     8
 #define HTTP2_CONTINUATION      9
 #define HTTP2_ALTSVC            0xA
-#define HTTP2_BLOCKED           0xB
 #define HTTP2_ORIGIN            0xC
 #define HTTP2_PRIORITY_UPDATE   0x10
 
@@ -1249,7 +1258,6 @@ static const value_string http2_type_vals[] = {
     { HTTP2_WINDOW_UPDATE,   "WINDOW_UPDATE" },
     { HTTP2_CONTINUATION,    "CONTINUATION" },
     { HTTP2_ALTSVC,          "ALTSVC" },
-    { HTTP2_BLOCKED,         "BLOCKED" },
     { HTTP2_ORIGIN,          "ORIGIN" },
     { HTTP2_PRIORITY_UPDATE, "PRIORITY_UPDATE" },
     { 0, NULL }
@@ -1524,31 +1532,6 @@ http2_set_stream_imsi(packet_info *pinfo, char* imsi)
     stream_info->imsi = imsi;
 }
 
-const char*
-http2_get_stream_imsi(packet_info *pinfo)
-{
-    conversation_t *conversation;
-    http2_session_t *h2session;
-    http2_stream_info_t *stream_info;
-
-    conversation = find_conversation_pinfo(pinfo, 0);
-    if (!conversation) {
-        return NULL;
-    }
-
-    h2session = (http2_session_t*)conversation_get_proto_data(conversation, proto_http2);
-    if (!h2session) {
-        return NULL;
-    }
-
-    stream_info = get_stream_info(pinfo, h2session, false);
-    if (!stream_info) {
-        return NULL;
-    }
-
-    return stream_info->imsi;
-}
-
 void http2_add_referenceid_imsi(char* referenceid, const char* imsi)
 {
     if(http2_3gpp_session) {
@@ -1588,6 +1571,43 @@ http2_get_imsi_from_location(const char* location)
     return imsi;
 }
 
+const char*
+http2_get_stream_imsi(packet_info *pinfo)
+{
+    conversation_t *conversation;
+    http2_session_t *h2session;
+    http2_stream_info_t *stream_info;
+    const char *imsi = NULL;
+
+    conversation = find_conversation_pinfo(pinfo, 0);
+    if (!conversation) {
+        return NULL;
+    }
+
+    h2session = (http2_session_t*)conversation_get_proto_data(conversation, proto_http2);
+    if (!h2session) {
+        return NULL;
+    }
+
+    stream_info = get_stream_info(pinfo, h2session, false);
+    if (!stream_info) {
+        return NULL;
+    }
+
+    if(stream_info->imsi && (strcmp(stream_info->imsi, "") != 0)) {
+        imsi = stream_info->imsi;
+    }
+    else if (stream_info->referenceid && (strcmp(stream_info->referenceid, "") != 0)) {
+        imsi = http2_get_imsi_from_referenceid(stream_info->referenceid);
+
+        /* Will try to look up match between path referenceid and location ID */
+        if(!imsi) {
+           imsi = http2_get_imsi_from_location(stream_info->referenceid);
+        }
+    }
+    return imsi;
+}
+
 static const char*
 http2_get_request_full_uri(packet_info *pinfo, http2_session_t *http2_session, uint32_t stream_id)
 {
@@ -1598,8 +1618,12 @@ http2_get_request_full_uri(packet_info *pinfo, http2_session_t *http2_session, u
            "All HTTP/2 requests MUST include exactly one valid value for the
            ":method", ":scheme", and ":path" pseudo-header fields, unless they
            are CONNECT requests"
+           RFC8441 4:
+           "On requests that contain the :protocol pseudo-header field, the
+           :scheme and :path pseudo-header fields of the target URI (see
+           Section 5) MUST also be included."
         */
-        if (stream_info->is_stream_http_connect) {
+        if (stream_info->is_stream_http_connect && !stream_info->protocol) {
             uri = wmem_strdup(pinfo->pool, stream_info->authority);
         } else {
             uri = wmem_strdup_printf(pinfo->pool, "%s://%s%s", stream_info->scheme, stream_info->authority, stream_info->path);
@@ -1620,12 +1644,6 @@ http2_set_stream_imsi(packet_info *pinfo _U_, char* imsi _U_)
     return;
 }
 
-const char*
-http2_get_stream_imsi(packet_info *pinf _U_)
-{
-    return NULL;
-}
-
 void http2_add_referenceid_imsi(char* referenceid _U_, const char* imsi _U_)
 {
     return;
@@ -1644,6 +1662,12 @@ void http2_add_location_imsi(char* location _U_, const char* imsi _U_)
 
 char*
 http2_get_imsi_from_location(const char* location _U_)
+{
+    return NULL;
+}
+
+const char*
+http2_get_stream_imsi(packet_info *pinf _U_)
 {
     return NULL;
 }
@@ -1924,8 +1948,8 @@ static size_t http2_hdrcache_length(const void *vv)
     const uint8_t *v = (const uint8_t *)vv;
     uint32_t namelen, valuelen;
 
-    namelen = pntoh32(v);
-    valuelen = pntoh32(v + sizeof(namelen) + namelen);
+    namelen = pntohu32(v);
+    valuelen = pntohu32(v + sizeof(namelen) + namelen);
 
     return namelen + valuelen + sizeof(namelen) + sizeof(valuelen);
 }
@@ -2078,6 +2102,17 @@ populate_http_header_tracking(tvbuff_t *tvb, packet_info *pinfo, http2_session_t
         stream_info->is_stream_http_connect = true;
     }
 
+    /* Prepare dissector for extended CONNECT protocol */
+    if (stream_info->is_stream_http_connect
+        && strcmp(header_name, HTTP2_HEADER_PROTOCOL) == 0) {
+        stream_info->protocol = header_value;
+        stream_info->next_handle = http_upgrade_dissector(header_value);
+        stream_info->upgrade_info = wmem_new0(wmem_file_scope(), http_upgrade_info_t);
+        stream_info->upgrade_info->server_port = pinfo->destport;
+        stream_info->upgrade_info->http_version = 2;
+        stream_info->upgrade_info->get_header_value = http2_get_header_value;
+    }
+
     /* Populate the content type so we can dissect the body later */
     if (strcmp(header_name, HTTP2_HEADER_CONTENT_TYPE) == 0) {
         if (body_info->content_type == NULL || override == true) {
@@ -2168,6 +2203,89 @@ populate_http_header_tracking(tvbuff_t *tvb, packet_info *pinfo, http2_session_t
         }
     }
 
+    if (strcmp(header_name, HTTP2_HEADER_STATUS) == 0) {
+        char *status = wmem_strndup(wmem_file_scope(), header_value, header_value_length);
+
+        if(http2_3gpp_session) {
+            /* 3GPP Supi look up */
+            /* If no Supi found the try look in referenceId mapping */
+            GMatchInfo *match_info_imsi;
+            GMatchInfo *match_info_referenceid;
+            static GRegex *regex_imsi = NULL;
+            static GRegex *regex_referenceid = NULL;
+            char *matched_imsi = NULL;
+            char *matched_referenceid = NULL;
+
+            /* 3GPP TS 29.571
+            * String identifying a Supi that shall contain either an IMSI, a network specific identifier,
+            * a Global Cable Identifier (GCI) or a Global Line Identifier (GLI) as specified in clause 2.2A of 3GPP TS 23.003.
+            *
+            * We are interested in IMSI and will be formatted as follows:
+            *   Pattern: '^imsi-[0-9]{5,15}$'
+            */
+            if (regex_imsi == NULL) {
+                regex_imsi = g_regex_new (
+                    ".*imsi-([0-9]{5,15}).*",
+                    G_REGEX_CASELESS | G_REGEX_FIRSTLINE, 0, NULL);
+            }
+            if (regex_referenceid == NULL) {
+                regex_referenceid = g_regex_new (
+                    ".*\\/(referenceid|chargingdata|sm-contexts|sm-policies|pdu-sessions)\\/([A-Za-z0-9\\-.]+).*",
+                    G_REGEX_CASELESS | G_REGEX_FIRSTLINE, 0, NULL);
+            }
+
+            g_regex_match(regex_imsi, status, 0, &match_info_imsi);
+            g_regex_match(regex_referenceid, status, 0, &match_info_referenceid);
+
+            if (g_match_info_matches(match_info_imsi)) {
+                matched_imsi = g_match_info_fetch(match_info_imsi, 1); //will be empty string if imsi is not in supi
+                if (matched_imsi && (strcmp(matched_imsi, "") != 0)) {
+                    stream_info->imsi = matched_imsi;
+                }
+            } else if (g_match_info_matches(match_info_referenceid)) {
+                matched_referenceid = g_match_info_fetch(match_info_referenceid, 2); //will be empty string if referenceid is not found
+                if (matched_referenceid && (strcmp(matched_referenceid, "") != 0)) {
+                    stream_info->referenceid = matched_referenceid;
+                }
+            }
+            g_regex_unref(regex_imsi);
+            g_regex_unref(regex_referenceid);
+        }
+    }
+
+    if (strcmp(header_name, HTTP2_HEADER_3GPP_SBI_CORRELATION_INFO) == 0) {
+        char *correlation_info = wmem_strndup(wmem_file_scope(), header_value, header_value_length);
+
+        if(http2_3gpp_session) {
+            /* 3GPP Supi look up */
+            GMatchInfo *match_info_imsi;
+            static GRegex *regex_imsi = NULL;
+            char *matched_imsi = NULL;
+
+            /* 3GPP TS 29.571
+            * String identifying a Supi that shall contain either an IMSI, a network specific identifier,
+            * a Global Cable Identifier (GCI) or a Global Line Identifier (GLI) as specified in clause 2.2A of 3GPP TS 23.003.
+            *
+            * We are interested in IMSI and will be formatted as follows:
+            *   Pattern: '^imsi-[0-9]{5,15}$'
+            */
+            if (regex_imsi == NULL) {
+                regex_imsi = g_regex_new (
+                    ".*imsi-([0-9]{5,15}).*",
+                    G_REGEX_CASELESS | G_REGEX_FIRSTLINE, 0, NULL);
+            }
+
+            g_regex_match(regex_imsi, correlation_info, 0, &match_info_imsi);
+
+            if (g_match_info_matches(match_info_imsi)) {
+                matched_imsi = g_match_info_fetch(match_info_imsi, 1); //will be empty string if imsi is not in supi
+                if (matched_imsi && (strcmp(matched_imsi, "") != 0)) {
+                    stream_info->imsi = matched_imsi;
+                }
+            }
+            g_regex_unref(regex_imsi);
+        }
+    }
 
     if (strcmp(header_name, HTTP2_HEADER_AUTHORITY) == 0) {
         stream_info->authority = wmem_strndup(wmem_file_scope(), header_value, header_value_length);
@@ -2392,11 +2510,11 @@ inflate_http2_header_block(tvbuff_t *tvb, packet_info *pinfo, unsigned offset, p
                    to get length in 4 bytes, we have to copy it to
                    uint32_t. */
                 len = (uint32_t)nv.namelen;
-                phton32(&http2_header_pstr[0], len);
+                phtonu32(&http2_header_pstr[0], len);
                 memcpy(&http2_header_pstr[4], nv.name, nv.namelen);
 
                 len = (uint32_t)nv.valuelen;
-                phton32(&http2_header_pstr[4 + nv.namelen], len);
+                phtonu32(&http2_header_pstr[4 + nv.namelen], len);
                 memcpy(&http2_header_pstr[4 + nv.namelen + 4], nv.value, nv.valuelen);
 
                 cached_pstr = (char *)wmem_map_lookup(http2_hdrcache_map, http2_header_pstr);
@@ -2953,7 +3071,6 @@ dissect_http2_header_flags(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *ht
         case HTTP2_GOAWAY:
         case HTTP2_WINDOW_UPDATE:
         case HTTP2_ALTSVC:
-        case HTTP2_BLOCKED:
         case HTTP2_ORIGIN:
         case HTTP2_PRIORITY_UPDATE:
         default:
@@ -3392,9 +3509,10 @@ dissect_http2_data_partial_body(tvbuff_t *tvb, packet_info *pinfo, http2_session
                                 uint8_t flags)
 {
     http2_data_stream_reassembly_info_t *reassembly = get_data_reassembly_info(pinfo, http2_session);
+    http2_stream_info_t *stream_info = get_stream_info(pinfo, http2_session, false);
 
     /* Is the frame part of a body that is going to be reassembled? */
-    if(!IS_HTTP2_END_STREAM(flags)) {
+    if(!IS_HTTP2_END_STREAM(flags) && !stream_info->is_stream_http_connect) {
         proto_item_append_text(http2_tree, " (partial entity body)");
     }
 
@@ -3404,12 +3522,16 @@ dissect_http2_data_partial_body(tvbuff_t *tvb, packet_info *pinfo, http2_session
     }
 
     /* Is this part of a tunneled connection? */
-    http2_stream_info_t *stream_info = get_stream_info(pinfo, http2_session, false);
     if (stream_info->is_stream_http_connect) {
         proto_item_append_text(http2_tree, " (tunneled data)");
     }
 
     proto_tree_add_item(http2_tree, hf_http2_data_data, tvb, offset, length, ENC_NA);
+
+    if (stream_info->next_handle) {
+        stream_info->upgrade_info->from_server = select_http2_flow_index(pinfo, http2_session) == 1;
+        call_dissector_only(stream_info->next_handle, tvb_new_subset_remaining(tvb, offset), pinfo, proto_tree_get_parent_tree(proto_tree_get_parent_tree(http2_tree)), stream_info->upgrade_info);
+    }
 }
 
 static void
@@ -3574,9 +3696,9 @@ get_real_header_value(packet_info* pinfo, const char* name, bool the_other_direc
                    value (string)
             */
             data = (char*) hdr->table.data.data;
-            name_len = pntoh32(data);
+            name_len = pntohu32(data);
             if (strlen(name) == name_len && strncmp(data + 4, name, name_len) == 0) {
-                value_len = pntoh32(data + 4 + name_len);
+                value_len = pntohu32(data + 4 + name_len);
                 if (4 + name_len + 4 + value_len == hdr->table.data.datalen) {
                     /* return value */
                     return get_ascii_string(pinfo->pool, data + 4 + name_len + 4, value_len);
@@ -3876,7 +3998,7 @@ dissect_http2_settings(tvbuff_t* tvb, packet_info* pinfo _U_, http2_session_t* h
         proto_tree_add_item(settings_tree, hf_http2_settings_identifier, tvb, offset, 2, ENC_BIG_ENDIAN);
         settingsid = tvb_get_ntohs(tvb, offset);
         proto_item_append_text(ti_settings, " - %s",
-                               val_to_str( settingsid, http2_settings_vals, "Unknown (%u)") );
+                               val_to_str(pinfo->pool, settingsid, http2_settings_vals, "Unknown (%u)") );
         offset += 2;
 
 
@@ -4401,10 +4523,6 @@ dissect_http2_pdu(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* dat
 
         case HTTP2_ALTSVC: /* ALTSVC (10) */
             dissect_http2_altsvc(tvb, pinfo, http2_tree, offset, flags, length);
-        break;
-
-        case HTTP2_BLOCKED: /* BLOCKED (11) */
-            /* no payload! */
         break;
 
         case HTTP2_ORIGIN: /* ORIGIN (12) */
@@ -5281,12 +5399,12 @@ static void http2_stats_tree_init(stats_tree* st)
 
 }
 
-static tap_packet_status http2_stats_tree_packet(stats_tree* st, packet_info* pinfo _U_, epan_dissect_t* edt _U_, const void* p, tap_flags_t flags _U_)
+static tap_packet_status http2_stats_tree_packet(stats_tree* st, packet_info* pinfo, epan_dissect_t* edt _U_, const void* p, tap_flags_t flags _U_)
 {
     const struct HTTP2Tap *pi = (const struct HTTP2Tap *)p;
     tick_stat_node(st, st_str_http2, 0, false);
     stats_tree_tick_pivot(st, st_node_http2_type,
-            val_to_str(pi->type, http2_type_vals, "Unknown type (%d)"));
+            val_to_str(pinfo->pool, pi->type, http2_type_vals, "Unknown type (%d)"));
 
     return TAP_PACKET_REDRAW;
 }
@@ -5309,6 +5427,7 @@ proto_reg_handoff_http2(void)
     dissector_add_string("tls.alpn", "h2", http2_handle);
     dissector_add_string("http.upgrade", "h2", http2_handle);
     dissector_add_string("http.upgrade", "h2c", http2_handle);
+    dissector_add_string("http.upgrade", "HTTP/2.0", http2_handle);
 
     heur_dissector_add("tls", dissect_http2_heur_ssl, "HTTP2 over TLS", "http2_tls", proto_http2, HEURISTIC_ENABLE);
     heur_dissector_add("tcp", dissect_http2_heur, "HTTP2 over TCP", "http2_tcp", proto_http2, HEURISTIC_ENABLE);

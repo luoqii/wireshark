@@ -2544,7 +2544,7 @@ dissect_amqp_0_9_field_value(tvbuff_t *tvb, packet_info *pinfo, int offset, unsi
     if (length < 1)
         return 0; /* too short */
     type = tvb_get_uint8(tvb, offset);
-    amqp_typename = char_val_to_str(type, amqp_0_9_field_type_vals, "unknown type");
+    amqp_typename = val_to_str_const(type, amqp_0_9_field_type_vals, "unknown type");
     field_item = proto_tree_get_parent(field_tree);
     proto_item_append_text(field_item, " (%s)", amqp_typename);
     type_item = proto_tree_add_item(field_tree, hf_amqp_field_type, tvb, offset, 1, ENC_ASCII);
@@ -9211,7 +9211,7 @@ dissect_amqp_0_9_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
                                      tvb, 11, length - 4, ENC_NA);
             args_tree = proto_item_add_subtree(ti, ett_args);
             col_append_fstr(pinfo->cinfo, COL_INFO, "Connection.%s ",
-                            val_to_str( method_id, amqp_method_connection_methods, "Unknown (%u)"));
+                            val_to_str(pinfo->pool, method_id, amqp_method_connection_methods, "Unknown (%u)"));
             switch (method_id) {
             case AMQP_0_9_METHOD_CONNECTION_START:
                 dissect_amqp_0_9_method_connection_start(tvb,
@@ -9278,7 +9278,7 @@ dissect_amqp_0_9_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
             args_tree = proto_item_add_subtree(ti, ett_args);
 
             col_append_fstr(pinfo->cinfo, COL_INFO, "Channel.%s ",
-                            val_to_str( method_id, amqp_method_channel_methods, "Unknown (%u)"));
+                            val_to_str(pinfo->pool, method_id, amqp_method_channel_methods, "Unknown (%u)"));
 
             switch (method_id) {
             case AMQP_0_9_METHOD_CHANNEL_OPEN:
@@ -9357,7 +9357,7 @@ dissect_amqp_0_9_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
                                      tvb, 11, length - 4, ENC_NA);
             args_tree = proto_item_add_subtree(ti, ett_args);
             col_append_fstr(pinfo->cinfo, COL_INFO, "Exchange.%s ",
-                            val_to_str( method_id, amqp_method_exchange_methods, "Unknown (%u)"));
+                            val_to_str(pinfo->pool, method_id, amqp_method_exchange_methods, "Unknown (%u)"));
             switch (method_id) {
             case AMQP_0_9_METHOD_EXCHANGE_DECLARE:
                 dissect_amqp_0_9_method_exchange_declare(tvb,
@@ -9405,7 +9405,7 @@ dissect_amqp_0_9_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
                                      tvb, 11, length - 4, ENC_NA);
             args_tree = proto_item_add_subtree(ti, ett_args);
             col_append_fstr(pinfo->cinfo, COL_INFO, "Queue.%s ",
-                            val_to_str( method_id, amqp_method_queue_methods, "Unknown (%u)"));
+                            val_to_str(pinfo->pool, method_id, amqp_method_queue_methods, "Unknown (%u)"));
 
             switch (method_id) {
             case AMQP_0_9_METHOD_QUEUE_DECLARE:
@@ -9461,7 +9461,7 @@ dissect_amqp_0_9_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
             args_tree = proto_item_add_subtree(ti, ett_args);
 
             col_append_fstr(pinfo->cinfo, COL_INFO, "Basic.%s ",
-                            val_to_str( method_id, amqp_method_basic_methods, "Unknown (%u)"));
+                            val_to_str(pinfo->pool, method_id, amqp_method_basic_methods, "Unknown (%u)"));
 
             switch (method_id) {
             case AMQP_0_9_METHOD_BASIC_QOS:
@@ -9555,7 +9555,7 @@ dissect_amqp_0_9_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
             args_tree = proto_item_add_subtree(ti, ett_args);
 
             col_append_fstr(pinfo->cinfo, COL_INFO, "File.%s ",
-                            val_to_str( method_id, amqp_method_file_methods, "Unknown (%u)"));
+                            val_to_str(pinfo->pool, method_id, amqp_method_file_methods, "Unknown (%u)"));
 
             switch (method_id) {
             case AMQP_0_9_METHOD_FILE_QOS:
@@ -9627,7 +9627,7 @@ dissect_amqp_0_9_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
             args_tree = proto_item_add_subtree(ti, ett_args);
 
             col_append_fstr(pinfo->cinfo, COL_INFO, "Stream.%s ",
-                            val_to_str( method_id, amqp_method_stream_methods, "Unknown (%u)"));
+                            val_to_str(pinfo->pool, method_id, amqp_method_stream_methods, "Unknown (%u)"));
 
             switch (method_id) {
             case AMQP_0_9_METHOD_STREAM_QOS:
@@ -9679,7 +9679,7 @@ dissect_amqp_0_9_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
             args_tree = proto_item_add_subtree(ti, ett_args);
 
             col_append_fstr(pinfo->cinfo, COL_INFO, "Tx.%s ",
-                            val_to_str( method_id, amqp_method_tx_methods, "Unknown (%u)"));
+                            val_to_str(pinfo->pool, method_id, amqp_method_tx_methods, "Unknown (%u)"));
 
             switch (method_id) {
             case AMQP_0_9_METHOD_TX_SELECT:
@@ -9719,7 +9719,7 @@ dissect_amqp_0_9_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void
             args_tree = proto_item_add_subtree(ti, ett_args);
 
             col_append_fstr(pinfo->cinfo, COL_INFO, "Dtx.%s ",
-                            val_to_str( method_id, amqp_method_dtx_methods, "Unknown (%u)"));
+                            val_to_str(pinfo->pool, method_id, amqp_method_dtx_methods, "Unknown (%u)"));
 
             switch (method_id) {
             case AMQP_0_9_METHOD_DTX_SELECT:
@@ -13687,7 +13687,7 @@ proto_register_amqp(void)
                                &amqp_message_decodes,
                                &num_amqp_message_decodes,
                                UAT_AFFECTS_DISSECTION, /* affects dissection of packets, but not set of named fields */
-                               "ChamqpMessageDecoding",
+                               NULL,
                                amqp_message_decode_copy_cb,
                                amqp_message_decode_update_cb,
                                amqp_message_decode_free_cb,

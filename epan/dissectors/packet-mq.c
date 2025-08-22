@@ -2006,7 +2006,7 @@ static int dissect_mq_xid(tvbuff_t* tvb, proto_tree* tree, mq_parm_t* p_mq_parm,
     return iSizeXid;
 }
 
-static int dissect_mq_sid(tvbuff_t* tvb, proto_tree* tree, mq_parm_t* p_mq_parm, int offset)
+static int dissect_mq_sid(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, mq_parm_t* p_mq_parm, int offset)
 {
     uint8_t iSIDL;
     uint8_t iSID;
@@ -2023,7 +2023,7 @@ static int dissect_mq_sid(tvbuff_t* tvb, proto_tree* tree, mq_parm_t* p_mq_parm,
         offset++;
         if (iSID == MQ_MQSIDT_NT_SECURITY_ID)
         {
-            offset = dissect_nt_sid(tvb, offset, tree, "SID", &sid_str, -1);
+            offset = dissect_nt_sid(tvb, pinfo, offset, tree, "SID", &sid_str, -1);
         }
         else
         {
@@ -2356,7 +2356,7 @@ static void dissect_mq_pdu(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree)
     {
         col_clear_fence(pinfo->cinfo, COL_INFO);
         col_clear(pinfo->cinfo, COL_INFO);
-        col_add_fstr(pinfo->cinfo, COL_INFO, "%-17s", val_to_str_ext(p_mq_parm->mq_opcode, &mq_opcode_xvals, "Unknown (0x%02x)"));
+        col_add_fstr(pinfo->cinfo, COL_INFO, "%-17s", val_to_str_ext(pinfo->pool, p_mq_parm->mq_opcode, &mq_opcode_xvals, "Unknown (0x%02x)"));
     }
 
     if (tree)
@@ -2364,7 +2364,7 @@ static void dissect_mq_pdu(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree)
         if (p_mq_parm->mq_opcode != MQ_TST_ASYNC_MESSAGE)
         {
             ti = proto_tree_add_item(tree, proto_mq, tvb, offset, -1, ENC_NA);
-            proto_item_append_text(ti, " (%s)", val_to_str_ext(p_mq_parm->mq_opcode, &mq_opcode_xvals, "Unknown (0x%02x)"));
+            proto_item_append_text(ti, " (%s)", val_to_str_ext(pinfo->pool, p_mq_parm->mq_opcode, &mq_opcode_xvals, "Unknown (0x%02x)"));
             if (bEBCDIC == true)
                 proto_item_append_text(ti, " (EBCDIC)");
             mqroot_tree = proto_item_add_subtree(ti, ett_mq);
@@ -2518,7 +2518,7 @@ static void dissect_mq_pdu(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree)
         if (tvb_reported_length_remaining(tvb, offset) >= iStatusLength)
         {
             if (iStatus != 0)
-                col_append_fstr(pinfo->cinfo, COL_INFO, " Code=%s", val_to_str_ext(iStatus, &mq_status_xvals, "Unknown (0x%08x)"));
+                col_append_fstr(pinfo->cinfo, COL_INFO, " Code=%s", val_to_str_ext(pinfo->pool, iStatus, &mq_status_xvals, "Unknown (0x%08x)"));
 
             mq_tree = proto_tree_add_subtree(mqroot_tree, tvb, offset, 8, ett_mq_status, NULL, MQ_TEXT_STAT);
 
@@ -2591,21 +2591,36 @@ static void dissect_mq_pdu(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree)
             char* sQMgr;
             uint32_t iEnc;
             uint32_t iCod;
-            uint32_t iApp;
             char    cChr;
 
             /*
             We have to handle the ccsid/coding of the MQCONN REPLY
             on z/OS it is always EBCDIC
             integer are always BIG_ENDIAN
+
+            XXX - why can't the values from p_mq_parm always
+            be used?
             */
             if (p_mq_parm->mq_opcode == MQ_TST_MQCONN_REPLY)
             {
+                /*
+                Try to guess the byte order.
+                Fetch the application type in little-endian
+                byte order; if it's > 65536, it's probably
+                big-endian, and we fetched it in the wrong
+                byte order.
+                */
+                uint32_t iApp;
+
                 iApp = tvb_get_letohl(tvb, offset + 48 + 28);
                 if (iApp <= 65536)
                     iCod = ENC_LITTLE_ENDIAN;
                 else
                     iCod = ENC_BIG_ENDIAN;
+
+                /*
+                Try to guess whether this is EBCDIC or not.
+                */
                 cChr = tvb_get_uint8(tvb, offset + 48);
                 if ((cChr >= 'A' && cChr <= 'Z') ||
                     (cChr >= 'a' && cChr <= 'z') ||
@@ -2624,7 +2639,6 @@ static void dissect_mq_pdu(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree)
                 iCod = p_mq_parm->mq_int_enc;
                 iEnc = p_mq_parm->mq_str_enc;
             }
-            iApp = tvb_get_uint32(tvb, offset + 48 + 28, iCod);
 
             sApplicationName = tvb_get_string_enc(pinfo->pool, tvb, offset + 48, 28, iEnc);
             sApplicationName = format_text_chr(pinfo->pool, sApplicationName, strlen(sApplicationName), '.');
@@ -2700,7 +2714,7 @@ static void dissect_mq_pdu(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree)
                 }
                 ptvcursor_set_tree(cursor, mq_tree);
                 nofs = ptvcursor_current_offset(cursor);
-                tRemain = tvb_reported_length_remaining(tvb, ptvcursor_current_offset(cursor));
+                tRemain = tvb_reported_length_remaining(tvb, nofs);
                 if (tRemain > 0)
                 {
                     if (tRemain - 48 > 0)
@@ -2934,7 +2948,7 @@ static void dissect_mq_pdu(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree)
                 col_append_fstr(pinfo->cinfo, COL_INFO,
                     ", RC=%d(0x%x) - %s",
                     iReasnCode, iReasnCode,
-                    val_to_str_ext(iReasnCode, &mq_MQRC_xvals, "Unknown (0x%02x)"));
+                    val_to_str_ext(pinfo->pool, iReasnCode, &mq_MQRC_xvals, "Unknown (0x%02x)"));
         }
 
         mq_tree = proto_tree_add_subtree(mqroot_tree, tvb, offset, iHdrL, ett_mq_msg, NULL, MQ_TEXT_ASYMSG);
@@ -2974,7 +2988,7 @@ static void dissect_mq_pdu(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree)
         p_mq_parm->iOfsFmt = offset + 20;
 
         iSpiVerb = tvb_get_uint32(tvb, offset, p_mq_parm->mq_int_enc);
-        col_append_fstr(pinfo->cinfo, COL_INFO, " (%s)", val_to_str(iSpiVerb, mq_spi_verbs_vals, "Unknown (0x%08x)"));
+        col_append_fstr(pinfo->cinfo, COL_INFO, " (%s)", val_to_str(pinfo->pool, iSpiVerb, mq_spi_verbs_vals, "Unknown (0x%08x)"));
 
         mq_tree = proto_tree_add_subtree(mqroot_tree, tvb, offset, 12, ett_mq_spi, NULL, MQ_TEXT_SPI);
 
@@ -3106,7 +3120,7 @@ static void dissect_mq_pdu(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree)
     {
         /* The XA structures are special because they do not start with a structid */
         mq_tree = proto_tree_add_subtree_format(mqroot_tree, tvb, offset, 16, ett_mq_xa, NULL,
-            "%s (%s)", MQ_TEXT_XA, val_to_str_ext(p_mq_parm->mq_opcode, &mq_opcode_xvals, "Unknown (0x%02x)"));
+            "%s (%s)", MQ_TEXT_XA, val_to_str_ext(pinfo->pool, p_mq_parm->mq_opcode, &mq_opcode_xvals, "Unknown (0x%02x)"));
 
         proto_tree_add_item(mq_tree, hf_mq_xa_length, tvb, offset, 4, ENC_BIG_ENDIAN);
         proto_tree_add_item(mq_tree, hf_mq_xa_returnvalue, tvb, offset + 4, 4, p_mq_parm->mq_int_enc);
@@ -3246,7 +3260,7 @@ static void dissect_mq_pdu(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree)
             if (iSizeUID == 132)
             {
                 proto_tree_add_item(mq_tree, hf_mq_uid_longuserid, tvb, offset + 28, 64, p_mq_parm->mq_str_enc);
-                dissect_mq_sid(tvb, mq_tree, p_mq_parm, offset + 92);
+                dissect_mq_sid(tvb, pinfo, mq_tree, p_mq_parm, offset + 92);
             }
         }
         offset += iSizeUID;
@@ -3365,7 +3379,7 @@ static void dissect_mq_pdu(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree)
                     if (tree)
                     {
                         mq_tree = proto_tree_add_subtree(mqroot_tree, tvb, offset, tvb_reported_length_remaining(tvb, offset), ett_mq_head, NULL,
-                            val_to_str_ext(p_mq_parm->mq_strucID, &mq_StructID_xvals, "Unknown (0x%08x)"));
+                            val_to_str_ext(pinfo->pool, p_mq_parm->mq_strucID, &mq_StructID_xvals, "Unknown (0x%08x)"));
                     }
                     proto_tree_add_item(mq_tree, hf_mq_tm_StructID, tvb, offset + 0, 4, p_mq_parm->mq_str_enc);
                     proto_tree_add_item(mq_tree, hf_mq_tm_version, tvb, offset + 4, 4, p_mq_parm->mq_int_enc);
@@ -3384,7 +3398,7 @@ static void dissect_mq_pdu(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree)
                     if (tree)
                     {
                         mq_tree = proto_tree_add_subtree(mqroot_tree, tvb, offset, tvb_reported_length_remaining(tvb, offset), ett_mq_head, NULL,
-                            val_to_str_ext(p_mq_parm->mq_strucID, &mq_StructID_xvals, "Unknown (0x%08x)"));
+                            val_to_str_ext(pinfo->pool, p_mq_parm->mq_strucID, &mq_StructID_xvals, "Unknown (0x%08x)"));
                     }
                     proto_tree_add_item(mq_tree, hf_mq_tmc2_StructID, tvb, offset + 0, 4, p_mq_parm->mq_str_enc);
                     proto_tree_add_item(mq_tree, hf_mq_tmc2_version, tvb, offset + 4, 4, p_mq_parm->mq_str_enc);
@@ -3447,7 +3461,7 @@ static void dissect_mq_pdu(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree)
                         if (tree)
                         {
                             mq_tree = proto_tree_add_subtree(mqroot_tree, tvb, offset, iSizeHeader, ett_mq_head, NULL,
-                                val_to_str_ext(p_mq_parm->mq_strucID, &mq_StructID_xvals, "Unknown (0x%08x)"));
+                                val_to_str_ext(pinfo->pool, p_mq_parm->mq_strucID, &mq_StructID_xvals, "Unknown (0x%08x)"));
 
                             proto_tree_add_item(mq_tree, hf_mq_head_StructID, tvb, offset, 4, p_mq_parm->mq_str_enc);
                             proto_tree_add_item(mq_tree, hf_mq_head_version, tvb, offset + 4, 4, p_mq_parm->mq_int_enc);
@@ -3661,7 +3675,7 @@ static void dissect_mq_pdu(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree)
     {
         p_mq_parm->mq_strucID = tvb_get_ntohl(tvb, offset);
         proto_tree_add_subtree_format(mqroot_tree, tvb, offset, -1, ett_mq_structid, NULL,
-            "%s", val_to_str_ext(p_mq_parm->mq_strucID, &mq_StructID_xvals, "Unknown (0x%08x)"));
+            "%s", val_to_str_ext(pinfo->pool, p_mq_parm->mq_strucID, &mq_StructID_xvals, "Unknown (0x%08x)"));
     }
 }
 
@@ -3902,17 +3916,17 @@ static int reassemble_mq(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, vo
             if (fd_head && !fd_head->next && mq_parm.mq_MsgActLen == mq_parm.mq_MsgTotLen)
             {
                 proto_item_append_text(ti, " %s %s Segment",
-                    val_to_str_ext(iOpcd, &mq_opcode_xvals, "Unknown (0x%02x)"),
+                    val_to_str_ext(pinfo->pool, iOpcd, &mq_opcode_xvals, "Unknown (0x%02x)"),
                     pTmp);
                 if (mq_parm.mq_API_RC != MQ_MQRC_NONE)
                     proto_item_append_text(ti, ", Reason=%d(0x%x) - %s",
                         mq_parm.mq_API_RC, mq_parm.mq_API_RC,
-                        val_to_str_ext(mq_parm.mq_API_RC, &mq_MQRC_xvals, "Unknown (0x%02x)"));
+                        val_to_str_ext(pinfo->pool, mq_parm.mq_API_RC, &mq_MQRC_xvals, "Unknown (0x%02x)"));
             }
             else
             {
                 proto_item_append_text(ti, " [%s %s Segment]",
-                    val_to_str_ext(iOpcd, &mq_opcode_xvals, "Unknown (0x%02x)"),
+                    val_to_str_ext(pinfo->pool, iOpcd, &mq_opcode_xvals, "Unknown (0x%02x)"),
                     pTmp);
             }
             if (iOpcd == MQ_TST_ASYNC_MESSAGE)
@@ -3959,7 +3973,7 @@ static int reassemble_mq(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, vo
                 /* Create the tree element for the full reassembled MQ Msg */
                 ti = proto_tree_add_item(tree, proto_mq, tvb, 0, -1, ENC_NA);
                 proto_item_append_text(ti, " %s Full Segment",
-                    val_to_str_ext(iOpcd, &mq_opcode_xvals, "Unknown (0x%02x)"));
+                    val_to_str_ext(pinfo->pool, iOpcd, &mq_opcode_xvals, "Unknown (0x%02x)"));
                 if (iOpcd == MQ_TST_ASYNC_MESSAGE)
                 {
                     proto_item_append_text(ti, ", Hdl=0x%04x, GlbMsgIdx=%d, Len=%d",
@@ -3968,7 +3982,7 @@ static int reassemble_mq(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, vo
                     if (mq_parm.mq_AsyMsgRsn != MQ_MQRC_NONE)
                         proto_item_append_text(ti, ", Reason=%d(0x%x) - %s",
                             mq_parm.mq_AsyMsgRsn, mq_parm.mq_AsyMsgRsn,
-                            val_to_str_ext(mq_parm.mq_AsyMsgRsn, &mq_MQRC_xvals, "Unknown (0x%02x)"));
+                            val_to_str_ext(pinfo->pool, mq_parm.mq_AsyMsgRsn, &mq_MQRC_xvals, "Unknown (0x%02x)"));
                 }
                 else
                 {
@@ -3978,7 +3992,7 @@ static int reassemble_mq(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, vo
                     if (mq_parm.mq_API_RC != MQ_MQRC_NONE)
                         proto_item_append_text(ti, ", RC=%d(0x%x) - %s",
                             mq_parm.mq_API_RC, mq_parm.mq_API_RC,
-                            val_to_str_ext(mq_parm.mq_API_RC, &mq_MQRC_xvals, "Unknown (0x%02x)"));
+                            val_to_str_ext(pinfo->pool, mq_parm.mq_API_RC, &mq_MQRC_xvals, "Unknown (0x%02x)"));
                 }
                 mq_tree = proto_item_add_subtree(ti, ett_mq_reassemb);
             }
@@ -3996,7 +4010,7 @@ static int reassemble_mq(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, vo
             /* Reassembly in progress */
 
             col_add_fstr(pinfo->cinfo, COL_INFO, "[%s %s Segment]",
-                val_to_str_ext(iOpcd, &mq_opcode_xvals, "Unknown (0x%02x)"),
+                val_to_str_ext(pinfo->pool, iOpcd, &mq_opcode_xvals, "Unknown (0x%02x)"),
                 pTmp);
             dissect_mq_addCR_colinfo(pinfo, &mq_parm);
             if (iOpcd == MQ_TST_ASYNC_MESSAGE)

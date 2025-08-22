@@ -1581,13 +1581,13 @@ static void wimaxasncp_dissect_tlv_value(
         /* Add code and type to info column */
         col_append_str(pinfo->cinfo, COL_INFO, " [");
         col_append_str(pinfo->cinfo, COL_INFO,
-                        val_to_str(eap_code, eap_code_vals, "Unknown code (0x%02X)"));
+                        val_to_str(pinfo->pool, eap_code, eap_code_vals, "Unknown code (0x%02X)"));
 
         if (eap_code == EAP_REQUEST || eap_code == EAP_RESPONSE)
         {
             col_append_str(pinfo->cinfo, COL_INFO, ", ");
             col_append_str(pinfo->cinfo, COL_INFO,
-                            val_to_str_ext(eap_type, &eap_type_vals_ext, "Unknown type (0x%02X)"));
+                            val_to_str_ext(pinfo->pool, eap_type, &eap_type_vals_ext, "Unknown type (0x%02X)"));
         }
 
         col_append_str(pinfo->cinfo, COL_INFO, "]");
@@ -1607,12 +1607,12 @@ static void wimaxasncp_dissect_tlv_value(
 
             /* Also show high-level details in this root item */
             proto_item_append_text(item, " (%s",
-                                   val_to_str(eap_code, eap_code_vals,
+                                   val_to_str(pinfo->pool, eap_code, eap_code_vals,
                                               "Unknown code (0x%02X)"));
             if (eap_code == EAP_REQUEST || eap_code == EAP_RESPONSE)
             {
                 proto_item_append_text(item, ", %s",
-                                       val_to_str_ext(eap_type, &eap_type_vals_ext,
+                                       val_to_str_ext(pinfo->pool, eap_type, &eap_type_vals_ext,
                                        "Unknown type (0x%02X)"));
             }
             proto_item_append_text(item, ")");
@@ -2221,7 +2221,7 @@ dissect_wimaxasncp(
      * --------------------------------------------------------------------
      */
 
-    item = proto_tree_add_item(wimaxasncp_tree, hf_wimaxasncp_op_id, tvb, offset, 1, ENC_NA);
+    proto_tree_add_item(wimaxasncp_tree, hf_wimaxasncp_op_id, tvb, offset, 1, ENC_NA);
 
     /* use the function type to find the message vals */
     for (i = 0; i < array_length(wimaxasncp_func_to_msg_vals_map); ++i)
@@ -2708,7 +2708,7 @@ wimaxasncp_dict_print_tlv(void* data, void* user_data)
     wimaxasncp_dict_tlv_t* tlv = (wimaxasncp_dict_tlv_t*)data;
     FILE* fh = (FILE*)user_data;
 
-    char* str_decoder = val_to_str_wmem(NULL, tlv->decoder, wimaxasncp_decode_type_vals, "Unknown");
+    char* str_decoder = val_to_str(NULL, tlv->decoder, wimaxasncp_decode_type_vals, "Unknown");
     fprintf(fh, "TLV: %s[%u] %s[%d] %s (since %u)\n",
         tlv->name ? (char*)tlv->name : "-",
         tlv->type,
@@ -2733,7 +2733,7 @@ wimaxasncp_print_tlv(void* data, void* user_data)
     wimaxasncp_tlv_new_t* tlv = (wimaxasncp_tlv_new_t*)data;
     FILE* fh = (FILE*)user_data;
 
-    char* str_decoder = val_to_str_wmem(NULL, tlv->decoder, wimaxasncp_decode_type_vals, "Unknown");
+    char* str_decoder = val_to_str(NULL, tlv->decoder, wimaxasncp_decode_type_vals, "Unknown");
     fprintf(fh,
         "%s\n"
         "  type                   = %u\n"
@@ -2862,6 +2862,7 @@ wimaxasncp_dictionary_process_file(const char* filename, GSList** tlvs)
                                 gchar* parenthesized_value_str = g_match_info_fetch(match_info, 3);
 
                                 ws_strtou32(bit_value_str, NULL, &bit_value);
+                                g_free(bit_value_str);
                                 switch(bit_value)
                                 {
                                 case 8:
@@ -2877,19 +2878,21 @@ wimaxasncp_dictionary_process_file(const char* filename, GSList** tlvs)
                                         tlv_enum->code = 1 << (31 - bit_shift);
                                     break;
                                 }
+                                g_free(parenthesized_value_str);
 
                             }
                             g_match_info_free(match_info);
                         }
                         xmlFree(str_code);
                     }
-                    element->enums = g_slist_append(element->enums, tlv_enum);
+                    element->enums = g_slist_prepend(element->enums, tlv_enum);
                 }
             }
-
-            (*tlvs) = g_slist_append((*tlvs), element);
+            element->enums = g_slist_reverse(element->enums);
+            (*tlvs) = g_slist_prepend((*tlvs), element);
         }
     }
+    (*tlvs) = g_slist_reverse(*tlvs);
 cleanup:
     xmlFreeDoc(doc);
 
@@ -2922,7 +2925,7 @@ wimaxasncp_dict_process(void* data, void* user_data)
     if (dict_tlv->enums != NULL)
     {
         /* Create array for enums */
-        wmem_array_t* array = wmem_array_new(wmem_epan_scope(), sizeof(value_string));
+        wmem_array_t* array = wmem_array_sized_new(wmem_epan_scope(), sizeof(value_string), 16);
 
         /* Copy each entry into value_string array */
         g_slist_foreach(dict_tlv->enums, wimaxasncp_dict_enum_process, array);
@@ -2938,22 +2941,20 @@ wimaxasncp_dict_process(void* data, void* user_data)
 }
 
 static void
-wimaxasncp_dict_tlv_enum_clean(void* data, void* user_data _U_)
+wimaxasncp_dict_tlv_enum_clean(wimaxasncp_dict_tlv_enum_t* dict_enum)
 {
-    wimaxasncp_dict_tlv_enum_t* dict_enum = (wimaxasncp_dict_tlv_enum_t*)data;
     xmlFree(dict_enum->name);
+    g_free(dict_enum);
 }
 
 static void
-wimaxasncp_dict_clean(void* data, void* user_data)
+wimaxasncp_dict_clean(wimaxasncp_dict_tlv_t* dict_tlv)
 {
-    wimaxasncp_dict_tlv_t* dict_tlv = (wimaxasncp_dict_tlv_t*)data;
-
     xmlFree(dict_tlv->name);
     xmlFree(dict_tlv->description);
 
-    g_slist_foreach(dict_tlv->enums, wimaxasncp_dict_tlv_enum_clean, user_data);
-    g_slist_free(dict_tlv->enums);
+    g_slist_free_full(dict_tlv->enums, (GDestroyNotify)wimaxasncp_dict_tlv_enum_clean);
+    g_free(dict_tlv);
 }
 
 /* ========================================================================= */
@@ -3282,21 +3283,21 @@ register_wimaxasncp_fields(const char* unused _U_)
      * ------------------------------------------------------------------------
      */
 
-    wimaxasncp_build_dict.hf = wmem_array_new(wmem_epan_scope(), sizeof(hf_register_info));
+    wimaxasncp_build_dict.hf = wmem_array_sized_new(wmem_epan_scope(), sizeof(hf_register_info), array_length(hf_base));
     wmem_array_append(wimaxasncp_build_dict.hf, hf_base, array_length(hf_base));
 
-    wimaxasncp_build_dict.ett = wmem_array_new(wmem_epan_scope(), sizeof(int*));
+    wimaxasncp_build_dict.ett = wmem_array_sized_new(wmem_epan_scope(), sizeof(int*), array_length(ett_base));
     wmem_array_append(wimaxasncp_build_dict.ett, ett_base, array_length(ett_base));
 
     /* Convert the dictionary data to epan scoped data structures */
     wimaxasncp_tlvs = wmem_list_new(wmem_epan_scope());
     g_slist_foreach(all_tlvs, wimaxasncp_dict_process, wimaxasncp_tlvs);
-
     /* add an entry for unknown TLVs */
     add_tlv_reg_info(&wimaxasncp_tlv_not_found);
 
     /* Clean up dictionary data */
-    g_slist_foreach(all_tlvs, wimaxasncp_dict_clean, NULL);
+    g_slist_free_full(all_tlvs, (GDestroyNotify)wimaxasncp_dict_clean);
+    all_tlvs = NULL;
 
     /* Optionally print the hfs created from the dictionary */
     if (success && dump_dict)

@@ -29,8 +29,8 @@ struct TextLine {
 #endif
     int highlight_start;
     int highlight_length;
-    int field_start;
-    int field_length;
+    int kv_start;
+    int kv_length;
 };
 
 struct TextBlock {
@@ -56,6 +56,7 @@ public slots:
     // We're assuming that we have a 1:1 correspondence between the view and a single protocol.
     void markProtocol(int start, int length) {Q_UNUSED(start) Q_UNUSED(length)}
     void markAppendix(int start, int length) {Q_UNUSED(start) Q_UNUSED(length)}
+    void saveSelected(int start) {Q_UNUSED(start)}
 
 protected:
     // virtual bool event(QEvent *event);

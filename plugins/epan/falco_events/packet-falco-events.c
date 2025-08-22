@@ -218,17 +218,39 @@ falco_events_cleanup(void) {
     close_sinsp_capture(sinsp_span);
 }
 
-// Returns true if the field might contain an IPv4 or IPv6 address.
+// Returns true if the field should be used for conversation filters.
 // XXX This should probably be a preference.
 static bool
-is_string_address_field(enum ftenum ftype, const char *abbrev) {
+is_conversation_field(enum ftenum ftype, const char *abbrev) {
     if (ftype != FT_STRINGZ) {
         return false;
     }
-    if (strstr(abbrev, ".srcip")) { // ct.srcip
+
+    if (strcmp(abbrev, "ct.shortsrc") == 0) {
         return true;
-    } else if (strstr(abbrev, ".client.ip")) { // okta.client.ip
+    } else if (strstr(abbrev, "ct.user.accountid")) {
         return true;
+    }
+    return false;
+}
+
+// Returns true if the field might contain an IPv4 or IPv6 address.
+// XXX This should probably be a preference.
+static bool
+is_source_address_field(enum ftenum ftype, const char *abbrev) {
+    if (ftype != FT_STRINGZ) {
+        return false;
+    }
+
+    const char *addr_suffixes[] = {
+        ".srcip",       // ct.srcip
+        ".callerIP",    // gcp.callerIP
+        ".client.ip",   // okta.client.ip
+    };
+    for (size_t idx = 0; idx < array_length(addr_suffixes); idx++) {
+        if (g_str_has_suffix(abbrev, addr_suffixes[idx])) {
+            return true;
+        }
     }
     return false;
 }
@@ -422,19 +444,19 @@ create_source_hfids(bridge_info* bi)
 
     for (size_t j = 0; j < tot_fields; j++) {
         get_sinsp_source_field_info(bi->ssi, j, &sfi);
-        if (sfi.is_hidden) {
+        if (sfi.skip) {
             /*
-             * Skip the fields that are marked as hidden.
+             * Skip special fields (lists and tables).
              * XXX Should we keep them and call proto_item_set_hidden?
              */
             continue;
         }
-        if (sfi.is_numeric_address || is_string_address_field(sfi.type, sfi.abbrev)) {
+        if (sfi.is_numeric_address || is_source_address_field(sfi.type, sfi.abbrev)) {
             bi->addr_fields++;
         }
         bi->visible_fields++;
 
-        if (sfi.is_conversation) {
+        if (sfi.is_conversation || is_conversation_field(sfi.type, sfi.abbrev)) {
             bi->num_conversation_filters++;
         }
     }
@@ -465,9 +487,9 @@ create_source_hfids(bridge_info* bi)
         {
             get_sinsp_source_field_info(bi->ssi, j, &sfi);
 
-            if (sfi.is_hidden) {
+            if (sfi.skip) {
                 /*
-                 * Skip the fields that are marked as hidden
+                 * Skip special fields (lists and tables).
                  */
                 continue;
             }
@@ -540,7 +562,7 @@ create_source_hfids(bridge_info* bi)
             };
             bi->hf[fld_cnt] = finfo;
 
-            if (sfi.is_conversation) {
+            if (sfi.is_conversation || is_conversation_field(sfi.type, sfi.abbrev)) {
                 ws_assert(conv_fld_cnt < bi->num_conversation_filters);
                 bi->field_flags[fld_cnt] |= BFF_CONVERSATION;
                 bi->conversation_filters[conv_fld_cnt].field_info = &bi->hf[fld_cnt];
@@ -559,7 +581,7 @@ create_source_hfids(bridge_info* bi)
                 bi->field_flags[fld_cnt] |= BFF_INFO;
             }
 
-            if (sfi.is_numeric_address || is_string_address_field(sfi.type, sfi.abbrev)) {
+            if (sfi.is_numeric_address || is_source_address_field(sfi.type, sfi.abbrev)) {
                 ws_assert(addr_fld_cnt < bi->addr_fields);
                 bi->hf_id_to_addr_id[fld_cnt] = addr_fld_cnt;
 
@@ -641,10 +663,20 @@ create_source_hfids(bridge_info* bi)
     }
 }
 
+#define K8SAUDIT_PLUGIN_ID    1
+#define CLOUDTRAIL_PLUGIN_ID  2
+#define GCPAUDIT_PLUGIN_ID   12
+
 // Plugins whose data should be displayed as JSON.
 // XXX This should probably be a preference.
-// We could also do this by numeric ID: https://github.com/falcosecurity/plugins
-static const char *json_plugins[] = {"cloudtrail"};
+static const uint32_t json_plugins[] = {K8SAUDIT_PLUGIN_ID, CLOUDTRAIL_PLUGIN_ID, GCPAUDIT_PLUGIN_ID};
+
+static const value_string source_id_to_name[] = {
+    { K8SAUDIT_PLUGIN_ID,   "Kubernetes Audit Logs" },
+    { CLOUDTRAIL_PLUGIN_ID, "AWS CloudTrail" },
+    { GCPAUDIT_PLUGIN_ID,   "Google Cloud Audit Logs" },
+    { 0, NULL }
+};
 
 void
 import_plugin(char* fname)
@@ -663,12 +695,15 @@ import_plugin(char* fname)
     create_source_hfids(bi);
 
     const char *source_name = get_sinsp_source_name(bi->ssi);
-    const char *plugin_name = g_strdup_printf("%s Falco Events Plugin", source_name);
+    const char *plugin_name = try_val_to_str(bi->source_id, source_id_to_name);
+    if (!plugin_name) {
+        plugin_name = g_strdup_printf("%s Falco Events Plugin", source_name);
+    }
     bi->proto = proto_register_protocol(plugin_name, source_name, source_name);
 
     bi->media_type = DS_MEDIA_TYPE_APPLICATION_OCTET_STREAM;
     for (size_t i = 0; i < array_length(json_plugins); i++) {
-        if (strcmp(json_plugins[i], source_name) == 0) {
+        if (json_plugins[i] == bi->source_id) {
             bi->media_type = DS_MEDIA_TYPE_APPLICATION_JSON;
         }
     }
@@ -1262,11 +1297,13 @@ dissect_sinsp_enriched(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, void
                         memcpy(&v4_addr, sinsp_fields[sf_idx].res.bytes, 4);
                         proto_tree_add_ipv4(parent_tree, bi->hf_v4_ids[addr_fld_idx], tvb, 0, 0, v4_addr);
                         set_address(&pinfo->net_src, AT_IPv4, sizeof(ws_in4_addr), &v4_addr);
+                        copy_address_shallow(&pinfo->src, &pinfo->net_src);
                     } else if (sinsp_fields[sf_idx].res_len == 16) {
                         ws_in6_addr v6_addr;
                         memcpy(&v6_addr, sinsp_fields[sf_idx].res.bytes, 16);
                         proto_tree_add_ipv6(parent_tree, bi->hf_v6_ids[addr_fld_idx], tvb, 0, 0, &v6_addr);
                         set_address(&pinfo->net_src, AT_IPv6, sizeof(ws_in6_addr), &v6_addr);
+                        copy_address_shallow(&pinfo->src, &pinfo->net_src);
                     } else {
                         ws_warning("Invalid length %u for address field %u", sinsp_fields[sf_idx].res_len, sf_idx);
                     }
@@ -1435,16 +1472,15 @@ dissect_sinsp_plugin(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, void* 
                     strcmp(hfinfo->abbrev, "ct.additionaleventdata") == 0 ||
                     strcmp(hfinfo->abbrev, "ct.resources") == 0 ) &&
                     strcmp(sfe->res.str, "null") != 0) {
-               tvbuff_t *json_tvb = tvb_new_child_real_data(tvb, sfe->res.str, (unsigned)strlen(sfe->res.str), (unsigned)strlen(sfe->res.str));
-               add_new_data_source(pinfo, json_tvb, "JSON Object");
-               proto_tree *json_tree = proto_item_add_subtree(sf_ti, ett_json);
-               char *col_info_text = wmem_strdup(pinfo->pool, col_get_text(pinfo->cinfo, COL_INFO));
-               call_dissector(json_handle, json_tvb, pinfo, json_tree);
+                tvbuff_t *json_tvb = tvb_new_subset_length(tvb, sfe->data_start, sfe->data_length);
+                proto_tree *json_tree = proto_item_add_subtree(sf_ti, ett_json);
+                char *col_info_text = wmem_strdup(pinfo->pool, col_get_text(pinfo->cinfo, COL_INFO));
+                call_dissector(json_handle, json_tvb, pinfo, json_tree);
 
                 /* Restore Protocol and Info columns */
                 col_set_str(pinfo->cinfo, COL_INFO, col_info_text);
             }
-            int addr_fld_idx = bi->hf_id_to_addr_id[fld_idx];
+            int addr_fld_idx = bi->hf_id_to_addr_id ? bi->hf_id_to_addr_id[fld_idx] : -1;
             if (addr_fld_idx >= 0) {
                 ws_in4_addr v4_addr;
                 ws_in6_addr v6_addr;
@@ -1454,10 +1490,12 @@ dissect_sinsp_plugin(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, void* 
                     addr_tree = proto_item_add_subtree(sf_ti, ett_address);
                     addr_item = proto_tree_add_ipv4(addr_tree, bi->hf_v4_ids[addr_fld_idx], tvb, sfe->data_start, sfe->data_length, v4_addr);
                     set_address(&pinfo->net_src, AT_IPv4, sizeof(ws_in4_addr), &v4_addr);
+                    copy_address_shallow(&pinfo->src, &pinfo->net_src);
                 } else if (ws_inet_pton6(sfe->res.str, &v6_addr)) {
                     addr_tree = proto_item_add_subtree(sf_ti, ett_address);
                     addr_item = proto_tree_add_ipv6(addr_tree, bi->hf_v6_ids[addr_fld_idx], tvb, sfe->data_start, sfe->data_length, &v6_addr);
                     set_address(&pinfo->net_src, AT_IPv6, sizeof(ws_in6_addr), &v6_addr);
+                    copy_address_shallow(&pinfo->src, &pinfo->net_src);
                 }
                 if (addr_item) {
                     proto_item_set_generated(addr_item);
