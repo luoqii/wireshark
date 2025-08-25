@@ -306,13 +306,11 @@ static void parse_band_he_cap_phy(struct ws80211_band *band,
 	band->channel_types |= 1 << WS80211_CHAN_HT20;
 	if (chan_cap_phy & 1) {
 		/* 40 MHz in 2.4 GHz band */
-		band->channel_types |= 1 << WS80211_CHAN_HT40MINUS;
-		band->channel_types |= 1 << WS80211_CHAN_HT40PLUS;
+		band->channel_types |= 1 << WS80211_CHAN_HE40;
 	}
 	if (chan_cap_phy & 2) {
 		/* 40 & 80 MHz in the 5 GHz and 6 GHz bands */
-		band->channel_types |= 1 << WS80211_CHAN_HT40MINUS;
-		band->channel_types |= 1 << WS80211_CHAN_HT40PLUS;
+		band->channel_types |= 1 << WS80211_CHAN_HE40;
 		band->channel_types |= 1 << WS80211_CHAN_VHT80;
 	}
 	if (chan_cap_phy & 4) {
@@ -407,7 +405,6 @@ static void parse_band_freqs(struct ws80211_band *band,
 	if (!tb) return;
 
 	nla_for_each_nested(nl_freq, tb, rem_freq) {
-		uint32_t freq;
 		nla_parse(tb_freq, NL80211_FREQUENCY_ATTR_MAX,
 			  (struct nlattr *)nla_data(nl_freq),
 			  nla_len(nl_freq), freq_policy);
@@ -416,14 +413,7 @@ static void parse_band_freqs(struct ws80211_band *band,
 		if (tb_freq[NL80211_FREQUENCY_ATTR_DISABLED])
 			continue;
 		/* TODO - Look at other attributes like
-		 * NL80211_FREQUENCY_ATTR_NO_HT40_MINUS, etc. for frequencies
-		 * that can't be used with a particular channel type/bw even
-		 * if the PHY supports it in the band. (Note that this is about
-		 * the regulatory domain; e.g. NL80211_FREQUENCY_ATTR_NO_160MHZ
-		 * will be set for 2.4 GHz channels but not for 5/6 GHz channels
-		 * regardless of gear, so we have to look both here and the
-		 * band attribute PHY capabilities.)
-		 * Recent nl80211.h has NL80211_FREQUENCY_ATTR_CAN_MONITOR
+		 * recent nl80211.h has NL80211_FREQUENCY_ATTR_CAN_MONITOR
 		 * "This channel can be used in monitor mode despite other
 		 * (regulatory) restrictions, even if the channel is otherwise
 		 * completely disabled."
@@ -431,7 +421,46 @@ static void parse_band_freqs(struct ws80211_band *band,
 		 * the frequency anyway even if disabled.
 		 */
 
-		freq = nla_get_u32(tb_freq[NL80211_FREQUENCY_ATTR_FREQ]);
+		struct ws80211_frequency freq = {
+			nla_get_u32(tb_freq[NL80211_FREQUENCY_ATTR_FREQ]),
+			0
+		};
+#ifdef HAVE_NL80211_SPLIT_WIPHY_DUMP
+		/* Advertising these channel limitations was added in
+		 * Linux kernel 3.9 (2013 April, non-LTS), SPLIT_WIPHY_DUMP
+		 * in 3.10 (2013 June, LTS)
+		 */
+		/* XXX - Unfortunately (at least some) drivers in the 6 GHz
+		 * bands don't bother reporting which one of HT40MINUS or
+		 * HT40PLUS they don't support for a given frequency
+		 * (even though in the 6 GHz band HE/802.11ax/Wi-Fi6E
+		 * only supports non-overlapping 40 MHz channels.) They do
+		 * in the other bands. They *also* don't bother reporting the
+		 * that channels don't support 80 or 160 MHz operation at the
+		 * end of the 6 GHz bands (e.g., no 80 or 160 on 6 GHz channels
+		 * 225 or 229, not 40, 80 or 160 on 233.) That would have to
+		 * be done here, not in the NL80211_ATTR_REG_RULE_FLAGS, as
+		 * it applies to only certain frequencies in the band.
+		 * We take what we get, though.
+		 */
+		if (tb_freq[NL80211_FREQUENCY_ATTR_NO_HT40_MINUS]) {
+			freq.channel_mask |= 1 << WS80211_CHAN_HT40MINUS;
+		}
+		if (tb_freq[NL80211_FREQUENCY_ATTR_NO_HT40_PLUS]) {
+			freq.channel_mask |= 1 << WS80211_CHAN_HT40PLUS;
+		}
+		if (tb_freq[NL80211_FREQUENCY_ATTR_NO_80MHZ]) {
+			freq.channel_mask |= 1 << WS80211_CHAN_VHT80;
+		}
+		if (tb_freq[NL80211_FREQUENCY_ATTR_NO_160MHZ]) {
+			freq.channel_mask |= 1 << WS80211_CHAN_VHT160;
+		}
+#ifdef HAVE_NL80211_EHT_CAPABILITY
+		if (tb_freq[NL80211_FREQUENCY_ATTR_NO_320MHZ]) {
+			freq.channel_mask |= 1 << WS80211_CHAN_EHT320;
+		}
+#endif /* HAVE_NL80211_EHT_CAPABILITY */
+#endif /* HAVE_NL80211_SPLIT_WIPHY_DUMP */
 		g_array_append_val(band->frequencies, freq);
 	}
 }
@@ -476,7 +505,7 @@ static void parse_wiphy_bands(struct ws80211_interface *iface,
 		}
 		band = &g_array_index(iface->bands, struct ws80211_band, band_type);
 		if (band->frequencies == NULL) {
-			band->frequencies = g_array_new(false, false, sizeof(uint32_t));
+			band->frequencies = g_array_new(false, false, sizeof(struct ws80211_frequency));
 		}
 #ifdef NL80211_BAND_ATTR_HT_CAPA
 		parse_band_ht_capa(band, tb_band[NL80211_BAND_ATTR_HT_CAPA]);
@@ -643,28 +672,27 @@ static int get_iface_info_handler(struct nl_msg *msg, void *arg)
 	}
 
 	if (tb_msg[NL80211_ATTR_WIPHY_FREQ]) {
-		bool found_ch_width = false;
+		/* bool found_ch_width = false; */
 		iface_info->pub->current_freq = nla_get_u32(tb_msg[NL80211_ATTR_WIPHY_FREQ]);
 		iface_info->pub->current_chan_type = WS80211_CHAN_NO_HT;
 #ifdef HAVE_NL80211_VHT_CAPABILITY
 		if (tb_msg[NL80211_ATTR_CHANNEL_WIDTH]) {
 			switch (nla_get_u32(tb_msg[NL80211_ATTR_CHANNEL_WIDTH])) {
+			case NL80211_CHAN_WIDTH_40:
+				iface_info->pub->current_chan_type = WS80211_CHAN_HE40;
+				break;
 			case NL80211_CHAN_WIDTH_80:
 				iface_info->pub->current_chan_type = WS80211_CHAN_VHT80;
-				found_ch_width = true;
 				break;
 			case NL80211_CHAN_WIDTH_80P80:
 				iface_info->pub->current_chan_type = WS80211_CHAN_VHT80P80;
-				found_ch_width = true;
 				break;
 			case NL80211_CHAN_WIDTH_160:
 				iface_info->pub->current_chan_type = WS80211_CHAN_VHT160;
-				found_ch_width = true;
 				break;
 #ifdef HAVE_NL80211_EHT_CAPABILITY
 			case NL80211_CHAN_WIDTH_320:
 				iface_info->pub->current_chan_type = WS80211_CHAN_EHT320;
-				found_ch_width = true;
 				break;
 #endif /* HAVE_NL80211_EHT_CAPABILITY */
 			}
@@ -678,7 +706,18 @@ static int get_iface_info_handler(struct nl_msg *msg, void *arg)
 				nla_get_u32(tb_msg[NL80211_ATTR_CENTER_FREQ2]);
 		}
 #endif
-		if (!found_ch_width && tb_msg[NL80211_ATTR_WIPHY_CHANNEL_TYPE]) {
+		/* An interface can report both NL80211_CHAN_WIDTH_40 and one
+		 * of NL80211_CHAN_HT40{MINUS,PLUS} for its channel type and
+		 * width. CHANNEL_TYPE is officially deprecated, but prefer it
+		 * anyway since the CHANNEL_WIDTH attribute requires the center
+		 * frequency to be fully specified. (In the 2.4 GHz and 5 GHz
+		 * bands there can be multiple accepted center frequencies for
+		 * a control frequency, and the GUI doesn't display the current
+		 * center frequency nor ask the user to specify the center
+		 * frequency when tuning, but determines it automatically from
+		 * the channel type/width.)
+		 */
+		if (tb_msg[NL80211_ATTR_WIPHY_CHANNEL_TYPE]) {
 			switch (nla_get_u32(tb_msg[NL80211_ATTR_WIPHY_CHANNEL_TYPE])) {
 
 			case NL80211_CHAN_NO_HT:
@@ -976,6 +1015,11 @@ int ws80211_set_freq(const char *name, uint32_t freq, int chan_type, uint32_t _U
 		break;
 #endif
 #ifdef HAVE_NL80211_VHT_CAPABILITY
+	case WS80211_CHAN_HE40:
+		NLA_PUT_U32(msg, NL80211_ATTR_CHANNEL_WIDTH, NL80211_CHAN_WIDTH_40);
+		NLA_PUT_U32(msg, NL80211_ATTR_CENTER_FREQ1, center_freq);
+		break;
+
 	case WS80211_CHAN_VHT80:
 		NLA_PUT_U32(msg, NL80211_ATTR_CHANNEL_WIDTH, NL80211_CHAN_WIDTH_80);
 		NLA_PUT_U32(msg, NL80211_ATTR_CENTER_FREQ1, center_freq);
@@ -1044,6 +1088,8 @@ ws80211_str_to_chan_type(const char *s)
 		ret = WS80211_CHAN_HT40MINUS;
 	if (!strcmp(s, CHAN_HT40PLUS))
 		ret = WS80211_CHAN_HT40PLUS;
+	if (!strcmp(s, CHAN_HE40))
+		ret = WS80211_CHAN_HE40;
 	if (!strcmp(s, CHAN_VHT80))
 		ret = WS80211_CHAN_VHT80;
 	if (!strcmp(s, CHAN_VHT80P80))
@@ -1068,6 +1114,8 @@ const char
 		return CHAN_HT40MINUS;
 	case WS80211_CHAN_HT40PLUS:
 		return CHAN_HT40PLUS;
+	case WS80211_CHAN_HE40:
+		return CHAN_HE40;
 	case WS80211_CHAN_VHT80:
 		return CHAN_VHT80;
 	case WS80211_CHAN_VHT80P80:
@@ -1211,15 +1259,38 @@ int ws80211_get_center_frequency(int control_frequency, enum ws80211_channel_typ
 	const int bw160[] = { 5180, 5500, 5955, 6115, 6275, 6435,
 			      6595, 6755, 6915 };
 	/* based on 11be D2 E.1 Country information and operating classes */
-	const int bw320[] = { 5955, 6115, 6275, 6435, 6595, 6755};
 
+	/* XXX - The 320 MHz channels in 6 GHz are once again overlapping
+	 * (spaced 160 MHz apart), unlike the 80 and 160 MHz channels. That
+	 * means that there isn't a unique center frequency for many given
+	 * control frequencies.
+	 */
+	const int bw320[] = { 5955, 6115, 6275, 6435, 6595, 6755};
+	/* 27.3.23.2 cf = starting_freq + 5 * channel_num */
 	switch (chan_type) {
+	case WS80211_CHAN_HE40:
+		/* 40 MHz operation with explicit center frequency, e.g.
+		 * in the 6 GHz band. Calculate the control frequency that
+		 * produces non-overlapping bands. Look at operating class
+		 * 132 in the Country information and operating classes table.
+		 */
+
+		if (control_frequency >= 5955) {
+			cf1 = ((control_frequency - 5955) / 40) * 40;
+			cf1 += 5955 + 10;
+			break;
+		} else if (control_frequency >= 5180) {
+			cf1 = ((control_frequency - 5180) / 40) * 40;
+			cf1 += 5180 + 10;
+			break;
+		}
+		break;
 	case WS80211_CHAN_VHT80:
 	case WS80211_CHAN_VHT80P80: /* Needs a second cf as well. */
 		for (j = 0; j < array_length(bw80); j++) {
 			if (control_frequency >= bw80[j] && control_frequency < bw80[j] + 80)
 				break;
-			}
+		}
 
 		if (j == array_length(bw80))
 			break;
@@ -1250,7 +1321,8 @@ int ws80211_get_center_frequency(int control_frequency, enum ws80211_channel_typ
 		break;
 	default:
 	/* Since we explicitly specify HT40MINUS vs HT40PLUS we don't need to
-	* calculate the center freq for those; ws80211_set_freq doesn't need it. */
+	* calculate the center freq for those; ws80211_set_freq doesn't need it.
+	*/
 		break;
 	}
 

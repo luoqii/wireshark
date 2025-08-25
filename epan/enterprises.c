@@ -8,7 +8,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-/* (last updated 2025-08-15) */
+/* (last updated 2025-08-22) */
 
 #include "config.h"
 
@@ -29338,7 +29338,7 @@ static const char * const table[] =
     "Astute Networks, Inc.",                                                              // 29316
     "Global Technology Inc.",                                                             // 29317
     "Doquent Inc",                                                                        // 29318
-    "NTT Communications Corporation",                                                     // 29319
+    "NTT DOCOMO BUSINESS, Inc.",                                                          // 29319
     "regio iT aachen gmbh",                                                               // 29320
     "IBL Software Engineering, Ltd.",                                                     // 29321
     "Cabinplant A/S",                                                                     // 29322
@@ -34685,7 +34685,7 @@ static const char * const table[] =
     "Lavinia Interactiva",                                                                // 34663
     "Trident Micro Systems",                                                              // 34664
     "ENTEL S.A. BOLIVIA",                                                                 // 34665
-    "Lava Business Solutions",                                                            // 34666
+    "LavaBS",                                                                             // 34666
     "DSP LABS S.r.l.",                                                                    // 34667
     "Koine Servizi S.r.l.",                                                               // 34668
     "Encarnate, LLC",                                                                     // 34669
@@ -45770,7 +45770,7 @@ static const char * const table[] =
     "Thüga SmartService GmbH",                                                            // 45748
     "Evolving Models",                                                                    // 45749
     "gerthoux",                                                                           // 45750
-    "Hibernating Rhinos",                                                                 // 45751
+    "RavenDB",                                                                            // 45751
     "connecT EDV-Vertriebs GmbH",                                                         // 45752
     "winterdrache.de",                                                                    // 45753
     "VoipOtago Ltd",                                                                      // 45754
@@ -52591,7 +52591,7 @@ static const char * const table[] =
     "Secure ID LTD.",                                                                     // 52569
     "OMU",                                                                                // 52570
     "HIFSYS TECHNOLOGY INC.",                                                             // 52571
-    "Oghmasys IT Services GmbH",                                                          // 52572
+    "Nomad Automate SAS",                                                                 // 52572
     "Keenetic Limited",                                                                   // 52573
     "StepOver GmbH",                                                                      // 52574
     "Kinexon GmbH",                                                                       // 52575
@@ -60197,7 +60197,7 @@ static const char * const table[] =
     "Shenzhen Growatt New Energy Co., Ltd.",                                              // 60175
     "Technological Ray GmbH",                                                             // 60176
     "Stanisław Skowron",                                                                  // 60177
-    "Vade",                                                                               // 60178
+    "Hornetsecurity SAS",                                                                 // 60178
     "EIZO Rugged Solutions Inc.",                                                         // 60179
     "Owen Sound Medical Imaging",                                                         // 60180
     "cloudtech GmbH",                                                                     // 60181
@@ -63976,7 +63976,7 @@ static const char * const table[] =
     "Crashkopf Network Systems",                                                          // 63954
     "北京甲信技术有限公司 (Beijing Jiaxin Technology Co., Ltd)",                                    // 63955
     "PYLON TECHNOLOGIES AUSTRALIA PTY LTD",                                               // 63956
-    "ELTE",                                                                               // 63957
+    "ELTE Limited",                                                                       // 63957
     "Feller Group LLC",                                                                   // 63958
     "Grand Vision Gaming",                                                                // 63959
     "Omniconn",                                                                           // 63960
@@ -64076,7 +64076,46 @@ static const char * const table[] =
     "Altimate Net GmbH",                                                                  // 64054
     "DB Systel GmbH",                                                                     // 64055
     "Felisify",                                                                           // 64056
-    "EVAM"                                                                                // 64057
+    "EVAM",                                                                               // 64057
+    "Công Ty Cổ Phần Mạng Sáng Tạo EasyNet",                                              // 64058
+    "Unit6 Inc.",                                                                         // 64059
+    "Argentra Solutions Pte Ltd",                                                         // 64060
+    "Techn. Sonderloesungen Hueller",                                                     // 64061
+    "FUTEURCREDX INC.",                                                                   // 64062
+    "Benjamin Beideman",                                                                  // 64063
+    "TrustedCA",                                                                          // 64064
+    "DIGITAL NOTARY ADVISORY LLC, SUCURSAL ESPAÑA",                                       // 64065
+    "UBINEXUS",                                                                           // 64066
+    "Saer Irish",                                                                         // 64067
+    "Jaxis Inc.",                                                                         // 64068
+    "Ellis Technology",                                                                   // 64069
+    "Arasaka",                                                                            // 64070
+    "Databridge Dynamics (P) Ltd.,",                                                      // 64071
+    "Misawa Homes of Finland Oy",                                                         // 64072
+    "Huayao Zhian Technology Co., Ltd.",                                                  // 64073
+    "EcoFlow Inc.",                                                                       // 64074
+    "myUpTech AB",                                                                        // 64075
+    "Blaize",                                                                             // 64076
+    "Joel Strasser",                                                                      // 64077
+    "Securetia",                                                                          // 64078
+    "Megakuul",                                                                           // 64079
+    "Richard Curylo",                                                                     // 64080
+    "Chiba Prefectural Matsudo High School Computer Club",                                // 64081
+    "Sigma Ukraine",                                                                      // 64082
+    "Musicratic Label SpA",                                                               // 64083
+    "Catalina Andrea Millán Coronado",                                                    // 64084
+    "PacketController Network",                                                           // 64085
+    "Andrej Kravtsov",                                                                    // 64086
+    "Sebastián Andrés Millán Coronado",                                                   // 64087
+    "Etude Technique en Electronique Professionnelle",                                    // 64088
+    "LIMART - FZCO",                                                                      // 64089
+    "EbV Elektronikbau- und Vertriebs GmbH",                                              // 64090
+    "Zyme Ltd.",                                                                          // 64091
+    "Hong Kong Internet Registration Corporation Limited",                                // 64092
+    "Sailing Northern Technology (Beijing) Co., Ltd",                                     // 64093
+    "Projecto de Gestão de Recursos Públicos para Prestação de Serviços (GEPRES)",        // 64094
+    "GoTriangle",                                                                         // 64095
+    "Bitronic"                                                                            // 64096
 };
 
 const char* global_enterprises_lookup(uint32_t value)
