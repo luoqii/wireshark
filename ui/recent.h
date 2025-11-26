@@ -55,7 +55,8 @@ typedef enum {
     BYTES_HEX,
     BYTES_BITS,
     BYTES_DEC,
-    BYTES_OCT
+    BYTES_OCT,
+    BYTES_UTF8_TEXT
 } bytes_view_type;
 
 typedef enum {

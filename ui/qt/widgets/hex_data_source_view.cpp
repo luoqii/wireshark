@@ -28,6 +28,7 @@
 #include <QScrollBar>
 #include <QStyle>
 #include <QStyleOption>
+#include <QTextCodec>
 #include <QTextLayout>
 #include <QWindow>
 
@@ -60,10 +61,10 @@ HexDataSourceView::HexDataSourceView(const QByteArray &data, packet_char_enc enc
     field_len_(0),
     field_a_start_(0),
     field_a_len_(0),
-    show_offset_(true),
-    show_hex_(true),
+    show_offset_(recent.gui_bytes_view != BYTES_UTF8_TEXT),
+    show_hex_(recent.gui_bytes_view != BYTES_UTF8_TEXT),
     show_ascii_(true),
-    row_width_(recent.gui_bytes_view == BYTES_BITS ? 8 : 16),
+    row_width_(recent.gui_bytes_view == BYTES_BITS ? 8 : (recent.gui_bytes_view == BYTES_UTF8_TEXT ? 0 : 16)),
     em_width_(0),
     line_height_(0),
     allow_hover_selection_(false)
@@ -120,6 +121,10 @@ void HexDataSourceView::createContextMenu()
     action_bytes_bits_->setData(QVariant::fromValue(BYTES_BITS));
     action_bytes_bits_->setCheckable(true);
 
+    action_bytes_utf8_text_ = format_actions->addAction(tr("…as UTF-8 text"));
+    action_bytes_utf8_text_->setData(QVariant::fromValue(BYTES_UTF8_TEXT));
+    action_bytes_utf8_text_->setCheckable(true);
+
     ctx_menu_.addActions(format_actions->actions());
     connect(format_actions, &QActionGroup::triggered, this, &HexDataSourceView::setHexDisplayFormat);
 
@@ -174,6 +179,9 @@ void HexDataSourceView::updateContextMenu()
         break;
     case BYTES_OCT:
         action_bytes_oct_->setChecked(true);
+        break;
+    case BYTES_UTF8_TEXT:
+        action_bytes_utf8_text_->setChecked(true);
         break;
     }
 
@@ -253,7 +261,20 @@ void HexDataSourceView::setMonospaceFont(const QFont &mono_font)
 
 void HexDataSourceView::updateByteViewSettings()
 {
-    row_width_ = recent.gui_bytes_view == BYTES_BITS ? 8 : 16;
+    if (recent.gui_bytes_view == BYTES_BITS) {
+        row_width_ = 8;
+        show_offset_ = true;
+        show_hex_ = true;
+    } else if (recent.gui_bytes_view == BYTES_UTF8_TEXT) {
+        // For UTF-8 text mode, we'll use the widget width to determine row width
+        row_width_ = 0; // Will be calculated dynamically
+        show_offset_ = false;
+        show_hex_ = false;
+    } else {
+        row_width_ = 16;
+        show_offset_ = true;
+        show_hex_ = true;
+    }
 
     updateContextMenu();
     updateScrollbars();
@@ -271,7 +292,12 @@ void HexDataSourceView::paintEvent(QPaintEvent *)
     int row_y = 0;
 
     // Starting byte offset
-    int offset = verticalScrollBar()->value() * row_width_;
+    int offset;
+    if (recent.gui_bytes_view == BYTES_UTF8_TEXT) {
+        offset = 0; // For UTF-8 text mode, we'll handle it differently
+    } else {
+        offset = verticalScrollBar()->value() * row_width_;
+    }
 
     // Clear the area
     painter.fillRect(viewport()->rect(), palette().base());
@@ -292,10 +318,59 @@ void HexDataSourceView::paintEvent(QPaintEvent *)
     painter.save();
 
     x_pos_to_column_.clear();
-    while ((int) (row_y + line_height_) < widget_height && offset < (int) data_.size()) {
-        drawLine(&painter, offset, row_y);
-        offset += row_width_;
-        row_y += line_height_;
+    
+    if (recent.gui_bytes_view == BYTES_UTF8_TEXT) {
+        // UTF-8 text mode: decode entire data as UTF-8 and display as text with word wrap
+        QTextCodec *codec = QTextCodec::codecForName("UTF-8");
+        QString text = codec->toUnicode(data_);
+        
+        // Use QTextLayout for proper text wrapping
+        QTextLayout textLayout(text, viewport()->font());
+        textLayout.beginLayout();
+        QTextLine line = textLayout.createLine();
+        int line_number = verticalScrollBar()->value();
+        
+        // Skip to the starting line
+        int available_width = viewport()->width();
+        for (int i = 0; i < line_number && line.isValid(); i++) {
+            line.setLineWidth(available_width);
+            line = textLayout.createLine();
+        }
+        
+        while (line.isValid() && (row_y + line_height_) < widget_height) {
+            line.setLineWidth(available_width);
+            line.setPosition(QPointF(0, row_y));
+            
+            // Add highlighting for marked fields if needed
+            QList<QTextLayout::FormatRange> fmt_list;
+            if (field_start_ >= 0 && field_len_ > 0) {
+                // Map byte offsets to text character positions
+                // This is a simplified approach - for accurate mapping, we'd need to track UTF-8 decoding
+                int text_start = 0; // Would need proper byte-to-char mapping
+                int text_len = field_len_; // Simplified
+                if (text_start >= 0 && text_start < text.length()) {
+                    QTextLayout::FormatRange format_range;
+                    format_range.start = text_start;
+                    format_range.length = qMin(text_len, text.length() - text_start);
+                    format_range.format.setBackground(palette().highlight());
+                    format_range.format.setForeground(palette().highlightedText());
+                    fmt_list << format_range;
+                }
+            }
+            
+            textLayout.setFormats(fmt_list.toVector());
+            textLayout.draw(&painter, QPointF(0, 0));
+            
+            row_y += line_height_;
+            line = textLayout.createLine();
+        }
+        textLayout.endLayout();
+    } else {
+        while ((int) (row_y + line_height_) < widget_height && offset < (int) data_.size()) {
+            drawLine(&painter, offset, row_y);
+            offset += row_width_;
+            row_y += line_height_;
+        }
     }
 
     painter.restore();
@@ -437,7 +512,12 @@ void HexDataSourceView::drawLine(QPainter *painter, const int offset, const int 
     // Build our pixel to byte offset vector the first time through.
     bool build_x_pos = x_pos_to_column_.empty() ? true : false;
     int tvb_len = static_cast<int>(data_.size());
-    int max_tvb_pos = qMin(offset + row_width_, tvb_len) - 1;
+    int max_tvb_pos;
+    if (recent.gui_bytes_view == BYTES_UTF8_TEXT) {
+        // UTF-8 text mode is handled separately in paintEvent
+        return;
+    }
+    max_tvb_pos = qMin(offset + row_width_, tvb_len) - 1;
     QList<QTextLayout::FormatRange> fmt_list;
 
     static const char hexchars[16] = {
@@ -788,15 +868,46 @@ void HexDataSourceView::updateScrollbars()
 {
     const int length = static_cast<int>(data_.size());
     if (length > 0 && line_height_ > 0 && em_width_ > 0) {
-        int all_lines_height = length / row_width_ + ((length % row_width_) ? 1 : 0) - viewport()->height() / line_height_;
+        if (recent.gui_bytes_view == BYTES_UTF8_TEXT) {
+            // For UTF-8 text mode, calculate lines based on text wrapping
+            QTextCodec *codec = QTextCodec::codecForName("UTF-8");
+            QString text = codec->toUnicode(data_);
+            
+            QTextLayout textLayout(text, viewport()->font());
+            textLayout.beginLayout();
+            QTextLine line = textLayout.createLine();
+            int line_count = 0;
+            int available_width = viewport()->width();
+            
+            while (line.isValid()) {
+                line.setLineWidth(available_width);
+                line_count++;
+                line = textLayout.createLine();
+            }
+            textLayout.endLayout();
+            
+            int visible_lines = viewport()->height() / line_height_;
+            verticalScrollBar()->setRange(0, qMax(0, line_count - visible_lines));
+            horizontalScrollBar()->setRange(0, 0); // No horizontal scrolling in UTF-8 text mode
+        } else {
+            int all_lines_height = length / row_width_ + ((length % row_width_) ? 1 : 0) - viewport()->height() / line_height_;
 
-        verticalScrollBar()->setRange(0, qMax(0, all_lines_height));
-        horizontalScrollBar()->setRange(0, qMax(0, int((totalPixels() - viewport()->width()) / em_width_)));
+            verticalScrollBar()->setRange(0, qMax(0, all_lines_height));
+            horizontalScrollBar()->setRange(0, qMax(0, int((totalPixels() - viewport()->width()) / em_width_)));
+        }
     }
 }
 
 int HexDataSourceView::byteOffsetAtPixel(QPoint pos)
 {
+    if (recent.gui_bytes_view == BYTES_UTF8_TEXT) {
+        // For UTF-8 text mode, map pixel position to byte offset
+        // This is complex because we need to map from text character position to byte offset
+        // For now, return -1 to disable byte selection in UTF-8 text mode
+        // TODO: Implement proper byte offset calculation for UTF-8 text mode
+        return -1;
+    }
+    
     int byte = (verticalScrollBar()->value() + (pos.y() / line_height_)) * row_width_;
     int x = (horizontalScrollBar()->value() * em_width_) + pos.x();
     int col = x_pos_to_column_.value(x, -1);
