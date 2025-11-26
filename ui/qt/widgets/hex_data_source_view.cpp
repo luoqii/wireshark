@@ -28,6 +28,7 @@
 #include <QScrollBar>
 #include <QStyle>
 #include <QStyleOption>
+#include <QTextCodec>
 #include <QTextLayout>
 #include <QWindow>
 
@@ -146,12 +147,26 @@ void HexDataSourceView::createContextMenu()
 
     ctx_menu_.addActions(encoding_actions->actions());
     connect(encoding_actions, &QActionGroup::triggered, this, &HexDataSourceView::setCharacterEncoding);
+
+    ctx_menu_.addSeparator();
+
+    action_bytes_plain_text_ = ctx_menu_.addAction(tr("Show as plain text (UTF-8)"));
+    action_bytes_plain_text_->setCheckable(true);
+    action_bytes_plain_text_->setChecked(recent.gui_bytes_plain_text);
+    connect(action_bytes_plain_text_, &QAction::toggled, this, &HexDataSourceView::togglePlainText);
 }
 
 void HexDataSourceView::toggleHoverAllowed(bool checked)
 {
     allow_hover_selection_ = ! checked;
     recent.gui_allow_hover_selection = checked;
+}
+
+void HexDataSourceView::togglePlainText(bool checked)
+{
+    recent.gui_bytes_plain_text = checked;
+    updateScrollbars();
+    viewport()->update();
 }
 
 void HexDataSourceView::updateContextMenu()
@@ -187,6 +202,10 @@ void HexDataSourceView::updateContextMenu()
     case BYTES_ENC_EBCDIC:
         action_bytes_enc_ebcdic_->setChecked(true);
         break;
+    }
+
+    if (action_bytes_plain_text_) {
+        action_bytes_plain_text_->setChecked(recent.gui_bytes_plain_text);
     }
 }
 
@@ -267,24 +286,102 @@ void HexDataSourceView::paintEvent(QPaintEvent *)
     QPainter painter(viewport());
     painter.translate(-horizontalScrollBar()->value() * em_width_, 0);
 
+    // Clear the area
+    painter.fillRect(viewport()->rect(), palette().base());
+
+    if (data_.isEmpty()) {
+        return;
+    }
+
+    // Plain text mode: display as UTF-8 text with automatic line wrapping
+    if (recent.gui_bytes_plain_text) {
+        // Decode entire data as UTF-8
+        QTextCodec *codec = QTextCodec::codecForName("UTF-8");
+        QString text = codec->toUnicode(data_);
+        
+        // Use QTextLayout for automatic line wrapping
+        QTextLayout textLayout(text, font());
+        textLayout.setCacheEnabled(true);
+        
+        int viewport_width = viewport()->width();
+        int line_y = 0;
+        int scroll_offset = verticalScrollBar()->value();
+        
+        textLayout.beginLayout();
+        QTextLine line = textLayout.createLine();
+        int line_count = 0;
+        
+        while (line.isValid()) {
+            line.setLineWidth(viewport_width);
+            line.setLeadingIncluded(true);
+            
+            // Skip lines before scroll offset
+            if (line_count >= scroll_offset) {
+                QList<QTextLayout::FormatRange> fmt_list;
+                
+                // Add field highlighting if applicable
+                if (field_start_ >= 0 && field_len_ > 0) {
+                    // Convert byte offset to character offset (approximate)
+                    int char_start = field_start_;
+                    int char_length = field_len_;
+                    
+                    if (char_start < text.length() && char_start + char_length <= text.length()) {
+                        int line_start = line.textStart();
+                        int line_end = line_start + line.textLength();
+                        
+                        if (char_start < line_end && char_start + char_length > line_start) {
+                            int fmt_start = qMax(0, char_start - line_start);
+                            int fmt_end = qMin(line.textLength(), char_start + char_length - line_start);
+                            int fmt_length = fmt_end - fmt_start;
+                            
+                            if (fmt_length > 0) {
+                                QTextLayout::FormatRange format_range;
+                                format_range.start = fmt_start;
+                                format_range.length = fmt_length;
+                                format_range.format.setBackground(palette().highlight());
+                                format_range.format.setForeground(palette().highlightedText());
+                                fmt_list << format_range;
+                            }
+                        }
+                    }
+                }
+                
+                textLayout.setFormats(fmt_list.toVector());
+                line.draw(&painter, QPointF(0.0, line_y));
+            }
+            
+            line_y += line_height_;
+            line = textLayout.createLine();
+            line_count++;
+            
+            if (line_y > viewport()->height()) {
+                break;
+            }
+        }
+        textLayout.endLayout();
+        
+        // Update scrollbar range
+        int total_lines = line_count;
+        verticalScrollBar()->setMaximum(qMax(0, total_lines - viewport()->height() / line_height_));
+        horizontalScrollBar()->setMaximum(0);
+        
+        return;
+    }
+
+    // Normal hex/ASCII mode
+    painter.translate(-horizontalScrollBar()->value() * em_width_, 0);
+
     // Pixel offset of this row
     int row_y = 0;
 
     // Starting byte offset
     int offset = verticalScrollBar()->value() * row_width_;
 
-    // Clear the area
-    painter.fillRect(viewport()->rect(), palette().base());
-
     // Offset background. We want the entire height to be filled.
     if (show_offset_) {
         QRect offset_rect = QRect(viewport()->rect());
         offset_rect.setWidth(offsetPixels());
         painter.fillRect(offset_rect, palette().window());
-    }
-
-    if (data_.isEmpty()) {
-        return;
     }
 
     // Data rows
@@ -433,6 +530,7 @@ void HexDataSourceView::drawLine(QPainter *painter, const int offset, const int 
     if (data_.isEmpty()) {
         return;
     }
+
 
     // Build our pixel to byte offset vector the first time through.
     bool build_x_pos = x_pos_to_column_.empty() ? true : false;
@@ -787,7 +885,43 @@ void HexDataSourceView::copyBytes(bool)
 void HexDataSourceView::updateScrollbars()
 {
     const int length = static_cast<int>(data_.size());
-    if (length > 0 && line_height_ > 0 && em_width_ > 0) {
+    if (length == 0 || line_height_ <= 0) {
+        return;
+    }
+
+    // Plain text mode: calculate lines based on wrapped text
+    if (recent.gui_bytes_plain_text) {
+        if (em_width_ > 0) {
+            // Decode entire data as UTF-8
+            QTextCodec *codec = QTextCodec::codecForName("UTF-8");
+            QString text = codec->toUnicode(data_);
+            
+            // Use QTextLayout to calculate wrapped lines
+            QTextLayout textLayout(text, font());
+            textLayout.setCacheEnabled(true);
+            
+            int viewport_width = viewport()->width();
+            int line_count = 0;
+            
+            textLayout.beginLayout();
+            QTextLine line = textLayout.createLine();
+            while (line.isValid()) {
+                line.setLineWidth(viewport_width);
+                line.setLeadingIncluded(true);
+                line_count++;
+                line = textLayout.createLine();
+            }
+            textLayout.endLayout();
+            
+            int visible_lines = viewport()->height() / line_height_;
+            verticalScrollBar()->setRange(0, qMax(0, line_count - visible_lines));
+            horizontalScrollBar()->setRange(0, 0);
+        }
+        return;
+    }
+
+    // Normal hex/ASCII mode
+    if (em_width_ > 0) {
         int all_lines_height = length / row_width_ + ((length % row_width_) ? 1 : 0) - viewport()->height() / line_height_;
 
         verticalScrollBar()->setRange(0, qMax(0, all_lines_height));

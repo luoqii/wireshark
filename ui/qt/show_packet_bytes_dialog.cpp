@@ -87,7 +87,6 @@ ShowPacketBytesDialog::ShowPacketBytesDialog(QWidget &parent, CaptureFile &cf) :
     ui->cbShowAs->addItem(tr("HTML"), SHOW_HTML);
     ui->cbShowAs->addItem(tr("Image"), SHOW_IMAGE);
     ui->cbShowAs->addItem(tr("JSON"), SHOW_JSON);
-    ui->cbShowAs->addItem(tr("Plain Text"), SHOW_PLAIN_TEXT);
     ui->cbShowAs->addItem(tr("Raw"), SHOW_RAW);
     ui->cbShowAs->addItem(tr("Rust Array"), SHOW_RUSTARRAY);
     // UTF-8 is guaranteed to exist as a QTextCodec
@@ -180,7 +179,6 @@ bool ShowPacketBytesDialog::enableShowSelected()
             ((recent.gui_show_bytes_show == SHOW_ASCII) ||
              (recent.gui_show_bytes_show == SHOW_ASCII_CONTROL) ||
              (recent.gui_show_bytes_show == SHOW_EBCDIC) ||
-             (recent.gui_show_bytes_show == SHOW_PLAIN_TEXT) ||
              (recent.gui_show_bytes_show == SHOW_RAW)));
 }
 
@@ -321,7 +319,6 @@ void ShowPacketBytesDialog::copyBytes()
     case SHOW_EBCDIC:
     case SHOW_HEXDUMP:
     case SHOW_JSON:
-    case SHOW_PLAIN_TEXT:
     case SHOW_RAW:
     case SHOW_YAML:
         mainApp->clipboard()->setText(ui->tePacketBytes->toPlainText());
@@ -359,7 +356,6 @@ void ShowPacketBytesDialog::saveAs()
     case SHOW_CODEC:
     case SHOW_HEXDUMP:
     case SHOW_JSON:
-    case SHOW_PLAIN_TEXT:
     case SHOW_YAML:
     case SHOW_HTML:
         open_mode |= QFile::Text;
@@ -389,7 +385,6 @@ void ShowPacketBytesDialog::saveAs()
     case SHOW_EBCDIC:
     case SHOW_HEXDUMP:
     case SHOW_JSON:
-    case SHOW_PLAIN_TEXT:
     case SHOW_YAML:
     {
         QTextStream out(&file);
@@ -915,25 +910,6 @@ DIAG_ON(stringop-overread)
 
         ui->tePacketBytes->setLineWrapMode(QTextEdit::NoWrap);
         ui->tePacketBytes->setPlainText(text);
-        break;
-    }
-
-    case SHOW_PLAIN_TEXT:
-    {
-        // Only show printable text characters, filter out binary data
-        QByteArray ba;
-        ba.reserve(field_bytes_.length());
-        
-        for (int i = 0; i < field_bytes_.length(); i++) {
-            unsigned char c = static_cast<unsigned char>(field_bytes_[i]);
-            // Keep printable ASCII characters (32-126) and common whitespace (9, 10, 13)
-            if (g_ascii_isprint(c) || c == '\t' || c == '\n' || c == '\r') {
-                ba.append(c);
-            }
-        }
-        
-        ui->tePacketBytes->setLineWrapMode(QTextEdit::WidgetWidth);
-        ui->tePacketBytes->setPlainText(ba);
         break;
     }
 

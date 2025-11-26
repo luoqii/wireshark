@@ -96,8 +96,7 @@ typedef enum {
     SHOW_RUSTARRAY,
     SHOW_CODEC, // Will map to UTF-8 in the combobox (other codecs
                 // are generated at runtime).
-    SHOW_YAML,
-    SHOW_PLAIN_TEXT
+    SHOW_YAML
 } bytes_show_type;
 
 typedef enum {
@@ -135,6 +134,7 @@ typedef struct recent_settings_tag {
     int         gui_zoom_level;
     bytes_view_type gui_bytes_view;
     bytes_encoding_type gui_bytes_encoding;
+    bool        gui_bytes_plain_text;
     bool        gui_packet_diagram_field_values;
     bool        gui_allow_hover_selection;
 

@@ -140,11 +140,13 @@ private:
     QAction *action_bytes_enc_from_packet_;
     QAction *action_bytes_enc_ascii_;
     QAction *action_bytes_enc_ebcdic_;
+    QAction *action_bytes_plain_text_;
 
 private slots:
     void copyBytes(bool);
     void setHexDisplayFormat(QAction *action);
     void setCharacterEncoding(QAction *action);
     void toggleHoverAllowed(bool);
+    void togglePlainText(bool);
 
 };

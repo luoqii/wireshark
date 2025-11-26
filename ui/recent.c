@@ -188,7 +188,6 @@ static const value_string bytes_show_values[] = {
     { SHOW_HTML,          "HTML" },
     { SHOW_IMAGE,         "IMAGE" },
     { SHOW_JSON,          "JSON" },
-    { SHOW_PLAIN_TEXT,    "PLAIN_TEXT" },
     { SHOW_RAW,           "RAW" },
     { SHOW_RUSTARRAY,     "RUST_ARRAY" },
     { SHOW_CODEC,         "UTF-8" },
@@ -1683,6 +1682,7 @@ recent_read_profile_static(char **rf_path_return, int *rf_errno_return)
     recent.gui_zoom_level            = 0;
     recent.gui_bytes_view            = BYTES_HEX;
     recent.gui_bytes_encoding        = BYTES_ENC_FROM_PACKET;
+    recent.gui_bytes_plain_text      = false;
     recent.gui_allow_hover_selection = true;
     recent.gui_follow_show           = SHOW_ASCII;
     recent.gui_follow_delta          = FOLLOW_DELTA_NONE;
