@@ -192,6 +192,11 @@ int DataPrinter::hexChars()
         row_width = 16;
         chars_per_byte = 4;
         break;
+    case BYTES_UTF8_TEXT:
+        // UTF-8 text mode doesn't use hex display
+        row_width = 0;
+        chars_per_byte = 0;
+        break;
     default:
         ws_assert_not_reached();
     }
