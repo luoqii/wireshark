@@ -188,6 +188,7 @@ static const value_string bytes_show_values[] = {
     { SHOW_HTML,          "HTML" },
     { SHOW_IMAGE,         "IMAGE" },
     { SHOW_JSON,          "JSON" },
+    { SHOW_PLAIN_TEXT,    "PLAIN_TEXT" },
     { SHOW_RAW,           "RAW" },
     { SHOW_RUSTARRAY,     "RUST_ARRAY" },
     { SHOW_CODEC,         "UTF-8" },

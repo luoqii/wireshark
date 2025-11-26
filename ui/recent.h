@@ -96,7 +96,8 @@ typedef enum {
     SHOW_RUSTARRAY,
     SHOW_CODEC, // Will map to UTF-8 in the combobox (other codecs
                 // are generated at runtime).
-    SHOW_YAML
+    SHOW_YAML,
+    SHOW_PLAIN_TEXT
 } bytes_show_type;
 
 typedef enum {
