@@ -555,7 +555,7 @@ static const value_string opcodes_vals_sys[] =
     {SC_ABC_A_ROUTING          , "ABC-A Routing Code"},                  /* IP Phone - NOT EXPECTED */
     {SC_IBS_ROUTING            , "IBS Routing Code"},                    /* IP Phone - NOT EXPECTED */
     {SC_IP_DEVICE_ROUTING      , "IP Device Routing"},
-    {SC_M_REFLEX_HUB_ROUTING   , "Mutli-Reflex Hub Routing Code"},       /* IP Phone - NOT EXPECTED */
+    {SC_M_REFLEX_HUB_ROUTING   , "Multi-Reflex Hub Routing Code"},       /* IP Phone - NOT EXPECTED */
     {SC_SUPER_MSG_2            , "Super Message 2"},
     {SC_DEBUG_IN_LINE          , "Debug In Line"},
     {SC_LED_COMMAND            , "Led Command"},                         /* IP Phone */
@@ -1866,14 +1866,14 @@ decode_ip_device_routing(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo,
             if (parameter_length > 0) {
                 switch (parameter_id) {
                 case 0x00: /* Identifier */
-                    proto_tree_add_item(ua3g_param_tree, hf_ua3g_ip_device_routing_appl_parameter_id, tvb, offset, parameter_length, ENC_STRING);
+                    proto_tree_add_item(ua3g_param_tree, hf_ua3g_ip_device_routing_appl_parameter_id, tvb, offset, parameter_length, ENC_ASCII);
                     break;
                 case 0x01: /* Enable */
                     proto_tree_add_item(ua3g_param_tree, hf_ua3g_ip_device_routing_appl_parameter_enable, tvb, offset, parameter_length, ENC_BIG_ENDIAN);
                     break;
                 case 0x02: /* URL */
                 {
-                    proto_tree_add_item(ua3g_param_tree, hf_ua3g_ip_device_routing_appl_parameter_url, tvb, offset, parameter_length, ENC_STRING);
+                    proto_tree_add_item(ua3g_param_tree, hf_ua3g_ip_device_routing_appl_parameter_url, tvb, offset, parameter_length, ENC_ASCII);
                     break;
                 }
                 default:

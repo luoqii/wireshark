@@ -21,28 +21,29 @@
 #include <epan/decode_as.h>
 #include <epan/uat-int.h>
 #include <ui/recent.h>
+#include <wsutil/application_flavor.h>
 
 #ifdef HAVE_LIBPCAP
 #include "ui/capture_opts.h"
-#include "ui/capture_globals.h"
 #endif
+#include "ui/capture_globals.h"
 
 #include "ui/preference_utils.h"
 #include "ui/simple_dialog.h"
 
 /* Fill in capture options with values from the preferences */
 void
-prefs_to_capture_opts(void)
+prefs_to_capture_opts(capture_options* capture_opts _U_)
 {
 #ifdef HAVE_LIBPCAP
     /* Set promiscuous mode from the preferences setting. */
     /* the same applies to other preferences settings as well. */
-    global_capture_opts.default_options.promisc_mode = prefs.capture_prom_mode;
-    global_capture_opts.default_options.monitor_mode = prefs.capture_monitor_mode;
-    global_capture_opts.use_pcapng                   = prefs.capture_pcap_ng;
-    global_capture_opts.show_info                    = prefs.capture_show_info;
-    global_capture_opts.real_time_mode               = prefs.capture_real_time;
-    global_capture_opts.update_interval              = prefs.capture_update_interval;
+    capture_opts->default_options.promisc_mode = prefs.capture_prom_mode;
+    capture_opts->default_options.monitor_mode = prefs.capture_monitor_mode;
+    capture_opts->use_pcapng                   = prefs.capture_pcap_ng;
+    capture_opts->show_info                    = prefs.capture_show_info;
+    capture_opts->real_time_mode               = prefs.capture_real_time;
+    capture_opts->update_interval              = prefs.capture_update_interval;
 #endif /* HAVE_LIBPCAP */
 }
 
@@ -55,14 +56,14 @@ prefs_main_write(void)
 
     /* Create the directory that holds personal configuration files, if
        necessary.  */
-    if (create_persconffile_dir(&pf_dir_path) == -1) {
+    if (create_persconffile_dir(application_configuration_environment_prefix(), &pf_dir_path) == -1) {
         simple_dialog(ESD_TYPE_ERROR, ESD_BTN_OK,
                 "Can't create directory\n\"%s\"\nfor preferences file: %s.", pf_dir_path,
                 g_strerror(errno));
         g_free(pf_dir_path);
     } else {
         /* Write the preferences out. */
-        err = write_prefs(&pf_path);
+        err = write_prefs(application_configuration_environment_prefix(), &pf_path);
         if (err != 0) {
             simple_dialog(ESD_TYPE_ERROR, ESD_BTN_OK,
                     "Can't open preferences file\n\"%s\": %s.", pf_path,
@@ -112,7 +113,7 @@ prefs_store_ext(const char * module_name, const char *pref_name, const char *pre
     {
         prefs_main_write();
         prefs_apply_all();
-        prefs_to_capture_opts();
+        prefs_to_capture_opts(&global_capture_opts);
         return changed_flags;
     }
 
@@ -149,7 +150,7 @@ prefs_store_ext_multiple(const char * module, GHashTable * pref_values)
     {
         prefs_main_write();
         prefs_apply_all();
-        prefs_to_capture_opts();
+        prefs_to_capture_opts(&global_capture_opts);
     }
 
     return true;
@@ -211,7 +212,7 @@ column_prefs_has_custom(const char *custom_field)
     fmt_data *cfmt;
     int colnr = -1;
 
-    for (int i = 0; i < prefs.num_cols; i++) {
+    for (unsigned i = 0; i < prefs.num_cols; i++) {
         clp = g_list_nth(prefs.col_list, i);
         if (clp == NULL) /* Sanity check, invalid column requested */
             continue;
@@ -308,7 +309,7 @@ void save_migrated_uat(const char *uat_name, bool *old_pref)
 {
     char *err = NULL;
 
-    if (!uat_save(uat_get_table_by_name(uat_name), &err)) {
+    if (!uat_save(uat_get_table_by_name(uat_name), application_configuration_environment_prefix(), &err)) {
         ws_warning("Unable to save %s: %s", uat_name, err);
         g_free(err);
         return;

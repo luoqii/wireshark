@@ -14,7 +14,7 @@
 
 #include "tap.h"
 #include "timestats.h"
-#include "value_string.h"
+#include <wsutil/value_string.h>
 #include <epan/wmem_scopes.h>
 
 #ifdef __cplusplus
@@ -47,6 +47,10 @@ typedef struct _rtd_data_t {
 /** Structure for information about a registered service response table */
 struct register_rtd;
 typedef struct register_rtd register_rtd_t;
+
+/** Initialize the response time delay system.
+ */
+extern void rtd_table_init(void);
 
 typedef void (*rtd_gui_init_cb)(rtd_stat_table* rtd, void* gui_data);
 typedef void (*rtd_filter_check_cb)(const char *opt_arg, const char **filter, char** err);
@@ -118,7 +122,7 @@ WS_DLL_PUBLIC void free_rtd_table(rtd_stat_table* table);
  */
 WS_DLL_PUBLIC void reset_rtd_table(rtd_stat_table* table);
 
-/** Interator to walk RTD tables and execute func
+/** Iterator to walk RTD tables and execute func
  * Used for initialization
  *
  * @param func action to be performed on all conversation tables

@@ -86,6 +86,8 @@ BrandingText "Stratoshark${U+00ae} Installer"
 !define MUI_LICENSEPAGE_BUTTON "Noted"
 !insertmacro MUI_PAGE_LICENSE "${STAGING_DIR}\COPYING.txt"
 
+Page custom DisplayDonatePage
+
 !insertmacro MUI_PAGE_COMPONENTS
 !ifdef QT_DIR
 Page custom DisplayAdditionalTasksPage LeaveAdditionalTasksPage
@@ -110,7 +112,7 @@ Page custom DisplayAdditionalTasksPage LeaveAdditionalTasksPage
   ; Old Modern 1 UI: https://nsis.sourceforge.io/Docs/Modern%20UI/Readme.html
   ; To do: Upgrade to the Modern 2 UI:
   ;ReserveFile "AdditionalTasksPage.ini"
-  ;ReserveFile "DonatePage.ini"
+  ReserveFile "DonatePage.ini"
   ReserveFile /plugin InstallOptions.dll
 
   ; Modern UI 2 / nsDialog pages.
@@ -277,7 +279,7 @@ Function .onInit
 
   ; This should match the following:
   ; - The NTDDI_VERSION and _WIN32_WINNT parts of cmakeconfig.h.in
-  ; - The <compatibility><application> section in image\wireshark.exe.manifest.in
+  ; - The <compatibility><application> section in resources\stratoshark.exe.manifest.in
   ; - The VersionNT parts of packaging\wix\Prerequisites.wxi
 
   ; Uncomment to test.
@@ -285,8 +287,9 @@ Function .onInit
 
 ${If} ${AtMostWin8.1}
 ${OrIf} ${AtMostWin2012R2}
+${OrIfNot} ${AtLeastBuild} 17763
   MessageBox MB_OK \
-    "Windows 10, Server 2016, and later are required." /SD IDOK
+    "Windows 10, version 1809 or Server 2019 and later are required." /SD IDOK
   Quit
 ${EndIf}
 
@@ -413,6 +416,7 @@ done:
 
   ;Extract InstallOptions INI files
   ;!insertmacro INSTALLOPTIONS_EXTRACT "AdditionalTasksPage.ini"
+  !insertmacro INSTALLOPTIONS_EXTRACT "DonatePage.ini"
 FunctionEnd
 
 !ifdef QT_DIR
@@ -421,10 +425,10 @@ Function DisplayAdditionalTasksPage
 FunctionEnd
 !endif
 
-; Function DisplayDonatePage
-;   !insertmacro MUI_HEADER_TEXT "Your donations keep these releases coming" "Donate today"
-;   !insertmacro INSTALLOPTIONS_DISPLAY "DonatePage.ini"
-; FunctionEnd
+Function DisplayDonatePage
+  !insertmacro MUI_HEADER_TEXT "Your donations keep these releases coming" "Donate today!"
+  !insertmacro INSTALLOPTIONS_DISPLAY "DonatePage.ini"
+FunctionEnd
 
 ; ============================================================================
 ; Installation execution commands
@@ -878,6 +882,16 @@ Call Associate
 ; AdditionalTasks page
 ${Endif}
 
+; Create a dummy configuraton directory for libgcrypt
+; XXX Is there a way to confidently and cleanly remove this?
+CreateDirectory $COMMONPROGRAMDATA\GNU\etc\gcrypt
+; This *should* match the gpg4win installer behavior.
+ExecShellWait "" "$SYSDIR\icacls.exe" '"$COMMONPROGRAMDATA\GNU\etc\gcrypt" /inheritance:r' SW_HIDE
+; BUILTIN\Administrators
+ExecShellWait "" "$SYSDIR\icacls.exe" '"$COMMONPROGRAMDATA\GNU\etc\gcrypt" /grant *S-1-5-32-544:(GA)' SW_HIDE
+; BUILTIN\Users
+ExecShellWait "" "$SYSDIR\icacls.exe" '"$COMMONPROGRAMDATA\GNU\etc\gcrypt" /grant *S-1-5-32-545:(R,RA,REA,RC,GE)' SW_HIDE
+
 SectionEnd ; "Required"
 
 !ifdef QT_DIR
@@ -1003,6 +1017,8 @@ File "${STAGING_DIR}\text2pcap.html"
 SectionEnd ; "Tools"
 
 SectionGroup /e "External capture tools (extcap)" SecExtcapGroup
+
+; Dumpcalls is Linux-only
 
 Section "Falcodump" SecFalcodump
 ;-------------------------------------------

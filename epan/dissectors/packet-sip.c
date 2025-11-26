@@ -1326,6 +1326,73 @@ sip_uri_offset_init(uri_offset_info *uri_offsets){
     uri_offsets->uri_host_port_end = -1;
 
 }
+
+static int
+dissect_tel_uri(tvbuff_t *tvb, packet_info *pinfo _U_, int current_offset,
+                int line_end_offset, uri_offset_info *uri_offsets)
+{
+    unsigned char c = '\0';
+    uri_offsets->uri_type = SIP_URI_TYPE_TEL;
+
+    if (uri_offsets->uri_end == -1)
+    {
+        /* name-addr form was NOT used e.g no closing ">" */
+        /* look for the first ',' or ';' which will mark the end of this URI
+         * In this case a semicolon indicates a header field parameter, and not an uri parameter.
+         */
+        int end_offset;
+
+        end_offset = tvb_ws_mempbrk_pattern_uint8(tvb, current_offset, line_end_offset - current_offset, &pbrk_comma_semi, NULL);
+
+        if (end_offset != -1)
+        {
+            uri_offsets->uri_end = end_offset - 1;
+        }
+        else
+        {
+            /* We don't have a semicolon or a comma.
+             * In that case, we assume that the end of the URI is at the line end
+              */
+            uri_offsets->uri_end = line_end_offset - 3; /* remove '\r\n' */
+        }
+        uri_offsets->name_addr_end = uri_offsets->uri_end;
+    }
+
+    uri_offsets->uri_user_start = current_offset;
+
+    int parameter_end_offset = uri_offsets->uri_user_start;
+    if (parameter_end_offset < line_end_offset)
+    {
+        parameter_end_offset++;
+        parameter_end_offset = tvb_ws_mempbrk_pattern_uint8(tvb, parameter_end_offset, line_end_offset - parameter_end_offset, &pbrk_param_end, &c);
+        if (parameter_end_offset == -1)
+        {
+            parameter_end_offset = line_end_offset;
+        } else {
+            /* after adding character to this switch(), update also pbrk_param_end */
+            switch (c) {
+                case '>':
+                case ',':
+                    break;
+                case ';':
+                    uri_offsets->uri_parameters_start = parameter_end_offset + 1;
+                    break;
+                case '?':
+                case ' ':
+                case '\r':
+                    break;
+                default:
+                    DISSECTOR_ASSERT_NOT_REACHED();
+                    break;
+            }
+        }
+    }
+
+    uri_offsets->uri_user_end = parameter_end_offset -1;
+
+    return uri_offsets->name_addr_end;
+}
+
 /* Code to parse a sip uri.
  * Returns Offset end off parsing or -1 for unsuccessful parsing
  * - sip_uri_offset_init() must have been called first.
@@ -1350,8 +1417,10 @@ dissect_sip_uri(tvbuff_t *tvb, packet_info *pinfo _U_, int start_offset,
     /* Set uri start offset in case this was called directly */
     uri_offsets->uri_start = current_offset;
 
-    /* Check if it's really a sip uri ( it might be a tel uri, parse that?) */
-    if (tvb_strneql(tvb, current_offset, "sip", 3) != 0){
+    /* Check if it's really a sip uri (it might be a tel uri) */
+    if (tvb_strneql(tvb, current_offset, "tel:", 4) == 0) {
+        return dissect_tel_uri(tvb, pinfo, current_offset + 4, line_end_offset, uri_offsets);
+    } else if (tvb_strneql(tvb, current_offset, "sip", 3) != 0){
         if (uri_offsets->uri_end != -1) {
             /* We know where the URI ends, set the offsets*/
             return uri_offsets->name_addr_end;
@@ -1846,7 +1915,7 @@ display_sip_uri (tvbuff_t *tvb, proto_tree *sip_element_tree, packet_info *pinfo
                              tvb, uri_offsets->uri_start, uri_offsets->uri_end - uri_offsets->uri_start + 1, ENC_UTF_8|ENC_NA);
     uri_item_tree = proto_item_add_subtree(ti, *(uri->ett_uri));
 
-    if (uri_offsets->uri_type != SIP_URI_TYPE_SIP) {
+    if (uri_offsets->uri_type != SIP_URI_TYPE_SIP && uri_offsets->uri_type != SIP_URI_TYPE_TEL) {
         return ti;
     }
 
@@ -1866,8 +1935,10 @@ display_sip_uri (tvbuff_t *tvb, proto_tree *sip_element_tree, packet_info *pinfo
 
     }
 
-    proto_tree_add_item(uri_item_tree, *(uri->hf_sip_host), tvb, uri_offsets->uri_host_start,
-                        uri_offsets->uri_host_end - uri_offsets->uri_host_start + 1, ENC_UTF_8|ENC_NA);
+    if(uri_offsets->uri_host_end > uri_offsets->uri_host_start) {
+        proto_tree_add_item(uri_item_tree, *(uri->hf_sip_host), tvb, uri_offsets->uri_host_start,
+                            uri_offsets->uri_host_end - uri_offsets->uri_host_start + 1, ENC_UTF_8|ENC_NA);
+    }
 
     if(uri_offsets->uri_host_port_end > uri_offsets->uri_host_port_start) {
         proto_tree_add_item(uri_item_tree, *(uri->hf_sip_port), tvb, uri_offsets->uri_host_port_start,
@@ -3415,7 +3486,7 @@ dissect_sip_common(tvbuff_t *tvb, int offset, int remaining_length, packet_info 
         const char *proto_name;
         void *tmp;
 
-        /* For SIP messages with other sip messages embeded in the body, don't export those individually.
+        /* For SIP messages with other sip messages embedded in the body, don't export those individually.
          * E.g. if we are called from the mime_multipart dissector don't export the message.
          */
         cur = wmem_list_frame_prev(wmem_list_tail(pinfo->layers));
@@ -3527,7 +3598,7 @@ dissect_sip_common(tvbuff_t *tvb, int offset, int remaining_length, packet_info 
             while (tvb_offset_exists(tvb, next_offset) && ((c = tvb_get_uint8(tvb, next_offset)) == ' ' || c == '\t'))
             {
                 /*
-                 * This line end is not a header seperator.
+                 * This line end is not a header separator.
                  * It just extends the header with another line.
                  * Look for next line end:
                  */
@@ -3593,7 +3664,7 @@ dissect_sip_common(tvbuff_t *tvb, int offset, int remaining_length, packet_info 
             while (tvb_offset_exists(tvb, next_offset) && ((c = tvb_get_uint8(tvb, next_offset)) == ' ' || c == '\t'))
             {
                 /*
-                 * This line end is not a header seperator.
+                 * This line end is not a header separator.
                  * It just extends the header with another line.
                  * Look for next line end:
                  */
@@ -4739,7 +4810,7 @@ dissect_sip_common(tvbuff_t *tvb, int offset, int remaining_length, packet_info 
                     message_body_tree = proto_item_add_subtree(ti_a, ett_sip_message_body);
                 }
             } else {
-                next_tvb = tvb_new_subset_length_caplen(tvb, offset, datalen, reported_datalen);
+                next_tvb = tvb_new_subset_length(tvb, offset, reported_datalen);
                 if(sip_tree) {
                     ti_a = proto_tree_add_item(sip_tree, hf_sip_msg_body, next_tvb, 0, -1,
                                          ENC_NA);
@@ -4747,7 +4818,7 @@ dissect_sip_common(tvbuff_t *tvb, int offset, int remaining_length, packet_info 
                 }
             }
         }else{
-            next_tvb = tvb_new_subset_length_caplen(tvb, offset, datalen, reported_datalen);
+            next_tvb = tvb_new_subset_length(tvb, offset, reported_datalen);
             if(sip_tree) {
                 ti_a = proto_tree_add_item(sip_tree, hf_sip_msg_body, next_tvb, 0, -1,
                                      ENC_NA);
@@ -4913,7 +4984,8 @@ dfilter_sip_request_line(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, in
 
     if (tree) {
         /* build Request-URI tree*/
-        offset=offset + parameter_len+1;
+        offset += parameter_len + 1;
+        linelen -= parameter_len + 1;
         sip_uri_offset_init(&uri_offsets);
         /* calc R-URI len*/
         uri_offsets.uri_end = tvb_find_uint8(tvb, offset, linelen, ' ')-1;
@@ -5702,7 +5774,7 @@ static bool sip_validate_authorization(sip_authorization_t *authorization_info, 
 /* TODO: extra codes to be added from SIP extensions?
  * https://www.iana.org/assignments/sip-parameters/sip-parameters.xhtml#sip-parameters-6
  */
-const value_string sip_response_code_vals[] = {
+static const value_string sip_response_code_vals[] = {
     { 999, "Unknown response"}, /* Must be first */
 
     { 100, "Trying"},

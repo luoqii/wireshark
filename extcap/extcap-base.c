@@ -177,7 +177,7 @@ void extcap_base_set_running_with(extcap_parameters * extcap, const char *fmt, .
 
 void extcap_log_init(void)
 {
-    ws_log_init(NULL);
+    ws_log_init(NULL, "Extcap Debug Console");
     /* extcaps cannot write debug information to parent on stderr. */
     ws_log_console_writer_set_use_stdout(true);
     ws_noisy("Extcap log initialization finished");
@@ -341,6 +341,7 @@ void extcap_base_cleanup(extcap_parameters ** extcap)
     g_free((*extcap)->exename);
     g_free((*extcap)->fifo);
     g_free((*extcap)->interface);
+    g_free((*extcap)->capture_filter);
     g_free((*extcap)->version);
     g_free((*extcap)->compiled_with);
     g_free((*extcap)->running_with);

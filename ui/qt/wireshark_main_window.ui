@@ -272,6 +272,7 @@
     <addaction name="actionGoPreviousHistoryPacket"/>
     <addaction name="separator"/>
     <addaction name="actionGoAutoScroll"/>
+    <addaction name="actionAggregationView"/>
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
@@ -298,6 +299,7 @@
      <addaction name="actionViewTimeDisplayFormatDateYDOYandTimeOfDay"/>
      <addaction name="actionViewTimeDisplayFormatTimeOfDay"/>
      <addaction name="actionViewTimeDisplayFormatSecondsSinceEpoch"/>
+     <addaction name="actionViewTimeDisplayFormatSecondsSinceCaptureStart"/>
      <addaction name="actionViewTimeDisplayFormatSecondsSinceFirstCapturedPacket"/>
      <addaction name="actionViewTimeDisplayFormatSecondsSincePreviousCapturedPacket"/>
      <addaction name="actionViewTimeDisplayFormatSecondsSincePreviousDisplayedPacket"/>
@@ -704,7 +706,8 @@
     <addaction name="menuPacketComment"/>
     <addaction name="actionDeleteAllPacketComments"/>
     <addaction name="separator"/>
-    <addaction name="actionEditInjectSecrets"/>
+    <addaction name="actionEditInjectTLSSecrets"/>
+    <addaction name="actionEditInjectESPSecrets"/>
     <addaction name="actionEditDiscardAllSecrets"/>
     <addaction name="separator"/>
     <addaction name="actionEditConfigurationProfiles"/>
@@ -787,6 +790,7 @@
    <addaction name="actionGoFirstPacket"/>
    <addaction name="actionGoLastPacket"/>
    <addaction name="actionGoAutoScroll"/>
+   <addaction name="actionAggregationView"/>
    <addaction name="separator"/>
    <addaction name="actionViewColorizePacketList"/>
    <addaction name="separator"/>
@@ -1659,12 +1663,20 @@
     <string>Remove all packet comments in the capture file</string>
    </property>
   </action>
-  <action name="actionEditInjectSecrets">
+  <action name="actionEditInjectTLSSecrets">
    <property name="text">
     <string>Inject TLS Secrets</string>
    </property>
    <property name="toolTip">
     <string>Embed used TLS secrets in the capture file</string>
+   </property>
+  </action>
+  <action name="actionEditInjectESPSecrets">
+   <property name="text">
+    <string>Inject ESP Secrets</string>
+   </property>
+   <property name="toolTip">
+    <string>Embed used ESP secrets in the capture file</string>
    </property>
   </action>
   <action name="actionEditDiscardAllSecrets">
@@ -2320,6 +2332,17 @@
     <string notr="true">Ctrl+Alt+3</string>
    </property>
   </action>
+  <action name="actionViewTimeDisplayFormatSecondsSinceCaptureStart">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Seconds Since Capture Start</string>
+   </property>
+   <property name="toolTip">
+    <string>Show packet times as seconds since the start of the capture file.</string>
+   </property>
+  </action>
   <action name="actionViewTimeDisplayFormatSecondsSinceFirstCapturedPacket">
    <property name="checkable">
     <bool>true</bool>
@@ -2750,6 +2773,17 @@
    </property>
    <property name="toolTip">
     <string>Automatically scroll to the last packet during a live capture.</string>
+   </property>
+  </action>
+  <action name="actionAggregationView">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Aggregation in Live Capture</string>
+   </property>
+   <property name="toolTip">
+    <string>Aggregation View.</string>
    </property>
   </action>
   <action name="actionAnalyzeExpertInfo">

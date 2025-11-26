@@ -19,7 +19,7 @@
  * update call_ber_oid_callback() accordingly.
  *
  * Since we don't pass the TAG/LENGTH from the CHOICE/SEQUENCE/SEQUENCE OF/
- * SET OF helpers through the callbacks to the next pabket-ber helper
+ * SET OF helpers through the callbacks to the next packet-ber helper
  * when the tags are IMPLICIT, this causes a problem when we also have
  * indefinite length at the same time as the tags are implicit.
  *
@@ -528,7 +528,7 @@ ber_update_oids(void)
 }
 
 static void
-ber_check_length (uint32_t length, int32_t min_len, int32_t max_len, asn1_ctx_t *actx, proto_item *item, bool bit)
+ber_check_length(uint32_t length, int32_t min_len, int32_t max_len, asn1_ctx_t *actx, proto_item *item, bool bit)
 {
     if ((min_len != -1) && (length < (uint32_t)min_len)) {
         expert_add_info_format(
@@ -544,7 +544,7 @@ ber_check_length (uint32_t length, int32_t min_len, int32_t max_len, asn1_ctx_t 
 }
 
 static void
-ber_check_value64 (int64_t value, int64_t min_len, int64_t max_len, asn1_ctx_t *actx, proto_item *item)
+ber_check_value(int64_t value, int64_t min_len, int64_t max_len, asn1_ctx_t *actx, proto_item *item)
 {
     if ((min_len != -1) && (value < min_len)) {
         expert_add_info_format(
@@ -560,23 +560,7 @@ ber_check_value64 (int64_t value, int64_t min_len, int64_t max_len, asn1_ctx_t *
 }
 
 static void
-ber_check_value (uint32_t value, int32_t min_len, int32_t max_len, asn1_ctx_t *actx, proto_item *item)
-{
-    if ((min_len != -1) && (value < (uint32_t)min_len)) {
-        expert_add_info_format(
-            actx->pinfo, item, &ei_ber_size_constraint_value,
-            "Size constraint: value too small: %d (%d .. %d)",
-            value, min_len, max_len);
-    } else if ((max_len != -1) && (value > (uint32_t)max_len)) {
-        expert_add_info_format(
-            actx->pinfo, item, &ei_ber_size_constraint_value,
-            "Size constraint: value too big: %d (%d .. %d)",
-            value, min_len, max_len);
-    }
-}
-
-static void
-ber_check_items (int cnt, int32_t min_len, int32_t max_len, asn1_ctx_t *actx, proto_item *item)
+ber_check_items(int cnt, int32_t min_len, int32_t max_len, asn1_ctx_t *actx, proto_item *item)
 {
     if ((min_len != -1) && (cnt < min_len)) {
         expert_add_info_format(
@@ -1181,7 +1165,9 @@ get_ber_identifier(tvbuff_t *tvb, int offset, int8_t *ber_class, bool *pc, int32
     uint8_t  id, t;
     int8_t   tmp_class;
     bool tmp_pc;
-    int32_t  tmp_tag;
+    uint32_t tmp_tag;
+    /* X.680 8.2 - "The [tag] number is a non-negative integer," so the function
+     * prototype should have an unsigned integer for the tag number. */
 
     id = tvb_get_uint8(tvb, offset);
     offset += 1;
@@ -1201,6 +1187,8 @@ ws_debug_printf("BER ID=%02x", id);
 ws_debug_printf(" %02x", t);
 #endif
             offset += 1;
+            /* XXX - What to do on overflow (which is almost certainly
+             * invalid data rather than a tag number > UINT32_MAX)? */
             tmp_tag <<= 7;
             tmp_tag |= t & 0x7F;
             if (!(t & 0x80))
@@ -1336,6 +1324,7 @@ try_get_ber_length(tvbuff_t *tvb, int offset, uint32_t *length, bool *ind, int n
                 if (offset <= s_offset)
                     THROW(ReportedBoundsError);
             }
+            /* Add the EOC octets to the reported length. */
             tmp_length += 2;
             tmp_ind = true;
             offset = tmp_offset;
@@ -1382,6 +1371,8 @@ get_last_ber_length(uint32_t *length, bool *ind, tvbuff_t **len_tvb, int *len_of
 
 /* this function dissects the length octets of the BER TLV.
  * We only handle (TAGs and) LENGTHs that fit inside 32 bit integers.
+ *
+ * Note that if ind is true, then length includes the end-of-contents octets.
  */
 int
 dissect_ber_length(packet_info *pinfo _U_, proto_tree *tree, tvbuff_t *tvb, int offset, uint32_t *length, bool *ind)
@@ -1584,7 +1575,9 @@ proto_tree_add_debug_text(tree, "OCTET STRING dissect_ber_octet_string(%s) enter
         offset = dissect_ber_identifier(actx->pinfo, tree, tvb, offset, &ber_class, &pc, &tag);
         identifier_len = offset - identifier_offset;
         offset = dissect_ber_length(actx->pinfo, tree, tvb, offset, &len, &ind);
-        end_offset = offset+len;
+        if (ckd_add(&end_offset, offset, len)) {
+            THROW(ReportedBoundsError);
+        }
 
         /* sanity check: we only handle Constructed Universal Sequences */
         if ((ber_class != BER_CLASS_APP) && (ber_class != BER_CLASS_PRI)) {
@@ -1612,7 +1605,9 @@ proto_tree_add_debug_text(tree, "OCTET STRING dissect_ber_octet_string(%s) enter
         get_last_ber_identifier(&ber_class, &pc, &tag);
         get_last_ber_length(&len, &ind, &len_tvb, &len_offset, &len_len);
 
-        end_offset = offset+len;
+        if (ckd_add(&end_offset, offset, len)) {
+            THROW(ReportedBoundsError);
+        }
 
         /* caller may have created new buffer for indefinite length data Verify via length */
         len_remain = (uint32_t)tvb_reported_length_remaining(tvb, offset);
@@ -1677,7 +1672,7 @@ proto_tree_add_debug_text(tree, "OCTET STRING dissect_ber_octet_string(%s) enter
              *
              * ISO/IEC 2022 is also ECMA-35:
              *
-             *    http://www.ecma-international.org/publications/files/ECMA-ST/Ecma-035.pdf
+             *    https://www.ecma-international.org/wp-content/uploads/ECMA-35_4th_edition_march_1985.pdf
              *
              * ISO/IEC 2375 is the procedure for registering character
              * codings in the ISO International Register of Character Sets.
@@ -1770,9 +1765,6 @@ proto_tree_add_debug_text(tree, "OCTET STRING dissect_ber_octet_string(%s) enter
             it = ber_proto_tree_add_item(actx->pinfo, tree, hf_id, tvb, offset, length_remaining, encoding);
             actx->created_item = it;
             ber_check_length(length_remaining, min_len, max_len, actx, it, false);
-        } else {
-
-            proto_tree_add_item(tree, hf_ber_unknown_octetstring, tvb, offset, len, ENC_NA);
         }
 
         if (out_tvb) {
@@ -2009,7 +2001,7 @@ dissect_ber_constrained_integer64(bool implicit_tag, asn1_ctx_t *actx, proto_tre
         *value = val;
     }
 
-    ber_check_value64 (val, min_len, max_len, actx, actx->created_item);
+    ber_check_value(val, min_len, max_len, actx, actx->created_item);
 
     return offset;
 }
@@ -2037,7 +2029,7 @@ dissect_ber_constrained_integer(bool implicit_tag, asn1_ctx_t *actx, proto_tree 
         *value = (uint32_t)val;
     }
 
-    ber_check_value ((uint32_t)val, min_len, max_len, actx, actx->created_item);
+    ber_check_value(val, min_len, max_len, actx, actx->created_item);
 
     return offset;
 }
@@ -2186,7 +2178,9 @@ proto_tree_add_debug_text(tree, "SEQUENCE dissect_ber_sequence(%s) entered\n", n
     } else {
         /* was implicit tag so just use the length of the tvb */
         lenx = tvb_reported_length_remaining(tvb, offset);
-        end_offset = offset+lenx;
+        if (ckd_add(&end_offset, offset, lenx)) {
+            THROW(ReportedBoundsError);
+        }
     }
     /* create subtree */
     if (hf_id > 0) {
@@ -2203,12 +2197,13 @@ proto_tree_add_debug_text(tree, "SEQUENCE dissect_ber_sequence(%s) entered\n", n
         offset = dissect_ber_identifier(actx->pinfo, tree, tvb, offset, &classx, &pcx, &tagx);
         identifier_len = offset - identifier_offset;
         offset = dissect_ber_length(actx->pinfo, tree, tvb, offset, &lenx, &ind);
+        if (ckd_add(&end_offset, offset, lenx)) {
+            THROW(ReportedBoundsError);
+        }
         if (ind) {
-        /*  Fixed the length is correctly returned from dissect ber_length
-          end_offset = tvb_reported_length(tvb);*/
-          end_offset = offset + lenx -2;
-        } else {
-          end_offset = offset + lenx;
+            /* For indefinite length, don't process the EOC octets as part of
+             * the sequence. (We'll add this back in at the end.) */
+            end_offset -= 2;
         }
 
         /* sanity check: we only handle Constructed Universal Sequences */
@@ -2501,8 +2496,7 @@ proto_tree_add_debug_text(tree, "SEQUENCE dissect_ber_sequence(%s) subdissector 
             offset - end_offset);
     }
     if (ind) {
-        /*  need to eat this EOC
-        end_offset = tvb_reported_length(tvb);*/
+        /*  need to eat this EOC */
         end_offset += 2;
         if (show_internal_ber_fields) {
             proto_tree_add_item(tree, hf_ber_seq_eoc, tvb, end_offset-2, 2, ENC_NA);
@@ -2563,12 +2557,13 @@ proto_tree_add_debug_text(tree, "SET dissect_ber_set(%s) entered\n", name);
         offset = dissect_ber_identifier(actx->pinfo, tree, tvb, offset, &classx, &pcx, &tagx);
         identifier_len = offset - identifier_offset;
         offset = dissect_ber_length(actx->pinfo, tree, tvb, offset, &lenx, &ind);
+        if (ckd_add(&end_offset, offset, lenx)) {
+            THROW(ReportedBoundsError);
+        }
         if (ind) {
-        /*  Fixed the length is correctly returned from dissect ber_length
-          end_offset = tvb_reported_length(tvb);*/
-          end_offset = offset + lenx -2;
-        } else {
-          end_offset = offset + lenx;
+            /* For indefinite length, don't process the EOC octets as part of
+             * the set. (We'll add this back in at the end.) */
+            end_offset -= 2;
         }
 
         /* sanity check: we only handle Constructed Universal Sets */
@@ -2594,7 +2589,9 @@ proto_tree_add_debug_text(tree, "SET dissect_ber_set(%s) entered\n", name);
     } else {
         /* was implicit tag so just use the length of the tvb */
         lenx = tvb_reported_length_remaining(tvb, offset);
-        end_offset = offset+lenx;
+        if (ckd_add(&end_offset, offset, lenx)) {
+            THROW(ReportedBoundsError);
+        }
         identifier_offset = 0;
         identifier_len = 0;
     }
@@ -2790,8 +2787,7 @@ proto_tree_add_debug_text(tree, "SET dissect_ber_set(%s) calling subdissector\n"
     }
 
     if (ind) {
-        /*  need to eat this EOC
-          end_offset = tvb_reported_length(tvb);*/
+        /*  need to eat this EOC */
         end_offset += 2;
         if (show_internal_ber_fields) {
             proto_tree_add_item(tree, hf_ber_set_eoc, tvb, end_offset-2, 2, ENC_NA);
@@ -2859,7 +2855,9 @@ proto_tree_add_debug_text(tree, "CHOICE dissect_ber_choice(%s) entered len:%d\n"
     offset = get_ber_identifier(tvb, offset, &ber_class, &pc, &tag);
     identifier_len = offset - identifier_offset;
     offset = get_ber_length(tvb, offset, &len, &ind);
-    end_offset = offset + len ;
+    if (ckd_add(&end_offset, offset, len)) {
+        THROW(ReportedBoundsError);
+    }
 
     /* Some sanity checks.
      * The hf field passed to us MUST be an integer type
@@ -3008,6 +3006,9 @@ proto_tree_add_debug_text(tree, "CHOICE dissect_ber_choice(%s) trying again\n", 
                     }
                 }
             }
+            /* Make sure the end_offset reported isn't out of bounds.
+             * (If it is, that's something bogus with the encoding.) */
+            tvb_ensure_reported_length_remaining(tvb, end_offset);
             return end_offset;
         }
         ch++;
@@ -3387,7 +3388,13 @@ proto_tree_add_debug_text(tree, "SQ OF dissect_ber_sq_of(%s) entered\n", name);
         offset = dissect_ber_identifier(actx->pinfo, tree, tvb, offset, &classx, &pcx, &tagx);
         identifier_len = offset - identifier_offset;
         offset = dissect_ber_length(actx->pinfo, tree, tvb, offset, &lenx, &ind);
-        end_offset = offset + lenx;
+        if (ckd_add(&end_offset, offset, lenx)) {
+            THROW(ReportedBoundsError);
+        }
+        /* XXX - dissect_ber_sequence and dissect_ber_set in the case of
+         * indefinite length decrement by 2 to avoid processing the EOC
+         * octets until the end, but this function processes them in the loop.
+         */
 
         /* sanity check: we only handle Constructed Universal Sequences */
         if ((classx != BER_CLASS_APP) && (classx != BER_CLASS_PRI)) {
@@ -3414,7 +3421,9 @@ proto_tree_add_debug_text(tree, "SQ OF dissect_ber_sq_of(%s) entered\n", name);
         /* the tvb length should be correct now nope we could be coming from an implicit choice or sequence, thus we
         read the items we match and return the length*/
         lenx = tvb_reported_length_remaining(tvb, offset);
-        end_offset = offset + lenx;
+        if (ckd_add(&end_offset, offset, lenx)) {
+            THROW(ReportedBoundsError);
+        }
     }
 
     /* count number of items */
@@ -3475,7 +3484,7 @@ proto_tree_add_debug_text(tree, "SQ OF dissect_ber_sq_of(%s) entered\n", name);
                     item = proto_tree_add_uint_format_value(parent_tree, hf_id, tvb, offset, lenx, cnt, "unknown number of items");
             }
             tree = proto_item_add_subtree(item, ett_id);
-            ber_check_items (cnt, min_len, max_len, actx, item);
+            ber_check_items(cnt, min_len, max_len, actx, item);
         }
     }
 
@@ -3735,7 +3744,8 @@ dissect_ber_GeneralizedTime(bool implicit_tag, asn1_ctx_t *actx, proto_tree *tre
 int
 dissect_ber_UTCTime(bool implicit_tag, asn1_ctx_t *actx, proto_tree *tree, tvbuff_t *tvb, int offset, int hf_id, char **datestrptr, uint32_t *tvblen)
 {
-    char         *outstr, *outstrptr;
+    wmem_strbuf_t *outstrbuf;
+    char         *outstr;
     const uint8_t *instr;
     int8_t        ber_class;
     bool      pc;
@@ -3748,7 +3758,7 @@ dissect_ber_UTCTime(bool implicit_tag, asn1_ctx_t *actx, proto_tree *tree, tvbuf
     proto_tree   *error_tree;
     const char   *error_str = NULL;
 
-    outstrptr = outstr = (char *)wmem_alloc(actx->pinfo->pool, 29);
+    outstrbuf = wmem_strbuf_create(actx->pinfo->pool);
 
     if (datestrptr) *datestrptr = NULL; /* mark invalid */
     if (tvblen) *tvblen = 0;
@@ -3797,8 +3807,7 @@ dissect_ber_UTCTime(bool implicit_tag, asn1_ctx_t *actx, proto_tree *tree, tvbuf
             goto malformed;
         }
     }
-    snprintf(outstrptr, 15, "%.2s-%.2s-%.2s %.2s:%.2s", instr, instr+2, instr+4, instr+6, instr+8);
-    outstrptr+= 14;
+    wmem_strbuf_append_printf(outstrbuf, "%.2s-%.2s-%.2s %.2s:%.2s", instr, instr+2, instr+4, instr+6, instr+8);
 
     /* (ss)? */
     if (len >= 12) {
@@ -3806,8 +3815,7 @@ dissect_ber_UTCTime(bool implicit_tag, asn1_ctx_t *actx, proto_tree *tree, tvbuf
             i++;
             if ((instr[i] >= '0') && (instr[i] <= '9')) {
                 i++;
-                snprintf(outstrptr, 4, ":%.2s", instr+10);
-                outstrptr+=3;
+                wmem_strbuf_append_printf(outstrbuf, ":%.2s", instr+10);
             } else {
                 error_str = "BER Error: malformed UTCTime encoding, "
                         "if 11th octet is a digit for seconds, "
@@ -3825,7 +3833,7 @@ dissect_ber_UTCTime(bool implicit_tag, asn1_ctx_t *actx, proto_tree *tree, tvbuf
                         "there must be no further octets after \'Z\'";
             goto malformed;
         }
-        snprintf(outstrptr, 7, " (UTC)");
+        wmem_strbuf_append_c(outstrbuf, 'Z');
         i++;
         break;
     case '-':
@@ -3842,8 +3850,7 @@ dissect_ber_UTCTime(bool implicit_tag, asn1_ctx_t *actx, proto_tree *tree, tvbuf
                 goto malformed;
             }
         }
-        snprintf(outstrptr, 12, " (UTC%c%.4s)", instr[i], instr+i+1);
-        i+=5;
+        wmem_strbuf_append_len(outstrbuf, &instr[i], 5);
         break;
     default:
         error_str = wmem_strdup_printf(actx->pinfo->pool,
@@ -3863,12 +3870,13 @@ dissect_ber_UTCTime(bool implicit_tag, asn1_ctx_t *actx, proto_tree *tree, tvbuf
         goto malformed;
     }
 
+    outstr = wmem_strbuf_finalize(outstrbuf);
+
     if (datestrptr) {
        *datestrptr = outstr; /* mark as valid */
-    } else {
-        if (hf_id > 0) {
-            proto_tree_add_string(tree, hf_id, tvb, offset, len, outstr);
-        }
+    }
+    if (hf_id > 0) {
+        proto_tree_add_string(tree, hf_id, tvb, offset, len, outstr);
     }
     if (tvblen) *tvblen = len;
 
@@ -3920,7 +3928,9 @@ dissect_ber_constrained_bitstring(bool implicit_tag, asn1_ctx_t *actx, proto_tre
         offset = dissect_ber_identifier(actx->pinfo, parent_tree, tvb, offset, &ber_class, &pc, &tag);
         identifier_len = offset - identifier_offset;
         offset = dissect_ber_length(actx->pinfo, parent_tree, tvb, offset, &len, &ind);
-        end_offset = offset + len;
+        if (ckd_add(&end_offset, offset, len)) {
+            THROW(ReportedBoundsError);
+        }
 
         /* sanity check: we only handle Universal BitStrings */
 
@@ -3953,7 +3963,10 @@ dissect_ber_constrained_bitstring(bool implicit_tag, asn1_ctx_t *actx, proto_tre
         len = tvb_reported_length_remaining(tvb, offset);
         end_offset = offset + len;
     }
-    if ((int)len <= 0) {
+    uint32_t bit_len;
+    /* 8.6.2 A bitstring has an initial octet, so length >= 1.
+     * Also make sure the number of bits doesn't overflow. */
+    if ((int)len <= 0 || ckd_mul(&bit_len, len, 8)) {
         proto_tree_add_expert_format(
             parent_tree, actx->pinfo, &ei_ber_constr_bitstr, tvb, offset, len,
             "BER Error: dissect_ber_constrained_bitstring(): frame:%u offset:%d Was passed an illegal length of %d",
@@ -3980,7 +3993,7 @@ dissect_ber_constrained_bitstring(bool implicit_tag, asn1_ctx_t *actx, proto_tre
             if (out_tvb) {
                 *out_tvb = ber_tvb_new_subset_length(tvb, offset, len);
             }
-            ber_check_length(8 * len - pad, min_len, max_len, actx, item, true);
+            ber_check_length(bit_len - pad, min_len, max_len, actx, item, true);
             return end_offset;
         } else {
             /* padding */
@@ -4063,7 +4076,7 @@ dissect_ber_constrained_bitstring(bool implicit_tag, asn1_ctx_t *actx, proto_tre
         }
     }
 
-    ber_check_length(8 * len - pad, min_len, max_len, actx, item, true);
+    ber_check_length(bit_len - pad, min_len, max_len, actx, item, true);
 
     return end_offset;
 }
@@ -4530,7 +4543,7 @@ proto_register_ber(void)
     static build_valid_func ber_da_build_value[1] = {ber_value};
     static decode_as_value_t ber_da_values = {ber_prompt, 1, ber_da_build_value};
     static decode_as_t ber_da = {"ber", "ber.syntax", 1, 0, &ber_da_values, NULL, NULL,
-                                ber_populate_list, ber_decode_as_reset, ber_decode_as_change, NULL};
+                                ber_populate_list, ber_decode_as_reset, ber_decode_as_change, NULL, NULL, NULL };
 
     module_t *ber_module;
     expert_module_t* expert_ber;

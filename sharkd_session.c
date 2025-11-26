@@ -37,8 +37,6 @@
 #include <epan/column.h>
 #include <epan/column-info.h>
 
-#include <ui/ssl_key_export.h>
-
 #include <ui/io_graph_item.h>
 #include <epan/stats_tree_priv.h>
 #include <epan/stat_tap_ui.h>
@@ -50,6 +48,7 @@
 #include <epan/rtd_table.h>
 #include <epan/srt_table.h>
 #include <epan/to_str.h>
+#include <epan/secrets.h>
 
 #include <epan/dissectors/packet-h225.h>
 #include <ui/voip_calls.h>
@@ -1423,14 +1422,14 @@ sharkd_session_process_status(void)
     if (cfile.cinfo.num_cols > 0)
     {
         sharkd_json_array_open("columns");
-        for (int i = 0; i < cfile.cinfo.num_cols; ++i)
+        for (unsigned i = 0; i < cfile.cinfo.num_cols; ++i)
         {
             sharkd_json_value_string(NULL, get_column_title(i));
         }
         sharkd_json_array_close();
 
         sharkd_json_array_open("column_info");
-        for (int i = 0; i < cfile.cinfo.num_cols; ++i)
+        for (unsigned i = 0; i < cfile.cinfo.num_cols; ++i)
         {
             int fmt = get_column_format(i);
             sharkd_json_object_open(NULL);
@@ -1517,7 +1516,7 @@ sharkd_session_process_analyse(void)
 
     sharkd_json_array_open("protocols");
 
-    wtap_rec_init(&rec, 1514);
+    wtap_rec_init(&rec, DEFAULT_INIT_BUFFER_SIZE_2048);
 
     for (uint32_t framenum = 1; framenum <= cfile.count; framenum++)
     {
@@ -1649,7 +1648,7 @@ sharkd_session_process_frames_cb(epan_dissect_t *edt, proto_tree *tree _U_,
     json_dumper_begin_object(&dumper);
 
     sharkd_json_array_open("c");
-    for (int col = 0; col < cinfo->num_cols; ++col)
+    for (unsigned col = 0; col < cinfo->num_cols; ++col)
     {
         sharkd_json_value_string(NULL, get_column_text(cinfo, col));
     }
@@ -1789,7 +1788,7 @@ sharkd_session_process_frames(const char *buf, const jsmntok_t *tokens, int coun
 
     sharkd_json_result_array_prologue(rpcid);
 
-    wtap_rec_init(&rec, 1514);
+    wtap_rec_init(&rec, DEFAULT_INIT_BUFFER_SIZE_2048);
 
     for (uint32_t framenum = 1; framenum <= cfile.count; framenum++)
     {
@@ -3018,7 +3017,8 @@ sharkd_session_process_tap_eo_cb(void *tapdata)
     struct sharkd_export_object_list *object_list = (struct sharkd_export_object_list *) tap_object->gui_data;
     GSList *slist;
     int i = 0;
-    char sha1sum_bytes[HASH_SHA1_LENGTH], *sha1sum_str;
+    char *sha1sum_str;
+    uint8_t sha1sum_bytes[HASH_SHA1_LENGTH];
 
     json_dumper_begin_object(&dumper);
     sharkd_json_value_string("tap", object_list->type);
@@ -4459,7 +4459,7 @@ sharkd_session_process_frame_cb(epan_dissect_t *edt, proto_tree *tree, struct ep
 
     if (cinfo)
     {
-        int col;
+        unsigned col;
 
         sharkd_json_array_open("col");
         for (col = 0; col < cinfo->num_cols; ++col)
@@ -4501,7 +4501,7 @@ sharkd_session_process_frame_cb(epan_dissect_t *edt, proto_tree *tree, struct ep
         }
         else
         {
-            sharkd_json_value_base64("bytes", "", 0);
+            sharkd_json_value_base64("bytes", (const uint8_t*)"", 0);
         }
 
         data_src = data_src->next;
@@ -4536,7 +4536,7 @@ sharkd_session_process_frame_cb(epan_dissect_t *edt, proto_tree *tree, struct ep
             }
             else
             {
-                sharkd_json_value_base64("bytes", "", 0);
+                sharkd_json_value_base64("bytes", (const uint8_t*)"", 0);
             }
 
             json_dumper_end_object(&dumper);
@@ -4735,7 +4735,7 @@ sharkd_session_process_iograph(char *buf, const jsmntok_t *tokens, int count)
         graph->interval = interval_us;
 
         graph->hf_index = -1;
-        graph->error = check_field_unit(field_name, &graph->hf_index, graph->calc_type);
+        graph->error = check_field_unit(field_name, &graph->hf_index, graph->calc_type, "Packets");
 
         graph->space_items = 0; /* TODO, can avoid realloc()s in sharkd_iograph_packet() by calculating: capture_time / interval */
         graph->num_items = 0;
@@ -5056,7 +5056,7 @@ sharkd_session_process_frame(char *buf, const jsmntok_t *tokens, int count)
 
     req_data.display_hidden = (json_find_attr(buf, tokens, count, "v") != NULL);
 
-    wtap_rec_init(&rec, 1514);
+    wtap_rec_init(&rec, DEFAULT_INIT_BUFFER_SIZE_2048);
 
     status = sharkd_dissect_request(framenum, ref_frame_num, prev_dis_num,
             &rec, cinfo, dissect_flags,
@@ -5709,7 +5709,7 @@ sharkd_rtp_download_decode(struct sharkd_download_rtp *req)
     /* based on RtpAudioStream::decode() 6e29d874f8b5e6ebc59f661a0bb0dab8e56f122a */
     /* TODO, for now only without silence (timing_mode_ = Uninterrupted) */
 
-    static const int sample_bytes_ = sizeof(SAMPLE) / sizeof(char);
+    static const int sample_bytes_ = SAMPLE_BYTES;
 
     uint32_t audio_out_rate_ = 0;
     struct _GHashTable *decoders_hash_ = rtp_decoder_hash_table_new();
@@ -5744,7 +5744,7 @@ sharkd_rtp_download_decode(struct sharkd_download_rtp *req)
         {
             uint32_t tmp32;
             uint16_t tmp16;
-            char wav_hdr[44];
+            uint8_t wav_hdr[44];
 
             /* First non-zero wins */
             audio_out_rate_ = sample_rate;
@@ -5823,7 +5823,7 @@ sharkd_rtp_download_decode(struct sharkd_download_rtp *req)
         }
 
         /* Write the decoded, possibly-resampled audio */
-        json_dumper_write_base64(&dumper, write_buff, write_bytes);
+        json_dumper_write_base64(&dumper, (const uint8_t*)write_buff, write_bytes);
 
         g_free(decode_buff);
     }
@@ -5994,10 +5994,12 @@ sharkd_session_process_download(char *buf, const jsmntok_t *tokens, int count)
     }
     else if (!strcmp(tok_token, "ssl-secrets"))
     {
-        size_t str_len;
-        char *str = ssl_export_sessions(&str_len);
+        size_t str_len = 0;
+        unsigned num_keys = 0;
+        char* str = NULL;
+        secrets_export_values ret = secrets_export("TLS", &str, &str_len, &num_keys);
 
-        if (str)
+        if ((ret == SECRETS_EXPORT_SUCCESS) && (str_len > 0))
         {
             const char *mime     = "text/plain";
             const char *filename = "keylog.txt";
@@ -6005,7 +6007,7 @@ sharkd_session_process_download(char *buf, const jsmntok_t *tokens, int count)
             sharkd_json_result_prologue(rpcid);
             sharkd_json_value_string("file", filename);
             sharkd_json_value_string("mime", mime);
-            sharkd_json_value_base64("data", str, str_len);
+            sharkd_json_value_base64("data", (const uint8_t*)str, str_len);
             sharkd_json_result_epilogue();
         }
         g_free(str);

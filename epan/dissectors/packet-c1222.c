@@ -367,7 +367,9 @@ static uat_t *c1222_uat;
       fieldname##_allocated = fieldname##_len; \
       fieldname[0] = 0x06;  /* create absolute OID tag */ \
       fieldname[1] = (fieldname##_len - 2) & 0xff;  \
-      memcpy(&(fieldname[2]), c1222_baseoid, c1222_baseoid_len); \
+      if (c1222_baseoid != NULL) { \
+        memcpy(&(fieldname[2]), c1222_baseoid, c1222_baseoid_len); \
+      } \
       tvb_memcpy(tvb, &(fieldname[c1222_baseoid_len+2]), start_offset+2, length-2); \
       break; \
     case 0x06:  /* absolute OID */ \
@@ -886,7 +888,7 @@ keylookup(uint8_t *keybuff, uint8_t keyid)
  *
  * \param buffer points to a memory copy of the packet to be authenticated/decrypted
  *        and contains the decrypted value on successful return.
- * \param length lenth of input packet
+ * \param length length of input packet
  * \param decrypt true if packet is to be authenticated and decrypted; false if authentication only is requested
  * \returns true if the requested operation was successful; otherwise false
  */
@@ -1277,8 +1279,8 @@ dissect_c1222_INTEGER(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, 
 static int
 dissect_c1222_Key_id_element(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   FILL_START;
-    offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                       NULL);
+    offset = dissect_ber_constrained_octet_string(implicit_tag, actx, tree, tvb, offset,
+                                                   1, 1, hf_index, NULL);
 
   FILL_TABLE(key_id_element);
 
@@ -1291,8 +1293,8 @@ dissect_c1222_Key_id_element(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offse
 static int
 dissect_c1222_Iv_element(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   FILL_START;
-    offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                       NULL);
+    offset = dissect_ber_constrained_octet_string(implicit_tag, actx, tree, tvb, offset,
+                                                   4, 4, hf_index, NULL);
 
   FILL_TABLE(iv_element);
 
@@ -1329,8 +1331,8 @@ dissect_c1222_Calling_authentication_value_c1222(bool implicit_tag _U_, tvbuff_t
 
 static int
 dissect_c1222_OCTET_STRING_SIZE_CONSTR001(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-  offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                       NULL);
+  offset = dissect_ber_constrained_octet_string(implicit_tag, actx, tree, tvb, offset,
+                                                   3, 259, hf_index, NULL);
 
   return offset;
 }
@@ -1339,8 +1341,8 @@ dissect_c1222_OCTET_STRING_SIZE_CONSTR001(bool implicit_tag _U_, tvbuff_t *tvb _
 
 static int
 dissect_c1222_OCTET_STRING_SIZE_1_255(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-  offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                       NULL);
+  offset = dissect_ber_constrained_octet_string(implicit_tag, actx, tree, tvb, offset,
+                                                   1, 255, hf_index, NULL);
 
   return offset;
 }
@@ -1349,8 +1351,8 @@ dissect_c1222_OCTET_STRING_SIZE_1_255(bool implicit_tag _U_, tvbuff_t *tvb _U_, 
 
 static int
 dissect_c1222_OCTET_STRING_SIZE_CONSTR002(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-  offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                       NULL);
+  offset = dissect_ber_constrained_octet_string(implicit_tag, actx, tree, tvb, offset,
+                                                   0, 255, hf_index, NULL);
 
   return offset;
 }

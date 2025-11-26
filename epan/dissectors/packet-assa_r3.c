@@ -3075,7 +3075,7 @@ static int * const r3_nvramclearoptions[] = {
 /*
  *  Mapping table so dissect_r3_cmd_setconfig() knows what the configuration item type is
  */
-static configType_e configMap [] =
+static const configType_e configMap [] =
 {
   /* CONFIGITEM_SERIAL_NUMBER */               CONFIGTYPE_STRING,
   /* CONFIGITEM_CRYPT_KEY */                   CONFIGTYPE_STRING,
@@ -3273,7 +3273,7 @@ static void dissect_r3_cmd_mfgcommand (tvbuff_t *tvb, uint32_t start_offset, uin
 static void dissect_r3_cmd_nvrambackup (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *tree);
 static void dissect_r3_cmd_extendedresponse (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *tree);
 
-static void (*r3command_dissect []) (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *r3_tree) =
+static void (* const r3command_dissect []) (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *r3_tree) =
 {
   /* CMD_RESPONSE */                dissect_r3_cmd_response,
   /* CMD_HANDSHAKE */               dissect_r3_cmd_handshake,
@@ -3345,7 +3345,7 @@ static void dissect_r3_cmdmfg_mortisestatelogclear (tvbuff_t *tvb, uint32_t star
 static void dissect_r3_cmdmfg_mortisepins (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *tree);
 static void dissect_r3_cmdmfg_haltandcatchfire (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *tree);
 
-static void (*r3commandmfg_dissect []) (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *r3_tree) =
+static void (* const r3commandmfg_dissect []) (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *r3_tree) =
 {
   /* CMDMFG_SETSERIALNUMBER */       dissect_r3_cmdmfg_setserialnumber,
   /* CMDMFG_SETCRYPTKEY */           dissect_r3_cmdmfg_setcryptkey,
@@ -3387,7 +3387,7 @@ static void (*r3commandmfg_dissect []) (tvbuff_t *tvb, uint32_t start_offset, ui
 static void dissect_r3_response_singlebyte (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *tree);
 static void dissect_r3_response_hasdata (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *tree);
 
-static void (*r3response_dissect []) (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *r3_tree) =
+static void (* const r3response_dissect []) (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *r3_tree) =
 {
   /* RESPONSETYPE_OK */                  dissect_r3_response_singlebyte,
   /* RESPONSETYPE_ERROR */               dissect_r3_response_singlebyte,
@@ -3469,7 +3469,7 @@ static void dissect_r3_upstreamcommand_connectcommuser (tvbuff_t *tvb, uint32_t 
 static void dissect_r3_upstreamcommand_commandalarm (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *tree);
 static void dissect_r3_upstreamcommand_dumpdebuglog (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *tree);
 
-static void (*r3upstreamcommand_dissect []) (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *r3_tree) =
+static void (* const r3upstreamcommand_dissect []) (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *r3_tree) =
 {
   /* UPSTREAMCOMMAND_RESERVED */           dissect_r3_upstreamcommand_reserved,
   /* UPSTREAMCOMMAND_DEBUGMSG */           dissect_r3_upstreamcommand_debugmsg,
@@ -3518,7 +3518,7 @@ static void dissect_r3_upstreammfgfield_keypadchar (tvbuff_t *tvb, uint32_t star
 static void dissect_r3_upstreammfgfield_magcard (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *tree);
 static void dissect_r3_upstreammfgfield_proxcard (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *tree);
 
-static void (*r3upstreammfgfield_dissect []) (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *r3_tree) =
+static void (* const r3upstreammfgfield_dissect []) (tvbuff_t *tvb, uint32_t start_offset, uint32_t length, packet_info *pinfo, proto_tree *r3_tree) =
 {
   /* MFGFIELD_IOPINS */              dissect_r3_upstreammfgfield_iopins,
   /* MFGFIELD_ADCS */                dissect_r3_upstreammfgfield_adcs,
@@ -4299,10 +4299,9 @@ dissect_r3_upstreammfgfield_checkpointlog (tvbuff_t *tvb, uint32_t start_offset,
     proto_tree  *cpe_tree;
     unsigned     resettype;
     const char *desc;
-    static const char *resets [] = { "Stack underflow", "Stack overflow", "Power-On",
-                                      "Software", "Brown-out", "MCLR in sleep", "WDT",
-                                      "Normal", "[Unknown Reset Type]" };
-
+    static const char * const resets [] = { "Stack underflow", "Stack overflow", "Power-On",
+                                           "Software", "Brown-out", "MCLR in sleep", "WDT",
+                                           "Normal", "[Unknown Reset Type]" };
 
     cpe_tree = proto_tree_add_subtree_format(cpl_tree, tvb, i + 0, 2, ett_r3checkpointlogentry, &cpe_item,
                             "Checkpoint Log Entry %u", counter);

@@ -70,9 +70,10 @@ ADD: Additional generic (non-checked) ICV length of 128, 192 and 256.
 #include <epan/proto_data.h>
 #include <epan/decode_as.h>
 #include <epan/capture_dissectors.h>
-
+#include <epan/secrets.h>
+#include <wiretap/secrets-types.h>
 #include <stdio.h>    /* for sscanf() */
-#include <epan/uat.h>
+#include <epan/uat-int.h>
 #include <wsutil/str_util.h>
 #include <wsutil/wsgcrypt.h>
 #include <wsutil/pint.h>
@@ -129,6 +130,8 @@ static capture_dissector_handle_t ah_cap_handle;
 static dissector_handle_t data_handle;
 
 static dissector_table_t ip_dissector_table;
+
+static wmem_map_t *esp_used_sa_map;
 
 /* Encryption algorithms defined in RFC 4305 */
 #define IPSEC_ENCRYPT_NULL 0
@@ -890,8 +893,8 @@ get_full_ipv6_addr(wmem_allocator_t* scope, char* ipv6_addr_expanded, char *ipv6
 static bool
 get_full_ipv4_addr(char* ipv4_address_expanded, char *ipv4_address)
 {
-  char addr_byte_string_tmp[4];
-  char addr_byte_string[4];
+  char addr_byte_string_tmp[12];
+  char addr_byte_string[12];
 
   unsigned addr_byte = 0;
   unsigned i = 0;
@@ -945,9 +948,9 @@ get_full_ipv4_addr(char* ipv4_address_expanded, char *ipv4_address)
             return false;
 
           if(addr_byte < 16)
-            snprintf(addr_byte_string,4,"0%X",addr_byte);
+            snprintf(addr_byte_string,11,"0%X",addr_byte);
           else
-            snprintf(addr_byte_string,4,"%X",addr_byte);
+            snprintf(addr_byte_string,11,"%X",addr_byte);
           for(i = 0; i < strlen(addr_byte_string); i++)
           {
             ipv4_address_expanded[cpt] = addr_byte_string[i];
@@ -974,9 +977,9 @@ get_full_ipv4_addr(char* ipv4_address_expanded, char *ipv4_address)
             return false;
 
           if(addr_byte < 16)
-            snprintf(addr_byte_string,4,"0%X",addr_byte);
+            snprintf(addr_byte_string,11,"0%X",addr_byte);
           else
-            snprintf(addr_byte_string,4,"%X",addr_byte);
+            snprintf(addr_byte_string,11,"%X",addr_byte);
           for(i = 0; i < strlen(addr_byte_string); i++)
           {
             ipv4_address_expanded[cpt] = addr_byte_string[i];
@@ -1238,6 +1241,9 @@ get_esp_sa(wmem_allocator_t* scope,
 
       *sn_length = record->sn_length;
       *sn_upper = record->sn_upper;
+
+      if (found && !wmem_map_lookup(esp_used_sa_map, record))
+        wmem_map_insert(esp_used_sa_map, record, NULL);
     }
   }
 
@@ -2499,9 +2505,11 @@ dissect_esp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
   */
   if(!g_esp_enable_encryption_decode && g_esp_enable_authentication_check && sad_is_present)
   {
-    next_tvb = tvb_new_subset_length_caplen(tvb, ESP_HEADER_LEN, esp_packet_len - ESP_HEADER_LEN - esp_icv_len, -1);
-    export_ipsec_pdu(data_handle, pinfo, next_tvb);
-    call_dissector(data_handle, next_tvb, pinfo, esp_tree);
+    if ((esp_packet_len - ESP_HEADER_LEN) > esp_icv_len) {
+      next_tvb = tvb_new_subset_length(tvb, ESP_HEADER_LEN, esp_packet_len - ESP_HEADER_LEN - esp_icv_len);
+      export_ipsec_pdu(data_handle, pinfo, next_tvb);
+      call_dissector(data_handle, next_tvb, pinfo, esp_tree);
+    }
   }
   /* The packet does not belong to a security association and the field g_esp_enable_null_encryption_decode_heuristic is set */
   else if(null_encryption_decode_heuristic)
@@ -2645,6 +2653,55 @@ static void ipsec_cleanup_protocol(void)
   extra_esp_sa_records.num_records = 0;
 }
 
+static void
+esp_secrets_block_callback(const void *secrets, unsigned size _U_)
+{
+  char *err;
+
+  if (!uat_load_str(esp_uat, (const char *)secrets, &err))
+    g_free(err);
+}
+
+static void
+esp_print_record(void *key, void *value _U_, void *user_data)
+{
+  char *str = uat_record_tostr(esp_uat, key);
+
+  wmem_strbuf_append_printf((wmem_strbuf_t *)user_data, "%s\n", str);
+  g_free(str);
+}
+
+static unsigned
+esp_export_secret_count(void)
+{
+  return wmem_map_size(esp_used_sa_map);
+}
+
+static bool
+esp_export_dsb(capture_file *cf)
+{
+  wtap_block_t block;
+  wtapng_dsb_mandatory_t *dsb;
+  wmem_strbuf_t *secrets;
+
+  if (!wmem_map_size(esp_used_sa_map))
+    return false;
+
+  secrets = wmem_strbuf_create(NULL);
+  wmem_map_foreach(esp_used_sa_map, esp_print_record, secrets);
+
+  block = wtap_block_create(WTAP_BLOCK_DECRYPTION_SECRETS);
+  dsb = (wtapng_dsb_mandatory_t *)wtap_block_get_mandatory_data(block);
+
+  dsb->secrets_type = SECRETS_TYPE_ESP;
+  dsb->secrets_data = wmem_strbuf_finalize(secrets);
+  dsb->secrets_len = (uint32_t)strlen(dsb->secrets_data);
+
+  wtap_file_add_decryption_secrets(cf->provider.wth, block);
+  cf->unsaved_changes = TRUE;
+  return true;
+}
+
 void
 proto_register_ipsec(void)
 {
@@ -2769,7 +2826,7 @@ proto_register_ipsec(void)
   static build_valid_func ah_da_build_value[1] = {ah_value};
   static decode_as_value_t ah_da_values = {ah_prompt, 1, ah_da_build_value};
   static decode_as_t ah_da = {"ah", "ip.proto", 1, 0, &ah_da_values, NULL, NULL,
-                                  decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL};
+                                  decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL, NULL, NULL };
 
   module_t *ah_module;
   module_t *esp_module;
@@ -2866,6 +2923,11 @@ proto_register_ipsec(void)
   ah_cap_handle = register_capture_dissector("ah", capture_ah, proto_ah);
 
   register_decode_as(&ah_da);
+
+  secrets_register_type(SECRETS_TYPE_ESP, esp_secrets_block_callback);
+  secrets_register_inject_type("ESP", esp_export_secret_count, esp_export_dsb, NULL);
+
+  esp_used_sa_map = wmem_map_new_autoreset(wmem_epan_scope(), wmem_file_scope(), g_direct_hash, g_direct_equal);
 }
 
 void

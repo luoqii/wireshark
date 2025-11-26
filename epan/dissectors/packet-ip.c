@@ -27,13 +27,8 @@
 #include <epan/conversation_filter.h>
 #include <epan/reassemble.h>
 #include <epan/etypes.h>
-#include <epan/ppptypes.h>
-#include <epan/llcsaps.h>
 #include <epan/aftypes.h>
-#include <epan/arcnet_pids.h>
 #include <epan/in_cksum.h>
-#include <epan/nlpid.h>
-#include <epan/ax25_pids.h>
 #include <epan/decode_as.h>
 #include <epan/proto_data.h>
 #include <epan/exported_pdu.h>
@@ -51,6 +46,12 @@
 #include "packet-mpls.h"
 #include "packet-nsh.h"
 #include "packet-eth.h"
+#include "packet-osi.h"
+#include "packet-ppp.h"
+#include "packet-llc.h"
+#include "packet-arcnet.h"
+#include "packet-ax25.h"
+
 
 void proto_register_ip(void);
 void proto_reg_handoff_ip(void);
@@ -282,6 +283,7 @@ static expert_field ei_ip_ttl_too_small;
 static expert_field ei_ip_cipso_tag;
 static expert_field ei_ip_bogus_ip_version;
 static expert_field ei_ip_bogus_header_length;
+static expert_field ei_ip_reserved_bit_set;
 
 static dissector_handle_t ip_handle;
 static dissector_handle_t ipv4_handle;
@@ -516,7 +518,7 @@ static const char* ip_conv_get_filter_type(conv_item_t* conv, conv_filter_type_e
 {
     /* addr type is AT_STRINGZ for subnets, as it is a very flexible format
      * XXX - create a new type when required, at this moment it's only used in
-     * conversation tables and is not justifed. See #19481.
+     * conversation tables and is not justified. See #19481.
      */
     if ((filter == CONV_FT_SRC_ADDRESS) && ((conv->src_address.type == AT_IPv4) ||
         (conv->src_address.type == AT_STRINGZ)))
@@ -2169,6 +2171,9 @@ dissect_ip_v4(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void* 
     };
     tf = proto_tree_add_bitmask_with_flags(ip_tree, tvb, offset + 6, hf_ip_flags,
         ett_ip_flags, ip_flags, ENC_BIG_ENDIAN, BMT_NO_FALSE | BMT_NO_TFS | BMT_NO_INT);
+    if (iph->ip_off & IP_RF) {
+      expert_add_info(pinfo, tf, &ei_ip_reserved_bit_set);
+    }
   }
 
   tf = proto_tree_add_uint_format_value(ip_tree, hf_ip_frag_offset, tvb, offset + 6, 2,
@@ -2558,96 +2563,50 @@ dissect_ip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
 }
 
 static bool
-dissect_ip_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
+dissect_ip_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
-    int length, tot_length;
-    uint8_t oct, version, ihl;
+  int length, tot_length;
+  uint8_t oct, version, ihl;
 
-/*
-    0                   1                   2                   3
-    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   |Version|  IHL  |Type of Service|          Total Length         |
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  /*
+   * IPv4 Header Format
+   *
+   *  0                   1                   2                   3
+   *  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   * |Version|  IHL  |Type of Service|          Total Length         |
+   * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   */
 
-*/
-    length = tvb_captured_length(tvb);
-    if(length<4){
-        /* Need at least 4 bytes to make some sort of decision */
-        return false;
-    }
-    oct = tvb_get_uint8(tvb,0);
-    ihl = oct & 0x0f;
-    version = oct >> 4;
-    if(version == 6){
-/*
-    3.  IPv6 Header Format
+  length = tvb_captured_length(tvb);
+  if (length < 4) {
+    /* Need at least 4 bytes to make some sort of decision */
+    return false;
+  }
 
-         0                   1                   2                   3
-         0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-        +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-        |Version| Traffic Class |           Flow Label                  |
-        +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-        |         Payload Length        |  Next Header  |   Hop Limit   |
-        +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-        |                                                               |
-        +                                                               +
-        |                                                               |
-        +                         Source Address                        +
-        |                                                               |
-        +                                                               +
-        |                                                               |
-        +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-        |                                                               |
-        +                                                               +
-        |                                                               |
-        +                      Destination Address                      +
-        |                                                               |
-        +                                                               +
-        |                                                               |
-        +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  oct = tvb_get_uint8(tvb,0);
+  ihl = oct & 0x0f;
+  version = oct >> 4;
 
-        Version              4-bit Internet Protocol version number = 6.
+  if (version == 6) {
+      return dissect_ipv6_heur(tvb, pinfo, tree, data);
+  }
 
-        Traffic Class        8-bit traffic class field.  See section 7.
+  /* version == IPv4, the minimum value for a correct header is 5 */
+  if ((version != 4) || (ihl < 5)) {
+      return false;
+  }
 
-        Flow Label           20-bit flow label.  See section 6.
+  /* Total Length is the length of the datagram, measured in octets,
+   *  including internet header and data.
+   */
+  tot_length = tvb_get_ntohs(tvb, 2);
+  if (tot_length != (int)tvb_reported_length(tvb)) {
+      return false;
+  }
 
-        Payload Length       16-bit unsigned integer.  Length of the IPv6
-                             payload, i.e., the rest of the packet following
-                             this IPv6 header, in octets.  (Note that any
-                             extension headers [section 4] present are
-                             considered part of the payload, i.e., included
-                             in the length count.)
-
-
-*/
-        if(length<8){
-            /* Need at least 8 bytes to make a decision */
-            return false;
-        }
-        tot_length = tvb_get_ntohs(tvb,4);
-        if((tot_length + 40) != (int)tvb_reported_length(tvb)){
-            return false;
-        }
-        call_dissector(ipv6_handle, tvb, pinfo, tree);
-        return true;
-    }
-    /* version == IPv4 , the minimum value for a correct header is 5 */
-    if((version != 4)|| (ihl < 5)){
-        return false;
-    }
-    /* Total Length is the length of the datagram, measured in octets,
-     *  including internet header and data.
-     */
-    tot_length = tvb_get_ntohs(tvb,2);
-
-    if(tot_length != (int)tvb_reported_length(tvb)){
-        return false;
-    }
-
-    dissect_ip_v4(tvb, pinfo, tree, data);
-    return true;
+  dissect_ip_v4(tvb, pinfo, tree, data);
+  return true;
 }
 
 static void
@@ -2822,7 +2781,7 @@ proto_register_ip(void)
 
     { &hf_ip_flags_rf,
       { "Reserved bit", "ip.flags.rb", FT_BOOLEAN, 8,
-        TFS(&tfs_set_notset), 0x80, NULL, HFILL }},
+        TFS(&tfs_set_notset), 0x80, "Reserved bit (must be zero; RFC 791)", HFILL } },
 
     { &hf_ip_flags_df,
       { "Don't fragment", "ip.flags.df", FT_BOOLEAN, 8,
@@ -3163,13 +3122,14 @@ proto_register_ip(void)
      { &ei_ip_cipso_tag, { "ip.cipso.malformed", PI_SEQUENCE, PI_ERROR, "Malformed CIPSO tag", EXPFILL }},
      { &ei_ip_bogus_ip_version, { "ip.bogus_ip_version", PI_PROTOCOL, PI_ERROR, "Bogus IP version", EXPFILL }},
      { &ei_ip_bogus_header_length, { "ip.bogus_header_length", PI_PROTOCOL, PI_ERROR, "Bogus IP header length", EXPFILL }},
+     { &ei_ip_reserved_bit_set, { "ip.flags.rb.set", PI_PROTOCOL, PI_WARN, "Reserved bit is set (must be zero)", EXPFILL }},
   };
 
   /* Decode As handling */
   static build_valid_func ip_da_build_value[1] = {ip_value};
   static decode_as_value_t ip_da_values = {ip_prompt, 1, ip_da_build_value};
   static decode_as_t ip_da = {"ip", "ip.proto", 1, 0, &ip_da_values, NULL, NULL,
-                              decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL};
+                              decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL, NULL, NULL };
 
   module_t *ip_module;
   expert_module_t* expert_ip;

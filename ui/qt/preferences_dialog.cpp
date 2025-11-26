@@ -26,6 +26,9 @@
 
 #include <ui/qt/utils/qt_ui_utils.h>
 #include <ui/qt/utils/color_utils.h>
+#include <ui/capture_globals.h>
+#include <wsutil/application_flavor.h>
+
 
 #include "main_application.h"
 
@@ -173,6 +176,11 @@ PreferencesDialog::~PreferencesDialog()
 void PreferencesDialog::setPane(const QString module_name)
 {
     pd_ui_->prefsView->setPane(module_name);
+}
+
+void PreferencesDialog::enableAggregationOptions(bool enable)
+{
+    pd_ui_->captureFrame->enableAggregationOptions(enable);
 }
 
 void PreferencesDialog::keyPressEvent(QKeyEvent *event)
@@ -404,7 +412,7 @@ void PreferencesDialog::apply()
     mainApp->emitAppSignal(MainApplication::FilterExpressionsChanged);
 
     prefs_main_write();
-    if (save_decode_as_entries(&err) < 0)
+    if (save_decode_as_entries(application_flavor_name_proper(), application_configuration_environment_prefix(), &err) < 0)
     {
         simple_dialog(ESD_TYPE_ERROR, ESD_BTN_OK, "%s", err);
         g_free(err);
@@ -420,7 +428,11 @@ void PreferencesDialog::apply()
     prefs_apply_all();
 
     /* Fill in capture options with values from the preferences */
-    prefs_to_capture_opts();
+    prefs_to_capture_opts(&global_capture_opts);
+    mainApp->emitAppSignal(MainApplication::AggregationVisiblity);
+    if (redissect_flags & PREF_EFFECT_AGGREGATION) {
+        mainApp->emitAppSignal(MainApplication::AggregationChanged);
+    }
 
     mainApp->setMonospaceFont(prefs.gui_font_name);
 

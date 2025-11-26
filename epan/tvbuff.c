@@ -102,7 +102,7 @@ tvb_free_internal(tvbuff_t *tvb)
 
 /* XXX: just call tvb_free_chain();
  *      Not removed so that existing dissectors using tvb_free() need not be changed.
- *      I'd argue that existing calls to tvb_free() should have actually beeen
+ *      I'd argue that existing calls to tvb_free() should have actually been
  *      calls to tvb_free_chain() although the calls were OK as long as no
  *      subsets, etc had been created on the tvb. */
 void
@@ -243,13 +243,18 @@ compute_offset(const tvbuff_t *tvb, const int offset, unsigned *offset_ptr)
 	}
 	else {
 		/* Negative offset - relative to the end of the packet. */
-		if (G_LIKELY((unsigned) -offset <= tvb->length)) {
-			*offset_ptr = tvb->length + offset;
-		} else if ((unsigned) -offset <= tvb->contained_length) {
+		/* Prevent UB on 2's complement platforms. All tested compilers
+		 * (gcc, clang, MSVC) compile this to a single instruction on
+		 * x86, ARM, RISC-V, S390x, SPARC, etc. at -O1 and higher
+		 * according to godbolt.org. */
+		unsigned abs_offset = ((unsigned)-(offset + 1)) + 1;
+		if (G_LIKELY(abs_offset <= tvb->length)) {
+			*offset_ptr = tvb->length - abs_offset;
+		} else if (abs_offset <= tvb->contained_length) {
 			return BoundsError;
 		} else if (tvb->flags & TVBUFF_FRAGMENT) {
 			return FragmentBoundsError;
-		} else if ((unsigned) -offset <= tvb->reported_length) {
+		} else if (abs_offset <= tvb->reported_length) {
 			return ContainedBoundsError;
 		} else {
 			return ReportedBoundsError;
@@ -668,7 +673,12 @@ tvb_ensure_bytes_exist(const tvbuff_t *tvb, const int offset, const int length)
 	/* XXX: Below this point could be replaced with a call to
 	 * check_offset_length with no functional change, however this is a
 	 * *very* hot path and check_offset_length is not well-optimized for
-	 * this case, so we eat some code duplication for a lot of speedup. */
+	 * this case (mostly because that function handles length -1 meaning
+	 * "until the end of the buffer?"), so we eat some code duplication
+	 * for a lot of speedup.
+	 *
+	 * XXX - Could it be replaced with a call just to compute_offset?
+	 */
 
 	if (offset >= 0) {
 		/* Positive offset - relative to the beginning of the packet. */
@@ -686,13 +696,15 @@ tvb_ensure_bytes_exist(const tvbuff_t *tvb, const int offset, const int length)
 	}
 	else {
 		/* Negative offset - relative to the end of the packet. */
-		if (G_LIKELY((unsigned) -offset <= tvb->length)) {
-			real_offset = tvb->length + offset;
-		} else if ((unsigned) -offset <= tvb->contained_length) {
+		/* Prevent UB on 2's complement platforms. */
+		unsigned abs_offset = ((unsigned)-(offset + 1)) + 1;
+		if (G_LIKELY(abs_offset <= tvb->length)) {
+			real_offset = tvb->length - abs_offset;
+		} else if (abs_offset <= tvb->contained_length) {
 			THROW(BoundsError);
 		} else if (tvb->flags & TVBUFF_FRAGMENT) {
 			THROW(FragmentBoundsError);
-		} else if ((unsigned) -offset <= tvb->reported_length) {
+		} else if (abs_offset <= tvb->reported_length) {
 			THROW(ContainedBoundsError);
 		} else {
 			THROW(ReportedBoundsError);
@@ -2781,7 +2793,7 @@ tvb_format_text(wmem_allocator_t *scope, tvbuff_t *tvb, const int offset, const 
 	len = (size > 0) ? size : 0;
 
 	ptr = ensure_contiguous(tvb, offset, size);
-	return format_text(scope, ptr, len);
+	return format_text(scope, (const char*)ptr, len);
 }
 
 /*
@@ -2796,7 +2808,7 @@ tvb_format_text_wsp(wmem_allocator_t* allocator, tvbuff_t *tvb, const int offset
 	len = (size > 0) ? size : 0;
 
 	ptr = ensure_contiguous(tvb, offset, size);
-	return format_text_wsp(allocator, ptr, len);
+	return format_text_wsp(allocator, (const char*)ptr, len);
 }
 
 /**
@@ -2815,7 +2827,7 @@ tvb_format_stringzpad(wmem_allocator_t *scope, tvbuff_t *tvb, const int offset, 
 	ptr = ensure_contiguous(tvb, offset, size);
 	for (p = ptr, stringlen = 0; stringlen < len && *p != '\0'; p++, stringlen++)
 		;
-	return format_text(scope, ptr, stringlen);
+	return format_text(scope, (const char*)ptr, stringlen);
 }
 
 /*
@@ -2834,7 +2846,7 @@ tvb_format_stringzpad_wsp(wmem_allocator_t* allocator, tvbuff_t *tvb, const int 
 	ptr = ensure_contiguous(tvb, offset, size);
 	for (p = ptr, stringlen = 0; stringlen < len && *p != '\0'; p++, stringlen++)
 		;
-	return format_text_wsp(allocator, ptr, stringlen);
+	return format_text_wsp(allocator, (const char*)ptr, stringlen);
 }
 
 /*
@@ -3051,7 +3063,7 @@ tvb_get_ucs_4_string(wmem_allocator_t *scope, tvbuff_t *tvb, const int offset, i
 	const uint8_t *ptr;
 
 	ptr = ensure_contiguous(tvb, offset, length);
-	return get_ucs_4_string(scope, ptr, length, encoding);
+	return (char*)get_ucs_4_string(scope, ptr, length, encoding);
 }
 
 char *
@@ -3065,7 +3077,7 @@ tvb_get_ts_23_038_7bits_string_packed(wmem_allocator_t *scope, tvbuff_t *tvb,
 	DISSECTOR_ASSERT(tvb && tvb->initialized);
 
 	ptr = ensure_contiguous(tvb, in_offset, length);
-	return get_ts_23_038_7bits_string_packed(scope, ptr, bit_offset, no_of_chars);
+	return (char*)get_ts_23_038_7bits_string_packed(scope, ptr, bit_offset, no_of_chars);
 }
 
 char *
@@ -3077,7 +3089,7 @@ tvb_get_ts_23_038_7bits_string_unpacked(wmem_allocator_t *scope, tvbuff_t *tvb,
 	DISSECTOR_ASSERT(tvb && tvb->initialized);
 
 	ptr = ensure_contiguous(tvb, offset, length);
-	return get_ts_23_038_7bits_string_unpacked(scope, ptr, length);
+	return (char*)get_ts_23_038_7bits_string_unpacked(scope, ptr, length);
 }
 
 char *
@@ -3089,7 +3101,7 @@ tvb_get_etsi_ts_102_221_annex_a_string(wmem_allocator_t *scope, tvbuff_t *tvb,
 	DISSECTOR_ASSERT(tvb && tvb->initialized);
 
 	ptr = ensure_contiguous(tvb, offset, length);
-	return get_etsi_ts_102_221_annex_a_string(scope, ptr, length);
+	return (char*)get_etsi_ts_102_221_annex_a_string(scope, ptr, length);
 }
 
 char *
@@ -3103,7 +3115,7 @@ tvb_get_ascii_7bits_string(wmem_allocator_t *scope, tvbuff_t *tvb,
 	DISSECTOR_ASSERT(tvb && tvb->initialized);
 
 	ptr = ensure_contiguous(tvb, in_offset, length);
-	return get_ascii_7bits_string(scope, ptr, bit_offset, no_of_chars);
+	return (char*)get_ascii_7bits_string(scope, ptr, bit_offset, no_of_chars);
 }
 
 /*
@@ -3212,7 +3224,7 @@ tvb_get_apn_string(wmem_allocator_t *scope, tvbuff_t *tvb, const int offset,
 	 * (FQDNs)", subsection 19.4.2.1 "General", says:
 	 *
 	 *    The encoding of any identifier used as part of a Fully
-	 *    Qualifed Domain Name (FQDN) shall follow the Name Syntax
+	 *    Qualified Domain Name (FQDN) shall follow the Name Syntax
 	 *    defined in IETF RFC 2181 [18], IETF RFC 1035 [19] and
 	 *    IETF RFC 1123 [20].  An FQDN consists of one or more
 	 *    labels. Each label is coded as a one octet length field
@@ -3327,7 +3339,7 @@ tvb_get_string_enc(wmem_allocator_t *scope, tvbuff_t *tvb, const int offset,
 		break;
 
 	case ENC_UCS_4:
-		strptr = tvb_get_ucs_4_string(scope, tvb, offset, length,
+		strptr = (uint8_t*)tvb_get_ucs_4_string(scope, tvb, offset, length,
 		    encoding & (ENC_LITTLE_ENDIAN|ENC_BOM));
 		break;
 
@@ -3432,7 +3444,7 @@ tvb_get_string_enc(wmem_allocator_t *scope, tvbuff_t *tvb, const int offset,
 		{
 			int bit_offset  = offset << 3;
 			int no_of_chars = (length << 3) / 7;
-			strptr = tvb_get_ts_23_038_7bits_string_packed(scope, tvb, bit_offset, no_of_chars);
+			strptr = (uint8_t*)tvb_get_ts_23_038_7bits_string_packed(scope, tvb, bit_offset, no_of_chars);
 		}
 		break;
 
@@ -3440,7 +3452,7 @@ tvb_get_string_enc(wmem_allocator_t *scope, tvbuff_t *tvb, const int offset,
 		{
 			int bit_offset  = offset << 3;
 			int no_of_chars = (length << 3) / 7;
-			strptr = tvb_get_ascii_7bits_string(scope, tvb, bit_offset, no_of_chars);
+			strptr = (uint8_t*)tvb_get_ascii_7bits_string(scope, tvb, bit_offset, no_of_chars);
 		}
 		break;
 
@@ -3477,7 +3489,7 @@ tvb_get_string_enc(wmem_allocator_t *scope, tvbuff_t *tvb, const int offset,
 		 */
 		odd = (encoding & ENC_BCD_ODD_NUM_DIG) >> 16;
 		skip_first = (encoding & ENC_BCD_SKIP_FIRST) >> 17;
-		strptr = tvb_get_bcd_string(scope, tvb, offset, length, &Dgt0_9_bcd, skip_first, odd, !(encoding & ENC_LITTLE_ENDIAN));
+		strptr = (uint8_t*)tvb_get_bcd_string(scope, tvb, offset, length, &Dgt0_9_bcd, skip_first, odd, !(encoding & ENC_LITTLE_ENDIAN));
 		break;
 
 	case ENC_KEYPAD_ABC_TBCD:
@@ -3487,7 +3499,7 @@ tvb_get_string_enc(wmem_allocator_t *scope, tvbuff_t *tvb, const int offset,
 		 */
 		odd = (encoding & ENC_BCD_ODD_NUM_DIG) >> 16;
 		skip_first = (encoding & ENC_BCD_SKIP_FIRST) >> 17;
-		strptr = tvb_get_bcd_string(scope, tvb, offset, length, &Dgt_keypad_abc_tbcd, skip_first, odd, !(encoding & ENC_LITTLE_ENDIAN));
+		strptr = (uint8_t*)tvb_get_bcd_string(scope, tvb, offset, length, &Dgt_keypad_abc_tbcd, skip_first, odd, !(encoding & ENC_LITTLE_ENDIAN));
 		break;
 
 	case ENC_KEYPAD_BC_TBCD:
@@ -3497,15 +3509,15 @@ tvb_get_string_enc(wmem_allocator_t *scope, tvbuff_t *tvb, const int offset,
 		 */
 		odd = (encoding & ENC_BCD_ODD_NUM_DIG) >> 16;
 		skip_first = (encoding & ENC_BCD_SKIP_FIRST) >> 17;
-		strptr = tvb_get_bcd_string(scope, tvb, offset, length, &Dgt_ansi_tbcd, skip_first, odd, !(encoding & ENC_LITTLE_ENDIAN));
+		strptr = (uint8_t*)tvb_get_bcd_string(scope, tvb, offset, length, &Dgt_ansi_tbcd, skip_first, odd, !(encoding & ENC_LITTLE_ENDIAN));
 		break;
 
 	case ENC_3GPP_TS_23_038_7BITS_UNPACKED:
-		strptr = tvb_get_ts_23_038_7bits_string_unpacked(scope, tvb, offset, length);
+		strptr = (uint8_t*)tvb_get_ts_23_038_7bits_string_unpacked(scope, tvb, offset, length);
 		break;
 
 	case ENC_ETSI_TS_102_221_ANNEX_A:
-		strptr = tvb_get_etsi_ts_102_221_annex_a_string(scope, tvb, offset, length);
+		strptr = (uint8_t*)tvb_get_etsi_ts_102_221_annex_a_string(scope, tvb, offset, length);
 		break;
 
 	case ENC_GB18030:
@@ -3531,7 +3543,7 @@ tvb_get_string_enc(wmem_allocator_t *scope, tvbuff_t *tvb, const int offset,
 		 */
 		odd = (encoding & ENC_BCD_ODD_NUM_DIG) >> 16;
 		skip_first = (encoding & ENC_BCD_SKIP_FIRST) >> 17;
-		strptr = tvb_get_bcd_string(scope, tvb, offset, length, &Dgt_dect_standard_4bits_tbcd, skip_first, odd, false);
+		strptr = (uint8_t*)tvb_get_bcd_string(scope, tvb, offset, length, &Dgt_dect_standard_4bits_tbcd, skip_first, odd, false);
 		break;
 	}
 	return strptr;
@@ -3643,7 +3655,7 @@ tvb_get_stringz_unichar2(wmem_allocator_t *scope, tvbuff_t *tvb, int offset, int
  * through a pointer.
  *
  * As long as we aren't using composite TVBs, this saves the cycles used
- * (often unnecessariliy) in allocating a buffer and copying the string into
+ * (often unnecessarily) in allocating a buffer and copying the string into
  * it.  (If we do start using composite TVBs, we may want to replace this
  * function with the _ephemeral version.)
  */
@@ -3671,7 +3683,7 @@ tvb_get_ucs_2_stringz(wmem_allocator_t *scope, tvbuff_t *tvb, const int offset, 
 	/* XXX, conversion between signed/unsigned integer */
 	if (lengthp)
 		*lengthp = size;
-	return get_ucs_2_string(scope, ptr, size, encoding);
+	return (char*)get_ucs_2_string(scope, ptr, size, encoding);
 }
 
 static char *
@@ -3685,7 +3697,7 @@ tvb_get_utf_16_stringz(wmem_allocator_t *scope, tvbuff_t *tvb, const int offset,
 	/* XXX, conversion between signed/unsigned integer */
 	if (lengthp)
 		*lengthp = size;
-	return get_utf_16_string(scope, ptr, size, encoding);
+	return (char*)get_utf_16_string(scope, ptr, size, encoding);
 }
 
 static char *
@@ -3706,7 +3718,7 @@ tvb_get_ucs_4_stringz(wmem_allocator_t *scope, tvbuff_t *tvb, const int offset, 
 	/* XXX, conversion between signed/unsigned integer */
 	if (lengthp)
 		*lengthp = size;
-	return get_ucs_4_string(scope, ptr, size, encoding);
+	return (char*)get_ucs_4_string(scope, ptr, size, encoding);
 }
 
 static uint8_t *
@@ -3813,17 +3825,17 @@ tvb_get_stringz_enc(wmem_allocator_t *scope, tvbuff_t *tvb, const int offset, in
 		break;
 
 	case ENC_UTF_16:
-		strptr = tvb_get_utf_16_stringz(scope, tvb, offset, lengthp,
+		strptr = (uint8_t*)tvb_get_utf_16_stringz(scope, tvb, offset, lengthp,
 		    encoding & (ENC_LITTLE_ENDIAN|ENC_BOM));
 		break;
 
 	case ENC_UCS_2:
-		strptr = tvb_get_ucs_2_stringz(scope, tvb, offset, lengthp,
+		strptr = (uint8_t*)tvb_get_ucs_2_stringz(scope, tvb, offset, lengthp,
 		    encoding & (ENC_LITTLE_ENDIAN|ENC_BOM));
 		break;
 
 	case ENC_UCS_4:
-		strptr = tvb_get_ucs_4_stringz(scope, tvb, offset, lengthp,
+		strptr = (uint8_t*)tvb_get_ucs_4_stringz(scope, tvb, offset, lengthp,
 		    encoding & (ENC_LITTLE_ENDIAN|ENC_BOM));
 		break;
 
@@ -4000,7 +4012,8 @@ _tvb_get_raw_bytes_as_stringz(tvbuff_t *tvb, const int offset, const unsigned bu
 {
 	int      stringlen;
 	unsigned abs_offset = 0;
-	int      limit, len = 0;
+	int      limit;
+	unsigned len = 0;
 	bool     decreased_max = false;
 
 	/* Only read to end of tvbuff, w/o throwing exception. */
@@ -4021,11 +4034,6 @@ _tvb_get_raw_bytes_as_stringz(tvbuff_t *tvb, const int offset, const unsigned bu
 	if (len == 0) {
 		THROW(ReportedBoundsError);
 	}
-
-	/* This should not happen because check_offset_length() would
-	 * have already thrown an exception if 'offset' were out-of-bounds.
-	 */
-	DISSECTOR_ASSERT(len != -1);
 
 	/*
 	 * If we've been passed a negative number, bufsize will
@@ -4141,7 +4149,7 @@ tvb_utf_8_isprint(tvbuff_t *tvb, const int offset, const int length)
 		compute_offset_and_remaining(tvb, offset, &abs_offset, &abs_length);
 	}
 
-	return isprint_utf8_string(buf, abs_length);
+	return isprint_utf8_string((const char*)buf, abs_length);
 }
 
 bool

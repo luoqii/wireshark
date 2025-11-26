@@ -68,7 +68,9 @@ public:
         ProfileChanging,
         RecentCapturesChanged,
         RecentPreferencesRead,
-        FreezePacketList
+        FreezePacketList,
+        AggregationVisiblity,
+        AggregationChanged
     };
 
     enum MainMenuItem {
@@ -112,7 +114,7 @@ public:
     void clearAddedMenuGroupItems();
     void clearRemovedMenuGroupItems();
 
-    void allSystemsGo();
+    void allSystemsGo(const char* name_proper, const char* version);
     void emitLocalInterfaceEvent(const char *ifname, int added, int up);
 
     virtual void refreshLocalInterfaces();
@@ -225,6 +227,8 @@ signals:
     void checkDisplayFilter();
     void fieldsChanged();
     void reloadLuaPlugins();
+    void aggregationVisiblity();
+    void aggregationChanged();
 #if defined(HAVE_SOFTWARE_UPDATE) && defined(Q_OS_WIN)
     // Each of these are called from a separate thread.
     void softwareUpdateRequested();

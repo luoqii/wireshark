@@ -45,7 +45,7 @@ PacketDialog::PacketDialog(QWidget &parent, CaptureFile &cf, frame_data *fdata) 
     ui->prefsLayout->insertSpacing(1, 20);
     ui->prefsLayout->addStretch();
 
-    wtap_rec_init(&rec_, 1514);
+    wtap_rec_init(&rec_, DEFAULT_INIT_BUFFER_SIZE_2048);
 
     edt_.session = NULL;
     edt_.tvb = NULL;
@@ -113,7 +113,7 @@ PacketDialog::PacketDialog(QWidget &parent, CaptureFile &cf, frame_data *fdata) 
     }
 
     QStringList col_parts;
-    for (int i = 0; i < cap_file_.capFile()->cinfo.num_cols; ++i) {
+    for (unsigned i = 0; i < cap_file_.capFile()->cinfo.num_cols; ++i) {
         // ElidedLabel doesn't support rich text / HTML
         col_parts << QStringLiteral("%1: %2")
                      .arg(get_column_title(i))

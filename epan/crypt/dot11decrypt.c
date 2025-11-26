@@ -17,7 +17,6 @@
 #include <glib.h>
 
 #include <wsutil/wsgcrypt.h>
-#include <wsutil/crc32.h>
 #include <wsutil/pint.h>
 
 #include <epan/proto.h> /* for DISSECTOR_ASSERT. */
@@ -85,9 +84,6 @@ static int Dot11DecryptGetHashAlgoFromAkm(int akm, int dh_group);
 /****************************************************************************/
 /*      Macro definitions                                                       */
 
-extern const uint32_t crc32_table[256];
-#define CRC(crc, ch)     (crc = (crc >> 8) ^ crc32_table[(crc ^ (ch)) & 0xff])
-
 #define KCK_OFFSET(akm) (0)
 #define KEK_OFFSET(akm, dh_group) ((KCK_OFFSET(akm) + Dot11DecryptGetKckLen(akm, dh_group) / 8))
 #define TK_OFFSET(akm, dh_group)  ((KEK_OFFSET(akm, dh_group) + Dot11DecryptGetKekLen(akm, dh_group) / 8))
@@ -111,29 +107,7 @@ extern "C" {
 #endif
 
 /**
- * It is a step of the PBKDF2 (specifically the PKCS #5 v2.0) defined in
- * the RFC 2898 to derive a key (used as PMK in WPA)
- * @param ppbytes [IN] pointer to a password (sequence of between 8 and
- * 63 ASCII encoded characters)
- * @param ssid [IN] pointer to the SSID string encoded in max 32 ASCII
- * encoded characters
- * @param iterations [IN] times to hash the password (4096 for WPA)
- * @param count [IN] ???
- * @param output [OUT] pointer to a preallocated buffer of
- * SHA1_DIGEST_LEN characters that will contain a part of the key
- */
-static int Dot11DecryptRsnaPwd2PskStep(
-    const uint8_t *ppbytes,
-    const unsigned passLength,
-    const char *ssid,
-    const size_t ssidLength,
-    const int iterations,
-    const int count,
-    unsigned char *output)
-    ;
-
-/**
- * It calculates the passphrase-to-PSK mapping reccomanded for use with
+ * It calculates the passphrase-to-PSK mapping recommended for use with
  * RSNAs. This implementation uses the PBKDF2 method defined in the RFC
  * 2898.
  * @param userPwd [IN] pointer to the struct containing a password
@@ -209,16 +183,17 @@ Dot11DecryptGetSa(
     ;
 
 static int Dot11DecryptGetSaAddress(
-    const DOT11DECRYPT_MAC_FRAME_ADDR4 *frame,
+    const uint8_t *mac_header,
+    unsigned mac_header_len,
     DOT11DECRYPT_SEC_ASSOCIATION_ID *id)
     ;
 
 static const unsigned char * Dot11DecryptGetStaAddress(
-    const DOT11DECRYPT_MAC_FRAME_ADDR4 *frame)
+    const DOT11DECRYPT_MAC_FRAME *frame)
     ;
 
 static const unsigned char * Dot11DecryptGetBssidAddress(
-    const DOT11DECRYPT_MAC_FRAME_ADDR4 *frame)
+    const DOT11DECRYPT_MAC_FRAME *frame)
     ;
 
 static uint8_t
@@ -998,7 +973,7 @@ int Dot11DecryptDecryptPacket(
     }
 
     /* get STA/BSSID address */
-    if (Dot11DecryptGetSaAddress((const DOT11DECRYPT_MAC_FRAME_ADDR4 *)(data), &id) != DOT11DECRYPT_RET_SUCCESS) {
+    if (Dot11DecryptGetSaAddress(data, mac_header_len, &id) != DOT11DECRYPT_RET_SUCCESS) {
         ws_noisy("STA/BSSID not found");
         return DOT11DECRYPT_RET_REQ_DATA;
     }
@@ -1076,7 +1051,7 @@ int Dot11DecryptSetKeys(
     /* check and insert keys */
     for (i=0, success=0; i<(int)keys_nr; i++) {
         if (Dot11DecryptValidateKey(keys+i)==true) {
-            if (keys[i].KeyType==DOT11DECRYPT_KEY_TYPE_WPA_PWD) {
+            if (keys[i].KeyType==DOT11DECRYPT_KEY_TYPE_WPA_PWD && keys[i].UserPwd.SsidLen > 0) {
                 Dot11DecryptRsnaPwd2Psk(&keys[i].UserPwd, keys[i].KeyData.Wpa.Psk);
                 keys[i].KeyData.Wpa.PskLen = DOT11DECRYPT_WPA_PWD_PSK_LEN;
             }
@@ -1223,7 +1198,11 @@ Dot11DecryptRsnaMng(
     unsigned char *try_data;
     unsigned try_data_len = *decrypt_len;
 
-    if (*decrypt_len == 0) {
+    /* There should be at least 1 byte encrypted and TKIP/CCMP/GCMP header
+       should be present. Trailer is at least 8 bytes and it's precisely checked
+       afterwards. */
+    if (*decrypt_len < mac_header_len + DOT11DECRYPT_RSNA_HEADER + 1 +
+                       DOT11DECRYPT_RSNA_MIN_TRAILER) {
         ws_debug("Invalid decryption length");
         return DOT11DECRYPT_RET_UNSUCCESS;
     }
@@ -1257,21 +1236,14 @@ Dot11DecryptRsnaMng(
            DEBUG_DUMP("ptk portion used", DOT11DECRYPT_GET_TK_TKIP(sa->wpa.ptk),
                       16, LOG_LEVEL_NOISY);
 
-           if (*decrypt_len < (unsigned)mac_header_len) {
-               ws_debug("Invalid decryption length");
-               g_free(try_data);
-               return DOT11DECRYPT_RET_UNSUCCESS;
-           }
-           if (*decrypt_len < DOT11DECRYPT_TKIP_MICLEN + DOT11DECRYPT_WEP_ICV) {
-               ws_debug("Invalid decryption length");
-               g_free(try_data);
-               return DOT11DECRYPT_RET_UNSUCCESS;
-           }
-
-           ret = Dot11DecryptTkipDecrypt(try_data + mac_header_len, *decrypt_len - mac_header_len,
-                                         try_data + DOT11DECRYPT_TA_OFFSET,
+           ret = Dot11DecryptTkipDecrypt(try_data, mac_header_len, *decrypt_len,
                                          DOT11DECRYPT_GET_TK_TKIP(sa->wpa.ptk));
            if (ret) {
+               if (ret < 0) {
+                   ws_debug("Invalid decryption length");
+                   g_free(try_data);
+                   return DOT11DECRYPT_RET_UNSUCCESS;
+               }
                ws_noisy("TKIP failed!");
                continue;
            }
@@ -1285,16 +1257,16 @@ Dot11DecryptRsnaMng(
        {
            ws_noisy("GCMP");
 
-           if (*decrypt_len < DOT11DECRYPT_GCMP_TRAILER) {
-               ws_debug("Invalid decryption length");
-               g_free(try_data);
-               return DOT11DECRYPT_RET_UNSUCCESS;
-           }
            ret = Dot11DecryptGcmpDecrypt(try_data, mac_header_len, (int)*decrypt_len,
                                          DOT11DECRYPT_GET_TK(sa->wpa.ptk, sa->wpa.akm, sa->wpa.dh_group),
                                          Dot11DecryptGetTkLen(sa->wpa.cipher) / 8);
            if (ret) {
-              continue;
+               if (ret < 0) {
+                   ws_debug("Invalid decryption length");
+                   g_free(try_data);
+                   return DOT11DECRYPT_RET_UNSUCCESS;
+               }
+               continue;
            }
            ws_noisy("GCMP DECRYPTED!!!");
            /* remove MIC from the end of packet */
@@ -1305,18 +1277,18 @@ Dot11DecryptRsnaMng(
            ws_noisy("CCMP");
 
            unsigned trailer = sa->wpa.cipher != 10 ? DOT11DECRYPT_CCMP_TRAILER : DOT11DECRYPT_CCMP_256_TRAILER;
-           if (*decrypt_len < trailer) {
-               ws_debug("Invalid decryption length");
-               g_free(try_data);
-               return DOT11DECRYPT_RET_UNSUCCESS;
-           }
 
            ret = Dot11DecryptCcmpDecrypt(try_data, mac_header_len, (int)*decrypt_len,
                                          DOT11DECRYPT_GET_TK(sa->wpa.ptk, sa->wpa.akm, sa->wpa.dh_group),
                                          Dot11DecryptGetTkLen(sa->wpa.cipher) / 8,
                                          trailer);
            if (ret) {
-              continue;
+               if (ret < 0) {
+                   ws_debug("Invalid decryption length");
+                   g_free(try_data);
+                   return DOT11DECRYPT_RET_UNSUCCESS;
+               }
+               continue;
            }
            ws_noisy("CCMP DECRYPTED!!!");
            /* remove MIC from the end of packet */
@@ -1332,26 +1304,20 @@ Dot11DecryptRsnaMng(
         return ret;
     }
 
-    if (*decrypt_len > try_data_len || *decrypt_len < 8) {
-        ws_debug("Invalid decryption length");
-        g_free(try_data);
-        return DOT11DECRYPT_RET_UNSUCCESS;
-    }
+    /* We should have decrypted at least 1 byte successfully and
+       subtracted security trailer.  */
+    ws_assert(*decrypt_len > mac_header_len + DOT11DECRYPT_RSNA_HEADER &&
+              *decrypt_len < try_data_len);
 
     /* remove protection bit */
     decrypt_data[1]&=0xBF;
 
-    /* remove TKIP/CCMP header */
-    *decrypt_len-=8;
-
-    if (*decrypt_len < mac_header_len) {
-        ws_debug("Invalid decryption length < mac_header_len");
-        g_free(try_data);
-        return DOT11DECRYPT_RET_UNSUCCESS;
-    }
+    /* remove TKIP/CCMP/GCMP header */
+    *decrypt_len -= DOT11DECRYPT_RSNA_HEADER;
 
     /* copy the decrypted data into the decrypt buffer GCS*/
-    memcpy(decrypt_data + mac_header_len, try_data + mac_header_len + 8,
+    memcpy(decrypt_data + mac_header_len,
+           try_data + mac_header_len + DOT11DECRYPT_RSNA_HEADER,
            *decrypt_len - mac_header_len);
     g_free(try_data);
 
@@ -1377,6 +1343,13 @@ Dot11DecryptWepMng(
     unsigned char *try_data;
     DOT11DECRYPT_SEC_ASSOCIATION *sa;
     unsigned try_data_len = *decrypt_len;
+    ssize_t ciphertext_len = (ssize_t)*decrypt_len -
+                             (ssize_t)(mac_header_len + DOT11DECRYPT_WEP_HEADER + DOT11DECRYPT_WEP_TRAILER);
+
+    if (ciphertext_len < 1) {
+        ws_debug("Decryption length too short");
+        return DOT11DECRYPT_RET_UNSUCCESS;
+    }
 
     try_data = (unsigned char *)g_malloc(try_data_len);
 
@@ -1419,8 +1392,8 @@ Dot11DecryptWepMng(
 
             ret_value=Dot11DecryptWepDecrypt(wep_key,
                 keylen+DOT11DECRYPT_WEP_IVLEN,
-                try_data + (mac_header_len+DOT11DECRYPT_WEP_IVLEN+DOT11DECRYPT_WEP_KIDLEN),
-                *decrypt_len-(mac_header_len+DOT11DECRYPT_WEP_IVLEN+DOT11DECRYPT_WEP_KIDLEN+DOT11DECRYPT_CRC_LEN));
+                try_data + (mac_header_len + DOT11DECRYPT_WEP_HEADER),
+                ciphertext_len);
 
             if (ret_value == DOT11DECRYPT_RET_SUCCESS)
                 memcpy(decrypt_data, try_data, *decrypt_len);
@@ -1463,19 +1436,12 @@ Dot11DecryptWepMng(
 
     ws_noisy("WEP DECRYPTED!!!");
 
-    /* remove ICV (4bytes) from the end of packet */
-    *decrypt_len-=4;
-
-    if (*decrypt_len < 4) {
-        ws_debug("Decryption length too short");
-        return DOT11DECRYPT_RET_UNSUCCESS;
-    }
+    /* remove IV(4bytes) and ICV (4bytes) from the packet */
+    *decrypt_len -= 4 + 4;
 
     /* remove protection bit */
     decrypt_data[1]&=0xBF;
 
-    /* remove IC header */
-    *decrypt_len-=4;
     memmove(decrypt_data + mac_header_len,
             decrypt_data + mac_header_len + DOT11DECRYPT_WEP_IVLEN + DOT11DECRYPT_WEP_KIDLEN,
             *decrypt_len - mac_header_len);
@@ -1688,14 +1654,14 @@ Dot11DecryptRsna4WHandshake(
             if (!Dot11DecryptIsWpaKeyType(tmp_key->KeyType)) {
                 continue;
             }
-            if (tmp_key->KeyType == DOT11DECRYPT_KEY_TYPE_WPA_PWD &&
-                Dot11DecryptIsPwdWildcardSsid(ctx, tmp_key))
+            if (Dot11DecryptIsPwdWildcardSsid(ctx, tmp_key))
             {
                 /* We have a "wildcard" SSID.  Use the one from the packet. */
                 memcpy(&pkt_key, tmp_key, sizeof(pkt_key));
                 memcpy(&pkt_key.UserPwd.Ssid, ctx->pkt_ssid, ctx->pkt_ssid_len);
                 pkt_key.UserPwd.SsidLen = ctx->pkt_ssid_len;
                 Dot11DecryptRsnaPwd2Psk(&pkt_key.UserPwd, pkt_key.KeyData.Wpa.Psk);
+                pkt_key.KeyData.Wpa.PskLen = DOT11DECRYPT_WPA_PWD_PSK_LEN;
                 tmp_pkt_key = &pkt_key;
             } else {
                 tmp_pkt_key = tmp_key;
@@ -1899,14 +1865,14 @@ Dot11DecryptScanFtAssocForKeys(
         if (!Dot11DecryptIsWpaKeyType(tmp_key->KeyType)) {
             continue;
         }
-        if (tmp_key->KeyType == DOT11DECRYPT_KEY_TYPE_WPA_PWD &&
-            Dot11DecryptIsPwdWildcardSsid(ctx, tmp_key))
+        if (Dot11DecryptIsPwdWildcardSsid(ctx, tmp_key))
         {
             /* We have a "wildcard" SSID.  Use the one from the packet. */
             memcpy(&pkt_key, tmp_key, sizeof(pkt_key));
             memcpy(&pkt_key.UserPwd.Ssid, ctx->pkt_ssid, ctx->pkt_ssid_len);
             pkt_key.UserPwd.SsidLen = ctx->pkt_ssid_len;
             Dot11DecryptRsnaPwd2Psk(&pkt_key.UserPwd, pkt_key.KeyData.Wpa.Psk);
+            pkt_key.KeyData.Wpa.PskLen = DOT11DECRYPT_WPA_PWD_PSK_LEN;
             tmp_pkt_key = &pkt_key;
         } else {
             tmp_pkt_key = tmp_key;
@@ -2255,9 +2221,17 @@ Dot11DecryptValidateKey(
 
 static int
 Dot11DecryptGetSaAddress(
-    const DOT11DECRYPT_MAC_FRAME_ADDR4 *frame,
+    const uint8_t *mac_header,
+    unsigned mac_header_len,
     DOT11DECRYPT_SEC_ASSOCIATION_ID *id)
 {
+    const DOT11DECRYPT_MAC_FRAME *frame;
+
+    if (mac_header_len < sizeof(DOT11DECRYPT_MAC_FRAME)) {
+        return DOT11DECRYPT_RET_UNSUCCESS;
+    }
+    frame = (const DOT11DECRYPT_MAC_FRAME *)mac_header;
+
     if ((DOT11DECRYPT_TYPE(frame->fc[0])==DOT11DECRYPT_TYPE_DATA) &&
         (DOT11DECRYPT_DS_BITS(frame->fc[1]) == 0) &&
         (memcmp(frame->addr2, frame->addr3, DOT11DECRYPT_MAC_LEN) != 0) &&
@@ -2309,7 +2283,7 @@ Dot11DecryptGetSaAddress(
 
 static const unsigned char *
 Dot11DecryptGetStaAddress(
-    const DOT11DECRYPT_MAC_FRAME_ADDR4 *frame)
+    const DOT11DECRYPT_MAC_FRAME *frame)
 {
     switch(DOT11DECRYPT_DS_BITS(frame->fc[1])) { /* Bit 1 = FromDS, bit 0 = ToDS */
         case 0:
@@ -2334,7 +2308,7 @@ Dot11DecryptGetStaAddress(
 
 static const unsigned char *
 Dot11DecryptGetBssidAddress(
-    const DOT11DECRYPT_MAC_FRAME_ADDR4 *frame)
+    const DOT11DECRYPT_MAC_FRAME *frame)
 {
     switch(DOT11DECRYPT_DS_BITS(frame->fc[1])) { /* Bit 1 = FromDS, bit 0 = ToDS */
         case 0:
@@ -2705,67 +2679,21 @@ Dot11DecryptFtDerivePtk(
 #define MAX_SSID_LENGTH 32 /* maximum SSID length */
 
 static int
-Dot11DecryptRsnaPwd2PskStep(
-    const uint8_t *ppBytes,
-    const unsigned ppLength,
-    const char *ssid,
-    const size_t ssidLength,
-    const int iterations,
-    const int count,
-    unsigned char *output)
-{
-    unsigned char digest[MAX_SSID_LENGTH+4] = { 0 };  /* SSID plus 4 bytes of count */
-    int i, j;
-
-    if (ssidLength > MAX_SSID_LENGTH) {
-        /* This "should not happen" */
-        return DOT11DECRYPT_RET_UNSUCCESS;
-    }
-
-    /* U1 = PRF(P, S || int(i)) */
-    memcpy(digest, ssid, ssidLength);
-    digest[ssidLength] = (unsigned char)((count>>24) & 0xff);
-    digest[ssidLength+1] = (unsigned char)((count>>16) & 0xff);
-    digest[ssidLength+2] = (unsigned char)((count>>8) & 0xff);
-    digest[ssidLength+3] = (unsigned char)(count & 0xff);
-    if (ws_hmac_buffer(GCRY_MD_SHA1, digest, digest, (uint32_t) ssidLength + 4, ppBytes, ppLength)) {
-      return DOT11DECRYPT_RET_UNSUCCESS;
-    }
-
-    /* output = U1 */
-    memcpy(output, digest, 20);
-    for (i = 1; i < iterations; i++) {
-        /* Un = PRF(P, Un-1) */
-        if (ws_hmac_buffer(GCRY_MD_SHA1, digest, digest, HASH_SHA1_LENGTH, ppBytes, ppLength)) {
-          return DOT11DECRYPT_RET_UNSUCCESS;
-        }
-
-        /* output = output xor Un */
-        for (j = 0; j < 20; j++) {
-            output[j] ^= digest[j];
-        }
-    }
-
-    return DOT11DECRYPT_RET_SUCCESS;
-}
-
-static int
 Dot11DecryptRsnaPwd2Psk(
     const struct DOT11DECRYPT_KEY_ITEMDATA_PWD *userPwd,
     unsigned char *output)
 {
-    unsigned char m_output[40] = { 0 };
-    GByteArray *pp_ba = g_byte_array_new();
+    if (userPwd->SsidLen> MAX_SSID_LENGTH) {
+        /* This "should not happen" */
+        return DOT11DECRYPT_RET_UNSUCCESS;
+    }
+    if (gcry_kdf_derive(userPwd->Passphrase, userPwd->PassphraseLen, GCRY_KDF_PBKDF2,
+                        GCRY_MD_SHA1, userPwd->Ssid, userPwd->SsidLen, 4096,
+                        DOT11DECRYPT_WPA_PWD_PSK_LEN, output)) {
+        return DOT11DECRYPT_RET_UNSUCCESS;
+    }
 
-    g_byte_array_append(pp_ba, userPwd->Passphrase, (unsigned)userPwd->PassphraseLen);
-
-    Dot11DecryptRsnaPwd2PskStep(pp_ba->data, pp_ba->len, userPwd->Ssid, userPwd->SsidLen, 4096, 1, m_output);
-    Dot11DecryptRsnaPwd2PskStep(pp_ba->data, pp_ba->len, userPwd->Ssid, userPwd->SsidLen, 4096, 2, &m_output[20]);
-
-    memcpy(output, m_output, DOT11DECRYPT_WPA_PWD_PSK_LEN);
-    g_byte_array_free(pp_ba, true);
-
-    return 0;
+    return DOT11DECRYPT_RET_SUCCESS;
 }
 
 /*

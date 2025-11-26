@@ -142,6 +142,13 @@ typedef struct {
 	const char *name;
 } smb_transact2_info_t;
 
+typedef struct {
+    unsigned frame_num;
+    unsigned command_count;
+    gboolean multi_cmds;
+    unsigned cmd_index;
+} multi_cmds_t;
+
 /*
  * The information we need to save about a request in order to show the
  * frame number of the request in the dissection of the reply.
@@ -235,6 +242,9 @@ typedef struct conv_tables {
 
 	/* track uid to username mappings */
 	wmem_tree_t *uid_tree;
+
+	/* This table is used to track which request frame a [NT]Trans[2] response fragment maps to */
+	GHashTable  *trans_frag_resp;
 } conv_tables_t;
 
 /* si */

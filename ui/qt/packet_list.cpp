@@ -108,33 +108,7 @@ packet_list_select_row_from_data(frame_data *fdata_needle)
 {
     if (! gbl_cur_packet_list || ! gbl_cur_packet_list->model())
         return false;
-
-    PacketListModel * model = qobject_cast<PacketListModel *>(gbl_cur_packet_list->model());
-
-    if (! model)
-        return false;
-
-    model->flushVisibleRows();
-    int row = -1;
-    if (!fdata_needle)
-        row = 0;
-    else
-        row = model->visibleIndexOf(fdata_needle);
-
-    if (row >= 0) {
-        /* Calling ClearAndSelect with setCurrentIndex clears the "current"
-         * item, but doesn't clear the "selected" item. We want to clear
-         * the "selected" item as well so that selectionChanged() will be
-         * emitted in order to force an update of the packet details and
-         * packet bytes after a search.
-         */
-        gbl_cur_packet_list->selectionModel()->clearSelection();
-        gbl_cur_packet_list->selectionModel()->setCurrentIndex(model->index(row, 0), QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
-        gbl_cur_packet_list->scrollTo(gbl_cur_packet_list->currentIndex(), PacketList::PositionAtCenter);
-        return true;
-    }
-
-    return false;
+    return gbl_cur_packet_list->selectRow(fdata_needle);
 }
 
 /*
@@ -842,7 +816,7 @@ void PacketList::paintEvent(QPaintEvent *event)
     QTreeView::paintEvent(event);
 }
 
-void PacketList::mousePressEvent (QMouseEvent *event)
+void PacketList::mousePressEvent(QMouseEvent *event)
 {
     QTreeView::mousePressEvent(event);
 
@@ -1046,7 +1020,7 @@ void PacketList::resizeEvent(QResizeEvent *event)
 void PacketList::setColumnVisibility()
 {
     set_column_visibility_ = true;
-    for (int i = 0; i < prefs.num_cols; i++) {
+    for (unsigned i = 0; i < prefs.num_cols; i++) {
         setColumnHidden(i, get_column_visible(i) ? false : true);
     }
     setColumnDelegate();
@@ -1055,12 +1029,12 @@ void PacketList::setColumnVisibility()
 
 void PacketList::setColumnDelegate()
 {
-    for (int i = 0; i < prefs.num_cols; i++) {
+    for (unsigned i = 0; i < prefs.num_cols; i++) {
         setItemDelegateForColumn(i, nullptr);   // Reset all delegates
     }
 
     if (prefs.gui_packet_list_show_related) {
-        for (int i = 0; i < prefs.num_cols; i++) {
+        for (unsigned i = 0; i < prefs.num_cols; i++) {
             if (get_column_visible(i)) {
                 setItemDelegateForColumn(i, &related_packet_delegate_);
                 break;  // Set the delegate only on the first visible column
@@ -1237,7 +1211,7 @@ void PacketList::applyRecentColumnWidths()
     // Either we've just started up or a profile has changed. Read
     // the recent settings, apply them, and save the header state.
 
-    for (int col = 0; col < prefs.num_cols; col++) {
+    for (unsigned col = 0; col < prefs.num_cols; col++) {
         // The column must be shown before setting column width.
         // Visibility will be updated in setColumnVisibility().
         setColumnHidden(col, false);
@@ -1405,11 +1379,11 @@ void PacketList::clear() {
 }
 
 void PacketList::writeRecent(FILE *rf) {
-    int col, width, col_fmt;
+    int width, col_fmt;
     char xalign;
 
     fprintf (rf, "%s:\n", RECENT_KEY_COL_WIDTH);
-    for (col = 0; col < prefs.num_cols; col++) {
+    for (unsigned col = 0; col < prefs.num_cols; col++) {
         if (col > 0) {
             fprintf (rf, ",\n");
         }
@@ -1445,7 +1419,7 @@ QString PacketList::getFilterFromRowAndColumn(QModelIndex idx)
     int row = idx.row();
     int column = idx.column();
 
-    if (!cap_file_ || !packet_list_model_ || column < 0 || column >= cap_file_->cinfo.num_cols)
+    if (!cap_file_ || !packet_list_model_ || column < 0 || (unsigned)column >= cap_file_->cinfo.num_cols)
         return filter;
 
     fdata = packet_list_model_->getRowFdata(row);
@@ -1454,7 +1428,7 @@ QString PacketList::getFilterFromRowAndColumn(QModelIndex idx)
         epan_dissect_t edt;
         wtap_rec rec; /* Record information */
 
-        wtap_rec_init(&rec, 1514);
+        wtap_rec_init(&rec, DEFAULT_INIT_BUFFER_SIZE_2048);
         if (!cf_read_record(cap_file_, fdata, &rec)) {
             wtap_rec_cleanup(&rec);
             return filter; /* error reading the record */
@@ -1466,7 +1440,7 @@ QString PacketList::getFilterFromRowAndColumn(QModelIndex idx)
         epan_dissect_run(&edt, cap_file_->cd_t, &rec, fdata, &cap_file_->cinfo);
 
         if (cap_file_->cinfo.columns[column].col_fmt == COL_CUSTOM) {
-            filter.append(gchar_free_to_qstring(col_custom_get_filter(&edt, &cap_file_->cinfo, column)));
+            filter.append(gchar_free_to_qstring(col_custom_get_filter(&edt, &cap_file_->cinfo, (unsigned)column)));
         } else {
             /* We don't need to fill in the custom columns, as we get their
              * filters above.
@@ -2418,6 +2392,9 @@ void PacketList::drawFarOverlay()
 void PacketList::rowsInserted(const QModelIndex &parent, int start, int end)
 {
     QTreeView::rowsInserted(parent, start, end);
+    if (recent.aggregation_view && currentIndex().isValid() && currentIndex().row() >= 0) {
+        selectRow(getFDataForRow(currentIndex().row()), false);
+    }
     if (capture_in_progress_ && tail_at_end_) {
         scrollToBottom();
     }
@@ -2428,9 +2405,41 @@ void PacketList::resizeAllColumns(bool onlyTimeFormatted)
     if (!cap_file_ || cap_file_->state == FILE_CLOSED || cap_file_->state == FILE_READ_PENDING)
         return;
 
-    for (int col = 0; col < cap_file_->cinfo.num_cols; col++) {
+    for (unsigned col = 0; col < cap_file_->cinfo.num_cols; col++) {
         if (! onlyTimeFormatted || col_has_time_fmt(&cap_file_->cinfo, col)) {
             resizeColumnToContents(col);
         }
     }
+}
+
+bool PacketList::selectRow(const frame_data* fdata, bool flushRows)
+{
+    PacketListModel* pktListModel = qobject_cast<PacketListModel*>(model());
+
+    if (!pktListModel)
+        return false;
+
+    if (flushRows) {
+        pktListModel->flushVisibleRows();
+    }
+    int row = -1;
+    if (!fdata)
+        row = 0;
+    else
+        row = pktListModel->visibleIndexOf(fdata);
+
+    if (row >= 0) {
+        /* Calling ClearAndSelect with setCurrentIndex clears the "current"
+         * item, but doesn't clear the "selected" item. We want to clear
+         * the "selected" item as well so that selectionChanged() will be
+         * emitted in order to force an update of the packet details and
+         * packet bytes after a search.
+         */
+        selectionModel()->clearSelection();
+        selectionModel()->setCurrentIndex(pktListModel->index(row, 0), QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        scrollTo(currentIndex(), PacketList::PositionAtCenter);
+        return true;
+    }
+
+    return false;
 }

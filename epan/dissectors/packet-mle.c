@@ -4,7 +4,7 @@
  * Colin O'Flynn <coflynn@newae.com>
  *
  * The entire security section of this is lifted from the IEEE 802.15.4
- * dissectory, as this is done the same way. Should eventually make the
+ * dissector, as this is done the same way. Should eventually make the
  * two use some common functions or something. But that section is:
  * By Owen Kirby <osk@exegin.com>
  * Copyright 2007 Exegin Technologies Limited
@@ -583,7 +583,7 @@ dissect_mle_decrypt(tvbuff_t * tvb,
         }
 
         /* Create a tvbuff for the plaintext. This might result in a zero-length tvbuff. */
-        ptext_tvb = tvb_new_subset_length_caplen(tvb, offset, captured_len, reported_len);
+        ptext_tvb = tvb_new_subset_length(tvb, offset, reported_len);
         *decrypt_info->status = DECRYPT_PACKET_SUCCEEDED;
     }
 
@@ -767,10 +767,7 @@ dissect_mle(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
     /* Get the unencrypted data if decryption failed.  */
     if (!payload_tvb) {
         /* Deal with possible truncation and the FCS field at the end. */
-        int reported_len = tvb_reported_length_remaining(tvb, offset);
-        int captured_len = tvb_captured_length_remaining(tvb, offset);
-        if (reported_len < captured_len) captured_len = reported_len;
-        payload_tvb = tvb_new_subset_length_caplen(tvb, offset, captured_len, reported_len);
+        payload_tvb = tvb_new_subset_remaining(tvb, offset);
     }
 
     /* Display the reason for failure, and abort if the error was fatal. */

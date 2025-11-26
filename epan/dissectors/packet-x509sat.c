@@ -1441,13 +1441,22 @@ dissect_x509sat_SyntaxGeneralizedTime(bool implicit_tag _U_, tvbuff_t *tvb _U_, 
 static int
 dissect_x509sat_SyntaxUTCTime(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
   char *outstr, *newstr;
-  uint32_t tvblen;
+  int old_offset = offset;
 
   /* the 2-digit year can only be in the range 1950..2049 https://tools.ietf.org/html/rfc5280#section-4.1.2.5.1 */
-  offset = dissect_ber_UTCTime(implicit_tag, actx, tree, tvb, offset, hf_index, &outstr, &tvblen);
+  offset = dissect_ber_UTCTime(implicit_tag, actx, tree, tvb, offset, -1, &outstr, NULL);
+
   if (hf_index > 0 && outstr) {
+    nstime_t time_val;
     newstr = wmem_strconcat(actx->pinfo->pool, outstr[0] < '5' ? "20": "19", outstr, NULL);
-    proto_tree_add_string(tree, hf_index, tvb, offset - tvblen, tvblen, newstr);
+
+    iso8601_to_nstime(&time_val, newstr, ISO8601_DATETIME_AUTO);
+
+    /* move past TLV */
+    old_offset = get_ber_identifier(tvb, old_offset, NULL, NULL, NULL);
+    old_offset = get_ber_length(tvb, old_offset, NULL, NULL);
+
+    proto_tree_add_time(tree, hf_index, tvb, old_offset, offset - old_offset, &time_val);
   }
 
 
@@ -1991,7 +2000,7 @@ void proto_register_x509sat(void) {
         NULL, HFILL }},
     { &hf_x509sat_SyntaxUTCTime_PDU,
       { "UTCTime", "x509sat.UTCTime",
-        FT_STRING, BASE_NONE, NULL, 0,
+        FT_ABSOLUTE_TIME, ABSOLUTE_TIME_UTC, NULL, 0,
         NULL, HFILL }},
     { &hf_x509sat_SyntaxNumericString_PDU,
       { "NumericString", "x509sat.NumericString",

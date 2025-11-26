@@ -29,7 +29,7 @@
 #include <libxml/parser.h>
 #include <libxml/xpath.h>
 #include "file_wrappers.h"
-#include "wtap-int.h"
+#include "wtap_module.h"
 
 static const uint8_t ttl_magic[] = { 'T', 'T', 'L', ' ' };
 
@@ -79,7 +79,7 @@ typedef struct ttl_read {
 /*
  * Values smaller than 0 indicate errors, 0 means OK, 1 means everything is
  * good, but the entry is unsupported. 2 means that the file looks corrupted
- * or unaliged and our caller should try to fix the situation.
+ * or unaligned and our caller should try to fix the situation.
  */
 typedef enum {
     TTL_ERROR = -1,
@@ -1624,8 +1624,6 @@ ttl_init_rec(wtap_rec* rec, uint64_t timestamp, uint16_t addr, int pkt_encap, ui
     rec->rec_header.packet_header.caplen = caplen;
     rec->rec_header.packet_header.len = len;
 
-    rec->ts_rel_cap_valid = false;
-
     rec->rec_header.packet_header.interface_id = iface_id;
 
     wtap_block_add_uint32_option(rec->block, OPT_PKT_QUEUE, addr);
@@ -2125,12 +2123,13 @@ static ttl_result_t ttl_read_segmented_message_entry(wtap* wth, wtap_rec* rec, i
             item->type = GUINT32_FROM_LE(item->type);
             size -= sizeof(uint32_t);
 
-            /* If the reassebled size is too big, we go on as usual, but without a buffer.
+            /* If the reassembled size is too big, we go on as usual, but without a buffer.
              * This way we avoid problems with segments later.
              */
             if (item->size <= WTAP_MAX_PACKET_SIZE_STANDARD) {
                 item->buf = g_try_malloc(item->size);
                 if (item->buf == NULL) {
+                    g_free(item);
                     *err = WTAP_ERR_INTERNAL;
                     *err_info = ws_strdup("ttl_read_segmented_message_entry: cannot allocate memory");
                     return TTL_ERROR;
@@ -2229,7 +2228,7 @@ static ttl_result_t ttl_read_segmented_message_entry(wtap* wth, wtap_rec* rec, i
     }
 
     /* Read it as if it was a normal entry, but passing the buffer
-     * as input insted of the file handler.
+     * as input instead of the file handler.
      */
     return ttl_read_entry(wth, rec, err, err_info, &new_in, 0, new_in.size);
 }
@@ -2314,7 +2313,7 @@ ttl_xml_node_get_number(xmlNodePtr node, xmlXPathContextPtr ctx, double *ret) {
         return false;
     }
 
-    result = xmlXPathNodeEval(node, "./Number[1]/text()", ctx);
+    result = xmlXPathNodeEval(node, (const xmlChar*)"./Number[1]/text()", ctx);
     if (result && result->type == XPATH_NODESET && !xmlXPathNodeSetIsEmpty(result->nodesetval)) {
         val = xmlXPathCastToNumber(result);
         if (!xmlXPathIsNaN(val)) {
@@ -2338,10 +2337,10 @@ ttl_xml_node_get_string(xmlNodePtr node, xmlXPathContextPtr ctx, const char* nam
 
     str = ws_strdup_printf("./%s[1]/text()", name);
 
-    result = xmlXPathNodeEval(node, str, ctx);
+    result = xmlXPathNodeEval(node, (const xmlChar*)str, ctx);
     g_free(str);
     if (result && result->type == XPATH_NODESET && !xmlXPathNodeSetIsEmpty(result->nodesetval)) {
-        str = xmlXPathCastToString(result);
+        str = (char*)xmlXPathCastToString(result);
         *ret = ws_strdup(str);
         xmlFree(str);
         return true;
@@ -2371,20 +2370,20 @@ ttl_process_xml_config(ttl_t* ttl, const char* text, int size) {
     }
 
     ctx = xmlXPathNewContext(doc);
-    cascades = xmlXPathEvalExpression("/LoggerConfiguration/HWList/Cascades/Cascade", ctx);
+    cascades = xmlXPathEvalExpression((const xmlChar*)"/LoggerConfiguration/HWList/Cascades/Cascade", ctx);
     if (cascades && cascades->type == XPATH_NODESET && !xmlXPathNodeSetIsEmpty(cascades->nodesetval)) {
         for (i = 0; i < cascades->nodesetval->nodeNr; i++) {
             if (ttl_xml_node_get_number(cascades->nodesetval->nodeTab[i], ctx, &val) && val >= 0 && val <= 7) {
                 cascade = (uint16_t)val;
                 if (val == 0) { /* Only the configuration of the logger is inside the TTL file. The TAPs have their own configuration */
 
-                    devices = xmlXPathNodeEval(cascades->nodesetval->nodeTab[i], "./Devices/Device", ctx);
+                    devices = xmlXPathNodeEval(cascades->nodesetval->nodeTab[i], (const xmlChar*)"./Devices/Device", ctx);
                     if (devices && devices->type == XPATH_NODESET && !xmlXPathNodeSetIsEmpty(devices->nodesetval)) {
                         for (j = 0; j < devices->nodesetval->nodeNr; j++) {
                             if (ttl_xml_node_get_number(devices->nodesetval->nodeTab[j], ctx, &val) && val >= 0 && val <= 15) {
                                 device = (uint16_t)val;
 
-                                functions = xmlXPathNodeEval(devices->nodesetval->nodeTab[j], "./Functions/Function", ctx);
+                                functions = xmlXPathNodeEval(devices->nodesetval->nodeTab[j], (const xmlChar*)"./Functions/Function", ctx);
                                 if (functions && functions->type == XPATH_NODESET && !xmlXPathNodeSetIsEmpty(functions->nodesetval)) {
                                     for (k = 0; k < functions->nodesetval->nodeNr; k++) {
                                         if (ttl_xml_node_get_number(functions->nodesetval->nodeTab[k], ctx, &val) && val >= 0 && val <= 63) {
@@ -2578,15 +2577,15 @@ ttl_parse_masters_pref_file(ttl_t* ttl, const char* path) {
  * independent interface for the logger and coupled interface for the taps).
  */
 static bool
-ttl_init_masters_from_pref_file(ttl_t* ttl) {
+ttl_init_masters_from_pref_file(ttl_t* ttl, const char* app_env_var_prefix) {
     char*   pref_file;
     bool    ret;
 
-    pref_file = get_persconffile_path(TTL_ADDRESS_MASTER_PREFS, true);
+    pref_file = get_persconffile_path(TTL_ADDRESS_MASTER_PREFS, true, app_env_var_prefix);
     ret = ttl_parse_masters_pref_file(ttl, pref_file);
     g_free(pref_file);
     if (!ret) {
-        pref_file = get_persconffile_path(TTL_ADDRESS_MASTER_PREFS, false);
+        pref_file = get_persconffile_path(TTL_ADDRESS_MASTER_PREFS, false, app_env_var_prefix);
         ret = ttl_parse_masters_pref_file(ttl, pref_file);
         g_free(pref_file);
     }
@@ -2652,15 +2651,15 @@ ttl_parse_names_pref_file(ttl_t* ttl, const char* path) {
  * ttl_add_interface_name() starting from the interface address.
  */
 static bool
-ttl_init_names_from_pref_file(ttl_t* ttl) {
+ttl_init_names_from_pref_file(ttl_t* ttl, const char* app_env_var_prefix) {
     char*   pref_file;
     bool    ret;
 
-    pref_file = get_persconffile_path(TTL_ADDRESS_NAME_PREFS, true);
+    pref_file = get_persconffile_path(TTL_ADDRESS_NAME_PREFS, true, app_env_var_prefix);
     ret = ttl_parse_names_pref_file(ttl, pref_file);
     g_free(pref_file);
     if (!ret) {
-        pref_file = get_persconffile_path(TTL_ADDRESS_NAME_PREFS, false);
+        pref_file = get_persconffile_path(TTL_ADDRESS_NAME_PREFS, false, app_env_var_prefix);
         ret = ttl_parse_names_pref_file(ttl, pref_file);
         g_free(pref_file);
     }
@@ -2762,7 +2761,7 @@ ttl_open(wtap* wth, int* err, char** err_info) {
             offset += TTL_LOGFILE_INFO_SIZE;
             unsigned int xml_len = header.header_size - offset;
             if (xml_len != 0) {
-                unsigned char* xml = g_try_malloc(xml_len);
+                char* xml = g_try_malloc(xml_len);
                 if (xml == NULL) {
                     *err = WTAP_ERR_INTERNAL;
                     *err_info = ws_strdup("ttl: cannot allocate memory");
@@ -2790,8 +2789,8 @@ ttl_open(wtap* wth, int* err, char** err_info) {
         }
     }
 
-    ttl_init_masters_from_pref_file(ttl);
-    ttl_init_names_from_pref_file(ttl);
+    ttl_init_masters_from_pref_file(ttl, wth->app_env_var_prefix);
+    ttl_init_names_from_pref_file(ttl, wth->app_env_var_prefix);
 
     wth->priv = (void*)ttl;
     wth->file_encap = WTAP_ENCAP_NONE;

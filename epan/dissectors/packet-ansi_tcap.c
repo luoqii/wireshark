@@ -457,7 +457,7 @@ static const value_string ansi_tcap_national_parameter_generic_name_type_of_name
  { 1, "Calling name" },
  { 2, "Original called name" },
  { 3, "Redirected name" },
- { 4, "Redirected name" },
+ { 4, "Connected name" },
  { 5, "Spare" },
  { 6, "Spare" },
  { 7, "Spare" },
@@ -680,7 +680,7 @@ static int parameter_type(proto_tree *tree, tvbuff_t *tvb, int offset_parameter_
   uint32_t parameter, parameter_length;
 
   /* A general parameter decoding looks like: Identifier -> Length -> Value
-   There is another case statment to account for the 'F' bit */
+   There is another case statement to account for the 'F' bit */
   if ((param_value & 0x0F) == 0x0F)
   {
       ti = proto_tree_add_item_ret_uint(tree, hf_ansi_tcap_parameter, tvb, offset_parameter_type, 2, ENC_BIG_ENDIAN, &parameter);
@@ -1197,8 +1197,8 @@ dissect_ansi_tcap_T_national(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offse
  uint8_t family;
  uint8_t specifier;
 
-    offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                                &ansi_tcap_private.d.OperationCode_national);
+    offset = dissect_ber_constrained_integer(implicit_tag, actx, tree, tvb, offset,
+                                                            -32768, 32767U, hf_index, &ansi_tcap_private.d.OperationCode_national);
 
   /* mask off the H bit */
   ansi_tcap_private.d.OperationCode_national = (ansi_tcap_private.d.OperationCode_national&0x7fff);
@@ -1297,8 +1297,8 @@ dissect_ansi_tcap_OperationCode(bool implicit_tag _U_, tvbuff_t *tvb _U_, int of
 
 static int
 dissect_ansi_tcap_INTEGER_M128_127(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-  offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                                NULL);
+  offset = dissect_ber_constrained_integer(implicit_tag, actx, tree, tvb, offset,
+                                                            -128, 127U, hf_index, NULL);
 
   return offset;
 }
@@ -1323,8 +1323,8 @@ static const value_string ansi_tcap_ANSIMAPPrivateErrorcode_vals[] = {
 
 static int
 dissect_ansi_tcap_ANSIMAPPrivateErrorcode(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-  offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                                NULL);
+  offset = dissect_ber_constrained_integer(implicit_tag, actx, tree, tvb, offset,
+                                                            0U, 255U, hf_index, NULL);
 
   return offset;
 }
@@ -1413,8 +1413,8 @@ dissect_ansi_tcap_TransactionID(bool implicit_tag _U_, tvbuff_t *tvb _U_, int of
 
 static int
 dissect_ansi_tcap_OCTET_STRING_SIZE_1(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-  offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                       NULL);
+  offset = dissect_ber_constrained_octet_string(implicit_tag, actx, tree, tvb, offset,
+                                                   1, 1, hf_index, NULL);
 
   return offset;
 }
@@ -1619,8 +1619,8 @@ dissect_ansi_tcap_DialoguePortion(bool implicit_tag _U_, tvbuff_t *tvb _U_, int 
 
 static int
 dissect_ansi_tcap_T_componentIDs(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-  offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                       NULL);
+  offset = dissect_ber_constrained_octet_string(implicit_tag, actx, tree, tvb, offset,
+                                                   0, 2, hf_index, NULL);
 
   return offset;
 }
@@ -1661,8 +1661,8 @@ dissect_ansi_tcap_Invoke(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U
 
 static int
 dissect_ansi_tcap_T_componentID(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-  offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                       NULL);
+  offset = dissect_ber_constrained_octet_string(implicit_tag, actx, tree, tvb, offset,
+                                                   1, 1, hf_index, NULL);
 
   return offset;
 }
@@ -1701,8 +1701,8 @@ dissect_ansi_tcap_ReturnResult(bool implicit_tag _U_, tvbuff_t *tvb _U_, int off
 
 static int
 dissect_ansi_tcap_T_componentID_01(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-  offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                       NULL);
+  offset = dissect_ber_constrained_octet_string(implicit_tag, actx, tree, tvb, offset,
+                                                   1, 1, hf_index, NULL);
 
   return offset;
 }
@@ -1740,8 +1740,8 @@ dissect_ansi_tcap_ReturnError(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offs
 
 static int
 dissect_ansi_tcap_OCTET_STRING_SIZE_0_1(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-  offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                       NULL);
+  offset = dissect_ber_constrained_octet_string(implicit_tag, actx, tree, tvb, offset,
+                                                   0, 1, hf_index, NULL);
 
   return offset;
 }
@@ -2165,7 +2165,7 @@ dissect_ansi_tcap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, vo
                 ansi_tcap_private.context=p_tcap_context;
 
                 /* If the current message is TCAP only,
-                 * save the Application contexte name for the next messages
+                 * save the Application context name for the next messages
                  */
                 if ( p_tcap_context && cur_oid && !p_tcap_context->oid_present ) {
                         /* Save the application context and the sub dissector */
@@ -2562,7 +2562,7 @@ proto_register_ansi_tcap(void)
         { &hf_ansi_tcap_parameter_look_ahead_for_busy_location_field,
           { "Location",
             "ansi_tcap.look_ahead_for_busy_location",
-            FT_UINT8, BASE_HEX, VALS(ansi_tcap_national_parameter_look_ahead_for_busy_location_field), 0x03,
+            FT_UINT8, BASE_HEX, VALS(ansi_tcap_national_parameter_look_ahead_for_busy_location_field), 0x0f,
             NULL, HFILL }
         },
         { &hf_ansi_tcap_parameter_acg_control_cause_indicator,

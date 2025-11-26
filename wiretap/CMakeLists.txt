@@ -12,9 +12,9 @@ set(WIRETAP_PUBLIC_HEADERS
 	introspection.h
 	merge.h
 	pcap-encap.h
-	pcapng_module.h
 	secrets-types.h
 	wtap.h
+	wtap_module.h
 	wtap_modules.h
 	wtap_opttypes.h
 )
@@ -65,11 +65,13 @@ set(WIRETAP_C_MODULE_FILES
 	${CMAKE_CURRENT_SOURCE_DIR}/iptrace.c
 	${CMAKE_CURRENT_SOURCE_DIR}/iseries.c
 	${CMAKE_CURRENT_SOURCE_DIR}/json.c
+	${CMAKE_CURRENT_SOURCE_DIR}/json_log.c
 	${CMAKE_CURRENT_SOURCE_DIR}/k12.c
 	${CMAKE_CURRENT_SOURCE_DIR}/lanalyzer.c
 	${CMAKE_CURRENT_SOURCE_DIR}/log3gpp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/logcat.c
 	${CMAKE_CURRENT_SOURCE_DIR}/logcat_text.c
+	${CMAKE_CURRENT_SOURCE_DIR}/mmodule.c
 	${CMAKE_CURRENT_SOURCE_DIR}/mp4.c
 	${CMAKE_CURRENT_SOURCE_DIR}/mpeg.c
 	${CMAKE_CURRENT_SOURCE_DIR}/mplog.c
@@ -86,12 +88,14 @@ set(WIRETAP_C_MODULE_FILES
 	${CMAKE_CURRENT_SOURCE_DIR}/observer.c
 	${CMAKE_CURRENT_SOURCE_DIR}/packetlogger.c
 	${CMAKE_CURRENT_SOURCE_DIR}/pcap-common.c
+	${CMAKE_CURRENT_SOURCE_DIR}/pcapng-darwin-custom.c
 	${CMAKE_CURRENT_SOURCE_DIR}/pcapng-netflix-custom.c
 	${CMAKE_CURRENT_SOURCE_DIR}/pcapng-sysdig.c
 	${CMAKE_CURRENT_SOURCE_DIR}/peak-trc.c
 	${CMAKE_CURRENT_SOURCE_DIR}/peekclassic.c
 	${CMAKE_CURRENT_SOURCE_DIR}/peektagged.c
 	${CMAKE_CURRENT_SOURCE_DIR}/pppdump.c
+	${CMAKE_CURRENT_SOURCE_DIR}/procmon.c
 	${CMAKE_CURRENT_SOURCE_DIR}/radcom.c
 	${CMAKE_CURRENT_SOURCE_DIR}/rfc7468.c
 	${CMAKE_CURRENT_SOURCE_DIR}/rtpdump.c

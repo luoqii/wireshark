@@ -42,7 +42,7 @@
 #define DOT11DECRYPT_TK_LEN                           16
 
 /* Max length of capture data						*/
-#define	DOT11DECRYPT_MAX_CAPLEN			8192
+#define	DOT11DECRYPT_MAX_CAPLEN			(12 * 1024)
 
 #define	DOT11DECRYPT_WEP_IVLEN	3       /* 24bit */
 #define	DOT11DECRYPT_WEP_KIDLEN	1       /* 1 octet */
@@ -73,7 +73,7 @@
 #define	DOT11DECRYPT_TKIP_HEADER	DOT11DECRYPT_RSNA_HEADER
 #define	DOT11DECRYPT_TKIP_TRAILER	DOT11DECRYPT_TKIP_MICLEN + DOT11DECRYPT_WEP_ICV
 
-#define	DOT11DECRYPT_CRC_LEN	4
+#define DOT11DECRYPT_RSNA_MIN_TRAILER 8
 
 /************************************************************************/
 /*      File includes                                                   */
@@ -126,7 +126,7 @@ typedef struct _DOT11DECRYPT_CONTEXT {
 	GHashTable *sa_hash;
 	DOT11DECRYPT_KEY_ITEM keys[DOT11DECRYPT_MAX_KEYS_NR];
 	size_t keys_nr;
-	char pkt_ssid[DOT11DECRYPT_WPA_SSID_MAX_LEN];
+	uint8_t pkt_ssid[DOT11DECRYPT_WPA_SSID_MAX_LEN];
 	size_t pkt_ssid_len;
 } DOT11DECRYPT_CONTEXT, *PDOT11DECRYPT_CONTEXT;
 

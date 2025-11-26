@@ -37,7 +37,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include "file_wrappers.h"
 
 typedef struct daintree_sna_header {
@@ -153,8 +153,8 @@ daintree_sna_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec, int *err, char **e
 	uint64_t seconds;
 	int useconds;
 	char readLine[DAINTREE_MAX_LINE_SIZE];
-	char readData[READDATA_BUF_SIZE];
-	unsigned char *str = (unsigned char *)readData;
+	uint8_t readData[READDATA_BUF_SIZE];
+	uint8_t*str = (uint8_t*)readData;
 	unsigned bytes;
 	uint8_t *p;
 

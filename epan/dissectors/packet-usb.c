@@ -1881,7 +1881,7 @@ static decode_as_t        usb_product_da = {
         "usb", "usb.product",
         1, 0, &usb_product_da_values, NULL, NULL,
         decode_as_default_populate_list, decode_as_default_reset,
-        decode_as_default_change, NULL};
+        decode_as_default_change, NULL, NULL, NULL };
 
 static build_valid_func   usb_device_da_build_value[1] = {usb_device_value};
 static decode_as_value_t  usb_device_da_values         = {usb_device_prompt, 1, usb_device_da_build_value};
@@ -1889,7 +1889,7 @@ static decode_as_t        usb_device_da = {
         "usb", "usb.device",
         1, 0, &usb_device_da_values, NULL, NULL,
         decode_as_default_populate_list, decode_as_default_reset,
-        decode_as_default_change, NULL};
+        decode_as_default_change, NULL, NULL, NULL };
 
 static build_valid_func   usb_protocol_da_build_value[1] = {usb_protocol_value};
 static decode_as_value_t  usb_protocol_da_values         = {usb_protocol_prompt, 1, usb_protocol_da_build_value};
@@ -1897,7 +1897,7 @@ static decode_as_t        usb_protocol_da = {
         "usb", "usb.protocol",
         1, 0, &usb_protocol_da_values, NULL, NULL,
         decode_as_default_populate_list, decode_as_default_reset,
-        decode_as_default_change, NULL};
+        decode_as_default_change, NULL, NULL, NULL };
 
 
 static usb_conv_info_t *
@@ -3311,7 +3311,7 @@ dissect_usb_device_capability_descriptor(packet_info *pinfo, proto_tree *tree,
         }
     } else if (cap_type == BOS_CAP_SUPERSPEED_USB) {
         /* USB 3.2 Specification 9.6.2.2 SuperSpeed USB Device Capability */
-        static int * const usb_ss_bmAtrributes_fields[] = {
+        static int * const usb_ss_bmAttributes_fields[] = {
             &hf_usb_ss_bmAttributes_reserved0,
             &hf_usb_ss_bmAttributes_LTM,
             &hf_usb_ss_bmAttributes_reserved7_2,
@@ -3327,7 +3327,7 @@ dissect_usb_device_capability_descriptor(packet_info *pinfo, proto_tree *tree,
         };
 
         proto_tree_add_bitmask(tree, tvb, offset, hf_usb_ss_bmAttributes,
-            ett_ss_bmAttributes, usb_ss_bmAtrributes_fields, ENC_LITTLE_ENDIAN);
+            ett_ss_bmAttributes, usb_ss_bmAttributes_fields, ENC_LITTLE_ENDIAN);
         offset += 1;
         proto_tree_add_bitmask(tree, tvb, offset, hf_usb_ss_wSpeedSupported,
             ett_ss_wSpeedSupported, usb_ss_wSpeedSupported_fields, ENC_LITTLE_ENDIAN);

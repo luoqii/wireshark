@@ -10,10 +10,15 @@
 
 #include <string.h>
 
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include "file_wrappers.h"
 
 #include <wsutil/wsjson.h>
+
+/*
+ * This reads an arbitrary, possibly large JSON object.
+ * For JSON log data, see json_log.c.
+ */
 
 /* Maximum size of json file. */
 #define MAX_FILE_SIZE  (50*1024*1024)
@@ -62,7 +67,7 @@ wtap_open_return_val json_open(wtap *wth, int *err, char **err_info)
      * packet-json shows excess unparsed data at the end with the
      * data-text-lines dissector.
      */
-    if (json_parse_len(filebuf, bytes_read, NULL, 0) < 0) {
+    if (json_parse_len((const char*)filebuf, bytes_read, NULL, 0) < 0) {
         g_free(filebuf);
         return WTAP_OPEN_NOT_MINE;
     }

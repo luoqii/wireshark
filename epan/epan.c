@@ -39,12 +39,13 @@
 
 #include "conversation.h"
 #include "except.h"
-#include "packet.h"
+#include <epan/packet.h>
 #include "prefs.h"
 #include "column-info.h"
 #include "tap.h"
 #include "addr_resolv.h"
 #include "oids.h"
+#include "uuid_types.h"
 #include <epan/wmem_scopes.h>
 #include "expert.h"
 #include "print.h"
@@ -58,11 +59,14 @@
 #include "conversation_filter.h"
 #include "conversation_table.h"
 #include "reassemble.h"
+#include "rtd_table.h"
 #include "srt_table.h"
 #include "stats_tree.h"
 #include "secrets.h"
+#include "uat-int.h"
 #include "funnel.h"
 #include "wscbor.h"
+#include "read_keytab_file.h"
 
 #ifdef HAVE_PLUGINS
 #include <wsutil/plugins.h>
@@ -110,6 +114,8 @@ static GSList *epan_plugin_register_all_procotols;
 static GSList *epan_plugin_register_all_handoffs;
 
 static wmem_allocator_t *pinfo_pool_cache;
+static char* epan_env_prefix_cache;
+static bool supports_packets = true;
 
 /* Global variables holding the content of the corresponding environment variable
  * to save fetching it repeatedly.
@@ -152,6 +158,17 @@ epan_get_version_number(int *major, int *minor, int *micro)
 		*minor = VERSION_MINOR;
 	if (micro)
 		*micro = VERSION_MICRO;
+}
+
+const char*
+epan_get_environment_prefix(void)
+{
+	return epan_env_prefix_cache;
+}
+
+bool epan_supports_packets(void)
+{
+	return supports_packets;
 }
 
 #if defined(_WIN32) && GCRYPT_VERSION_NUMBER < 0x010b00
@@ -252,9 +269,11 @@ static void epan_plugin_register_all_tap_listeners(void *data, void *user_data _
 }
 
 bool
-epan_init(register_cb cb, void *client_data, bool load_plugins)
+epan_init(register_cb cb, void *client_data, bool load_plugins, epan_app_data_t* app_data)
 {
 	volatile bool status = true;
+	epan_env_prefix_cache = g_strdup(app_data->env_var_prefix);
+	supports_packets = app_data->supports_packets;
 
 	/* Get the value of some environment variables and set corresponding globals for performance reasons*/
 	/* If the WIRESHARK_ABORT_ON_DISSECTOR_BUG environment variable is set,
@@ -280,10 +299,11 @@ epan_init(register_cb cb, void *client_data, bool load_plugins)
 	value_string_externals_init();
 
 	/* initialize the GUID to name mapping table */
+	uuid_types_initialize();
 	guids_init();
 
 	/* initialize name resolution (addr_resolv.c) */
-	addr_resolv_init();
+	addr_resolv_init(epan_env_prefix_cache);
 
 	except_init();
 
@@ -291,7 +311,7 @@ epan_init(register_cb cb, void *client_data, bool load_plugins)
 
 	if (load_plugins) {
 #ifdef HAVE_PLUGINS
-		libwireshark_plugins = plugins_init(WS_PLUGIN_EPAN);
+		libwireshark_plugins = plugins_init(WS_PLUGIN_EPAN, epan_env_prefix_cache);
 #endif
 	}
 
@@ -331,27 +351,38 @@ epan_init(register_cb cb, void *client_data, bool load_plugins)
 	TRY {
 		export_pdu_init();
 		tap_init();
-		prefs_init();
+		proto_pre_init();
+		prefs_init(app_data->col_fmt, app_data->num_cols);
 		expert_init();
 		packet_init();
 		secrets_init();
 		conversation_init();
+		keytab_file_data_init();
 		capture_dissector_init();
 		reassembly_tables_init();
 		conversation_filters_init();
+		conversation_table_init();
+		export_object_init();
+		follow_init();
+		rtd_table_init();
+		srt_table_init();
+		stats_tree_init();
+		stat_tap_init();
 		g_slist_foreach(epan_plugins, epan_plugin_init, NULL);
 		proto_init(epan_plugin_register_all_procotols, epan_plugin_register_all_handoffs, cb, client_data);
 		g_slist_foreach(epan_plugins, epan_plugin_register_all_tap_listeners, NULL);
 		packet_cache_proto_handles();
-		dfilter_init();
+		dfilter_init(epan_env_prefix_cache);
 		wscbor_init();
 		final_registration_all_protocols();
 		print_cache_field_handles();
 		expert_packet_init();
 #ifdef HAVE_LUA
-		wslua_init(cb, client_data);
+		wslua_init(cb, client_data, epan_env_prefix_cache);
 #endif
 		g_slist_foreach(epan_plugins, epan_plugin_post_init, NULL);
+		register_all_tap_listeners(app_data->tap_reg_listeners);
+		uat_load_all(epan_env_prefix_cache);
 	}
 	CATCH(DissectorError) {
 		/*
@@ -384,15 +415,15 @@ epan_load_settings(void)
 	e_prefs *prefs_p;
 
 	/* load the decode as entries of the current profile */
-	load_decode_as_entries();
+	load_decode_as_entries(epan_env_prefix_cache);
 
-	prefs_p = read_prefs();
+	prefs_p = read_prefs(epan_env_prefix_cache);
 
 	/*
 	 * Read the files that enable and disable protocols and heuristic
 	 * dissectors.
 	 */
-	read_enabled_and_disabled_lists();
+	read_enabled_and_disabled_lists(epan_env_prefix_cache);
 
 	return prefs_p;
 }
@@ -470,6 +501,8 @@ epan_cleanup(void)
 	libwireshark_plugins = NULL;
 #endif
 	value_string_externals_cleanup();
+	g_free(epan_env_prefix_cache);
+	epan_env_prefix_cache = NULL;
 }
 
 struct epan_session {
@@ -487,7 +520,7 @@ epan_new(struct packet_provider_data *prov,
 	session->funcs = *funcs;
 
 	/* XXX, it should take session as param */
-	init_dissection();
+	init_dissection(epan_env_prefix_cache);
 
 	return session;
 }
@@ -532,6 +565,58 @@ epan_get_frame_ts(const epan_t *session, uint32_t frame_num)
 	   function returns null, e.g. because the frame doesn't
 	   *have* a time stamp. */
 	return abs_ts;
+}
+
+const nstime_t *
+epan_get_start_ts(const epan_t *session)
+{
+	const nstime_t *abs_ts = NULL;
+
+	if (session && session->funcs.get_start_ts)
+		abs_ts = session->funcs.get_start_ts(session->prov);
+
+	/* abs_ts will be null if we don't have a session, the session
+	   doesn't have a function to return time stamps, or that
+	   function returns null, e.g. because the frame doesn't
+	   *have* a time stamp. (It could return unset in the last
+	   case.) */
+	return abs_ts;
+}
+
+int32_t
+epan_get_process_id(const epan_t *session, uint32_t process_info_id, unsigned section_number)
+{
+	if (session->funcs.get_process_id)
+		return session->funcs.get_process_id(session->prov, process_info_id, section_number);
+
+	/* NOTE:
+	 * On UNIX and UNIX-like operating systems, `0` is valid process id
+	 * value, and it is reserved for the kernel.
+	 * On other operating systems, the kernel process id can be mapped
+	 * to a different integer value.
+	 * The common underlying assumption is that on every operating system,
+	 * the value `-1` is not mapped to any valid process id, and hence
+	 * can represent the "not found" case.
+	 */
+	return -1;
+}
+
+const char *
+epan_get_process_name(const epan_t *session, uint32_t process_info_id, unsigned section_number)
+{
+	if (session->funcs.get_process_name)
+		return session->funcs.get_process_name(session->prov, process_info_id, section_number);
+
+	return NULL;
+}
+
+const uint8_t *
+epan_get_process_uuid(const epan_t *session, uint32_t process_info_id, unsigned section_number, size_t *uuid_size)
+{
+	if (session->funcs.get_process_uuid)
+		return session->funcs.get_process_uuid(session->prov, process_info_id, section_number, uuid_size);
+
+	return NULL;
 }
 
 void

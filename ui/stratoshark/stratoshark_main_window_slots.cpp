@@ -43,6 +43,7 @@ DIAG_ON(frame-larger-than=)
 
 #include "wsutil/file_util.h"
 #include "wsutil/filesystem.h"
+#include "wsutil/application_flavor.h"
 #include <wsutil/wslog.h>
 #include <wsutil/ws_assert.h>
 
@@ -56,13 +57,12 @@ DIAG_ON(frame-larger-than=)
 #include "epan/plugin_if.h"
 #include "epan/uat.h"
 #include "epan/uat-int.h"
-#include "epan/value_string.h"
+#include <wsutil/value_string.h>
 
 #ifdef HAVE_LUA
 #include <epan/wslua/init_wslua.h>
 #endif
 
-#include "ui/alert_box.h"
 #ifdef HAVE_LIBPCAP
 #include "ui/capture_ui_utils.h"
 #endif
@@ -73,7 +73,7 @@ DIAG_ON(frame-larger-than=)
 #include "ui/preference_utils.h"
 #include "ui/recent.h"
 #include "ui/recent_utils.h"
-#include "ui/ssl_key_export.h"
+#include <epan/dissectors/packet-tls-utils.h>
 #include "ui/ws_ui_util.h"
 #include "ui/all_files_wildcard.h"
 #include "ui/qt/simple_dialog.h"
@@ -86,7 +86,7 @@ DIAG_ON(frame-larger-than=)
 #include "ui/software_update.h"
 #endif
 
-#include "about_dialog.h"
+#include "stratoshark_about_dialog.h"
 #include "capture_file_dialog.h"
 #include "capture_file_properties_dialog.h"
 #ifdef HAVE_LIBPCAP
@@ -109,10 +109,11 @@ DIAG_ON(frame-larger-than=)
 #include "filter_action.h"
 #include "filter_dialog.h"
 #include "follow_stream_action.h"
-#include "follow_stream_dialog.h"
+#include "stratoshark_follow_stream_dialog.h"
 #include "funnel_statistics.h"
 #include "interface_toolbar.h"
 #include "io_graph_dialog.h"
+#include "ui/io_graph_uat.h"
 #include "plot_dialog.h"
 #include <ui/qt/widgets/additional_toolbar.h>
 #include "main_application.h"
@@ -121,7 +122,7 @@ DIAG_ON(frame-larger-than=)
 #include "packet_list.h"
 #include "preferences_dialog.h"
 #include "print_dialog.h"
-#include "profile_dialog.h"
+#include "stratoshark_profile_dialog.h"
 #include "protocol_hierarchy_dialog.h"
 #include <ui/qt/utils/qt_ui_utils.h>
 #include "resolved_addresses_dialog.h"
@@ -1464,7 +1465,7 @@ void StratosharkMainWindow::checkDisplayFilter()
 void StratosharkMainWindow::fieldsChanged()
 {
     char *err_msg = NULL;
-    if (!color_filters_reload(&err_msg, color_filter_add_cb)) {
+    if (!color_filters_reload(&err_msg, color_filter_add_cb, application_configuration_environment_prefix())) {
         simple_dialog(ESD_TYPE_ERROR, ESD_BTN_OK, "%s", err_msg);
         g_free(err_msg);
     }
@@ -1502,7 +1503,7 @@ void StratosharkMainWindow::reloadLuaPlugins()
 
     mainApp->setReloadingLua(true);
 
-    wslua_reload_plugins(NULL, NULL);
+    wslua_reload_plugins(NULL, NULL, application_configuration_environment_prefix());
     funnel_statistics_reload_menus();
     reloadDynamicMenus();
     closePacketDialogs();
@@ -2214,7 +2215,7 @@ void StratosharkMainWindow::deleteAllPacketCommentsFinished(int result)
 
 void StratosharkMainWindow::editConfigurationProfiles()
 {
-    ProfileDialog *cp_dialog = new ProfileDialog(this);
+    StratosharkProfileDialog* cp_dialog = new StratosharkProfileDialog(this);
     cp_dialog->setWindowModality(Qt::ApplicationModal);
     cp_dialog->setAttribute(Qt::WA_DeleteOnClose);
     cp_dialog->show();
@@ -2849,7 +2850,7 @@ void StratosharkMainWindow::showCaptureOptionsDialog()
         connect(capture_options_dialog_, &CaptureOptionsDialog::showExtcapOptions,
                 this, &StratosharkMainWindow::showExtcapOptionsDialog);
     }
-    capture_options_dialog_->updateInterfaces();
+    capture_options_dialog_->updateInterfaces(&global_capture_opts);
 
     if (capture_options_dialog_->isMinimized()) {
         capture_options_dialog_->showNormal();
@@ -3041,7 +3042,7 @@ void StratosharkMainWindow::applyConversationFilter()
 }
 
 void StratosharkMainWindow::openFollowStreamDialog(int proto_id, unsigned stream_num, unsigned sub_stream_num, bool use_stream_index) {
-    FollowStreamDialog *fsd = new FollowStreamDialog(*this, capture_file_, proto_id);
+    FollowStreamDialog *fsd = new StratosharkFollowStreamDialog(*this, capture_file_, proto_id);
     connect(fsd, &FollowStreamDialog::updateFilter, this, &StratosharkMainWindow::filterPackets);
     connect(fsd, &FollowStreamDialog::goToPacket, this, [=](int packet_num) {packet_list_->goToPacket(packet_num);});
     fsd->addCodecs(text_codec_map_);
@@ -3129,6 +3130,23 @@ void StratosharkMainWindow::statCommandIOGraph(const char *, void *)
     showIOGraphDialog(IOG_ITEM_UNIT_PACKETS, QString());
 }
 
+UAT_VS_DEF(io_graph, yaxis, io_graph_settings_t, uint32_t, 0, "Events")
+
+static uat_field_t io_graph_event_fields[] = {
+    UAT_FLD_BOOL_ENABLE(io_graph, enabled, "Enabled", "Graph visibility"),
+    UAT_FLD_CSTRING(io_graph, name, "Graph Name", "The name of the graph"),
+    UAT_FLD_DISPLAY_FILTER(io_graph, dfilter, "Display Filter", "Graph packets matching this display filter"),
+    UAT_FLD_COLOR(io_graph, color, "Color", "Graph color (#RRGGBB)"),
+    UAT_FLD_VS(io_graph, style, "Style", io_graph_style_vs, "Graph style (Line, Bars, etc.)"),
+    UAT_FLD_VS(io_graph, yaxis, "Y Axis", y_axis_event_vs, "Y Axis units"),
+    UAT_FLD_PROTO_FIELD(io_graph, yfield, "Y Field", "Apply calculations to this field"),
+    UAT_FLD_SMA_PERIOD(io_graph, sma_period, "SMA Period", moving_avg_vs, "Simple moving average period"),
+    UAT_FLD_DBL(io_graph, y_axis_factor, "Y Axis Factor", "Y Axis Factor"),
+    UAT_FLD_BOOL_ENABLE(io_graph, asAOT, "asAOT", "asAOT"),
+
+    UAT_END_FIELDS
+};
+
 void StratosharkMainWindow::showIOGraphDialog(io_graph_item_unit_t value_units, QString yfield)
 {
     const DisplayFilterEdit *df_edit = qobject_cast<DisplayFilterEdit *>(df_combo_box_->lineEdit());
@@ -3163,7 +3181,7 @@ void StratosharkMainWindow::showIOGraphDialog(io_graph_item_unit_t value_units, 
     }
 
     if (iog_dialog == nullptr) {
-        iog_dialog = new IOGraphDialog(*this, capture_file_, displayFilter, value_units, yfield);
+        iog_dialog = new IOGraphDialog(*this, capture_file_, io_graph_event_fields, "Events", displayFilter, value_units, yfield);
         connect(iog_dialog, &IOGraphDialog::goToPacket, this, [=](int packet_num) {packet_list_->goToPacket(packet_num);});
         connect(this, &StratosharkMainWindow::reloadFields, iog_dialog, &IOGraphDialog::reloadFields);
     }
@@ -3232,7 +3250,7 @@ void StratosharkMainWindow::connectToolsMenuActions()
 void StratosharkMainWindow::connectHelpMenuActions()
 {
     connect(main_ui_->actionHelpAbout, &QAction::triggered, this, [=]() {
-        AboutDialog *about_dialog = new AboutDialog(this);
+        StratosharkAboutDialog* about_dialog = new StratosharkAboutDialog(this);
 
         if (about_dialog->isMinimized() == true)
         {

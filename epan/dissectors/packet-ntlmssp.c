@@ -26,6 +26,7 @@
 #include <epan/show_exception.h>
 #include <epan/proto_data.h>
 #include <epan/tfs.h>
+#include <epan/read_keytab_file.h>
 
 #include <wsutil/array.h>
 #include <wsutil/wsgcrypt.h>
@@ -37,7 +38,6 @@
 #include "packet-dcerpc.h"
 #include "packet-gssapi.h"
 
-#include "read_keytab_file.h"
 
 #include "packet-ntlmssp.h"
 
@@ -114,7 +114,7 @@ static GHashTable* hash_packet;
 #define NTLMSSP_NEGOTIATE_ANONYMOUS                0x00000800 // J
 #define NTLMSSP_NEGOTIATE_OEM_DOMAIN_SUPPLIED      0x00001000 // K
 #define NTLMSSP_NEGOTIATE_OEM_WORKSTATION_SUPPLIED 0x00002000 // L
-#define NTLMSSP_UNUSED_00004000                    0x00004000 // r7
+#define NTLMSSP_NEGOTIATE_LOCAL_CALL               0x00004000 // r7
 #define NTLMSSP_NEGOTIATE_ALWAYS_SIGN              0x00008000 // M
 #define NTLMSSP_TARGET_TYPE_DOMAIN                 0x00010000 // N
 #define NTLMSSP_TARGET_TYPE_SERVER                 0x00020000 // O
@@ -359,8 +359,9 @@ ntlmssp_sessions_destroy_cb(wmem_allocator_t *allocator _U_, wmem_cb_event_t eve
   It's in fact 3 susbsequent call to crypt_des_ecb with a 7-byte key.
   Missing bytes for the key are replaced by 0;
   Returns output in response, which is expected to be 24 bytes.
+  Returns true on success, false on failure (unlikely).
 */
-static int
+static bool
 crypt_des_ecb_long(uint8_t *response,
                    const uint8_t *key,
                    const uint8_t *data)
@@ -370,19 +371,23 @@ crypt_des_ecb_long(uint8_t *response,
   memcpy(pw21, key, 16);
 
   memset(response, 0, 24);
-  crypt_des_ecb(response, data, pw21);
-  crypt_des_ecb(response + 8, data, pw21 + 7);
-  crypt_des_ecb(response + 16, data, pw21 + 14);
+  if (crypt_des_ecb(response, data, pw21))
+    return false;
+  if (crypt_des_ecb(response + 8, data, pw21 + 7))
+    return false;
+  if (crypt_des_ecb(response + 16, data, pw21 + 14))
+    return false;
 
-  return 1;
+  return true;
 }
 
 /*
   Generate a challenge response, given an eight byte challenge and
   either the NT or the Lan Manager password hash (16 bytes).
   Returns output in response, which is expected to be 24 bytes.
+  Return true on success, false on failure (unlikely).
 */
-static int
+static bool
 ntlmssp_generate_challenge_response(uint8_t *response,
                                     const uint8_t *passhash,
                                     const uint8_t *challenge)
@@ -394,11 +399,14 @@ ntlmssp_generate_challenge_response(uint8_t *response,
 
   memset(response, 0, 24);
 
-  crypt_des_ecb(response, challenge, pw21);
-  crypt_des_ecb(response + 8, challenge, pw21 + 7);
-  crypt_des_ecb(response + 16, challenge, pw21 + 14);
+  if (crypt_des_ecb(response, challenge, pw21))
+    return false;
+  if (crypt_des_ecb(response + 8, challenge, pw21 + 7))
+    return false;
+  if (crypt_des_ecb(response + 16, challenge, pw21 + 14))
+    return false;
 
-  return 1;
+  return true;
 }
 
 
@@ -466,7 +474,7 @@ get_md4pass_list(wmem_allocator_t *pool, md4_pass** p_pass_list)
 {
 #if defined(HAVE_HEIMDAL_KERBEROS) || defined(HAVE_MIT_KERBEROS)
   uint32_t       nb_pass = 0;
-  enc_key_t     *ek;
+  const enc_key_t *ek;
   const char*    password = ntlmssp_option_nt_password;
   unsigned char  nt_hash[NTLMSSP_KEY_LEN];
   char           password_unicode[256];
@@ -476,7 +484,7 @@ get_md4pass_list(wmem_allocator_t *pool, md4_pass** p_pass_list)
   *p_pass_list = NULL;
   read_keytab_file_from_preferences();
 
-  for (ek=enc_key_list; ek; ek=ek->next) {
+  for (ek=keytab_get_enc_key_list(); ek; ek=ek->next) {
     if (NTLMSSP_EK_IS_NT4HASH(ek)) {
       nb_pass++;
     }
@@ -505,7 +513,7 @@ get_md4pass_list(wmem_allocator_t *pool, md4_pass** p_pass_list)
                "<Global NT Password>");
     i = 1;
   }
-  for (ek=enc_key_list; ek; ek=ek->next) {
+  for (ek=keytab_get_enc_key_list(); ek; ek=ek->next) {
     if (NTLMSSP_EK_IS_NT4HASH(ek)) {
       memcpy(pass_list[i].md4, ek->keyvalue, NTLMSSP_KEY_LEN);
       memcpy(pass_list[i].key_origin, ek->key_origin,
@@ -1148,11 +1156,15 @@ dissect_ntlmssp_string (tvbuff_t *tvb, wmem_allocator_t* allocator, int offset,
 {
   proto_tree *tree          = NULL;
   proto_item *tf            = NULL;
-  int16_t     string_length = tvb_get_letohs(tvb, offset);
-  int16_t     string_maxlen = tvb_get_letohs(tvb, offset+2);
-  int32_t     string_offset = tvb_get_letohl(tvb, offset+4);
+  uint16_t     string_length = tvb_get_letohs(tvb, offset);
+  uint16_t     string_maxlen = tvb_get_letohs(tvb, offset+2);
+  uint32_t     string_offset = tvb_get_letohl(tvb, offset+4);
 
-  *start = (string_offset > offset+8 ? string_offset : (signed)tvb_reported_length(tvb));
+  if (string_offset > (unsigned)(unicode_strings ? INT_MAX - 1 : INT_MAX)) {
+    THROW(ReportedBoundsError);
+  }
+
+  *start = ((int)string_offset > offset+8 ? (int)string_offset : (int)tvb_reported_length(tvb));
   if (0 == string_length) {
     *end = *start;
     if (ntlmssp_tree)
@@ -1204,6 +1216,10 @@ dissect_ntlmssp_blob (tvbuff_t *tvb, packet_info *pinfo,
   uint16_t    blob_length = tvb_get_letohs(tvb, offset);
   uint16_t    blob_maxlen = tvb_get_letohs(tvb, offset+2);
   uint32_t    blob_offset = tvb_get_letohl(tvb, offset+4);
+
+  if (blob_offset > (unsigned)INT_MAX) {
+    THROW(ReportedBoundsError);
+  }
 
   if (0 == blob_length) {
     *end                  = (blob_offset > ((unsigned)offset)+8 ? blob_offset : ((unsigned)offset)+8);
@@ -1946,7 +1962,7 @@ dissect_ntlmssp_auth (tvbuff_t *tvb, packet_info *pinfo, int offset,
    * XXX: I've seen a capture which does an HTTP CONNECT which:
    *      - has the NEGOTIATE & CHALLENGE messages in one TCP connection;
    *      - has the AUTHENTICATE message in a second TCP connection;
-   *        (The authentication aparently succeeded).
+   *        (The authentication apparently succeeded).
    *      For that case, in order to get the flags from the CHALLENGE_MESSAGE,
    *      we'd somehow have to manage NTLMSSP exchanges that cross TCP
    *      connection boundaries.
@@ -3114,8 +3130,8 @@ proto_register_ntlmssp(void)
         NULL, HFILL }
     },
     { &hf_ntlmssp_negotiate_flags_4000,
-      { "Negotiate 0x00004000", "ntlmssp.unused00004000",
-        FT_BOOLEAN, 32, TFS (&tfs_set_notset), NTLMSSP_UNUSED_00004000,
+      { "Negotiate Local Call", "ntlmssp.negotiatelocalcall",
+        FT_BOOLEAN, 32, TFS (&tfs_set_notset), NTLMSSP_NEGOTIATE_LOCAL_CALL,
         NULL, HFILL }
     },
     { &hf_ntlmssp_negotiate_flags_8000,

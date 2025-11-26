@@ -2909,7 +2909,7 @@ dnsserver_dissect_element_DnssrvEnumRecords2_record_buffer_(tvbuff_t *tvb _U_, i
 		uint32_t saved_flags = di->call_data->flags;
 		offset = dissect_ndr_uint3264(tvb, offset, pinfo, tree, di, drep, hf_dnsserver_DnssrvEnumRecords2_record_buffer_, &size);
 		di->call_data->flags &= ~DCERPC_IS_NDR64;
-		subtvb = tvb_new_subset_length_caplen(tvb, offset, (const int)size, -1);
+		subtvb = tvb_new_subset_length(tvb, offset, (const int)size);
 		dnsserver_dissect_element_DnssrvEnumRecords2_record_buffer__(subtvb, 0, pinfo, tree, di, drep);
 		offset += (int)size;
 		di->call_data->flags = saved_flags;
@@ -3290,7 +3290,7 @@ void proto_register_dcerpc_dnsserver(void)
 	{ &hf_dnsserver_DnssrvEnumRecords2_record_buffer,
 	  { "Record Buffer", "dnsserver.DnssrvEnumRecords2.record_buffer", FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
 	{ &hf_dnsserver_DnssrvEnumRecords2_record_buffer_,
-	  { "Subcontext length", "dnsserver.DnssrvEnumRecords2.subcontext", FT_UINT32, BASE_HEX, NULL, 0, NULL, HFILL }},
+	  { "Subcontext length", "dnsserver.DnssrvEnumRecords2.record_buffer.subcontext", FT_UINT32, BASE_HEX, NULL, 0, NULL, HFILL }},
 	{ &hf_dnsserver_DnssrvEnumRecords2_record_type,
 	  { "Record Type", "dnsserver.DnssrvEnumRecords2.record_type", FT_UINT16, BASE_DEC, VALS(dnsserver_DNS_RECORD_TYPE_vals), 0, NULL, HFILL }},
 	{ &hf_dnsserver_DnssrvEnumRecords2_select_flag,

@@ -95,6 +95,10 @@ static void test_format_size(void)
 {
     char *str;
 
+    str = format_size(10, FORMAT_SIZE_UNIT_BYTES, FORMAT_SIZE_PREFIX_SI);
+    g_assert_cmpstr(str, ==, "10 bytes");
+    g_free(str);
+
     str = format_size(10000, FORMAT_SIZE_UNIT_BYTES, FORMAT_SIZE_PREFIX_SI);
     g_assert_cmpstr(str, ==, "10 kB");
     g_free(str);
@@ -105,6 +109,14 @@ static void test_format_size(void)
 
     str = format_size(20971520, FORMAT_SIZE_UNIT_BITS, FORMAT_SIZE_PREFIX_IEC);
     g_assert_cmpstr(str, ==, "20 Mib");
+    g_free(str);
+
+    str = format_size(INT64_MAX, FORMAT_SIZE_UNIT_BYTES, FORMAT_SIZE_PREFIX_SI);
+    g_assert_cmpstr(str, ==, "9223 PB");
+    g_free(str);
+
+    str = format_size(INT64_MAX, FORMAT_SIZE_UNIT_BYTES, FORMAT_SIZE_PREFIX_IEC);
+    g_assert_cmpstr(str, ==, "8191 PiB");
     g_free(str);
 }
 
@@ -892,7 +904,7 @@ int main(int argc, char **argv)
     /* Set the program name. */
     g_set_prgname(PROGNAME);
 
-    ws_log_init(NULL);
+    ws_log_init(NULL, "Test Logging Debug Console");
 
     g_test_init(&argc, &argv, NULL);
 

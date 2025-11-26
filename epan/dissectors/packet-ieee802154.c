@@ -53,7 +53,7 @@
  *  CRC16 is calculated using the x^16 + x^12 + x^5 + 1 polynomial
  *  as specified by ITU-T, and is calculated over the IEEE 802.15.4
  *  packet (excluding the FCS) as transmitted over the air. Note,
- *  that because the least significan bits are transmitted first, this
+ *  that because the least significant bits are transmitted first, this
  *  will require reversing the bit-order in each byte. Also, unlike
  *  most CRC algorithms, IEEE 802.15.4 uses an initial and final value
  *  of 0x0000, instead of 0xffff (which is used by the ITU-T).
@@ -123,11 +123,6 @@ void proto_reg_handoff_ieee802154(void);
 
 /* ethertype for 802.15.4 tag - encapsulating an Ethernet packet */
 static unsigned int ieee802154_ethertype = 0x809A;
-
-/* FCS Types used by user configuration */
-#define IEEE802154_CC24XX_METADATA 0 /* Not an FCS, but TI CC24xx metadata */
-#define IEEE802154_FCS_16_BIT      1 /* ITU-T CRC16 */
-#define IEEE802154_FCS_32_BIT      2 /* ITU-T CRC32 */
 
 static int ieee802154_fcs_type = IEEE802154_FCS_16_BIT;
 
@@ -2095,7 +2090,7 @@ dissect_ieee802154_nonask_phy(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tre
     }
 
     offset += 4+2*1;
-    mac = tvb_new_subset_length_caplen(tvb,offset,-1, phr & IEEE802154_PHY_LENGTH_MASK);
+    mac = tvb_new_subset_length(tvb,offset, phr & IEEE802154_PHY_LENGTH_MASK);
 
     /* These always have the FCS at the end. */
 
@@ -2125,18 +2120,22 @@ ieee802154_fcs_type_len(unsigned i)
  * @param tvb pointer to buffer containing raw packet.
  * @param pinfo pointer to packet information fields.
  * @param tree pointer to data tree wireshark uses to display packet.
+ * @param data optional int pointer to fcs type to override user config.
  */
 static int
-dissect_ieee802154(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
+dissect_ieee802154(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 {
     tvbuff_t *new_tvb = dissect_zboss_specific(tvb, pinfo, tree);
     unsigned options = 0;
     unsigned fcs_len;
+    int fcs_type;
+
+    fcs_type = data ? *(int *)data : ieee802154_fcs_type;
 
     /* Set the default FCS length based on the FCS type in the configuration */
-    fcs_len = ieee802154_fcs_type_len(ieee802154_fcs_type);
+    fcs_len = ieee802154_fcs_type_len(fcs_type);
 
-    if (ieee802154_fcs_type == IEEE802154_CC24XX_METADATA) {
+    if (fcs_type == IEEE802154_CC24XX_METADATA) {
         options = DISSECT_IEEE802154_OPTION_CC24xx;
     }
 
@@ -2175,7 +2174,7 @@ dissect_ieee802154_nofcs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, vo
  * @param tvb pointer to buffer containing raw packet.
  * @param pinfo pointer to packet information fields
  * @param tree pointer to data tree wireshark uses to display packet.
- * @return new tvb subset if this is really ZBOSS dump, else oririnal tvb.
+ * @return new tvb subset if this is really ZBOSS dump, else original tvb.
  */
 static tvbuff_t *
 dissect_zboss_specific(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree)
@@ -4355,7 +4354,7 @@ dissect_hie_rendezvous_time(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *t
 /**
  * Dissect the Time Correction Header IE (7.4.2.7)
  *
- * This field is constructed by taking a signed 16-bit 2's compliment time
+ * This field is constructed by taking a signed 16-bit 2's complement time
  * correction in the range of -2048 us to 2047 us, AND'ing it with 0xfff, and
  * OR'ing again with 0x8000 to indicate a negative acknowledgment.
  */
@@ -5430,7 +5429,7 @@ dissect_ieee802154_decrypt(tvbuff_t *tvb,
         }
 
         /* Create a tvbuff for the plaintext. This might result in a zero-length tvbuff. */
-        ptext_tvb = tvb_new_subset_length_caplen(tvb, offset, captured_len, reported_len);
+        ptext_tvb = tvb_new_subset_length(tvb, offset, reported_len);
         *decrypt_info->status = DECRYPT_PACKET_SUCCEEDED;
     }
 
@@ -7397,7 +7396,7 @@ void proto_register_ieee802154(void)
     static decode_as_t          ieee802154_da = {
         IEEE802154_PROTOABBREV_WPAN, IEEE802154_PROTOABBREV_WPAN_PANID,
         1, 0, &ieee802154_da_values, NULL, NULL,
-        decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL
+        decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL, NULL, NULL
     };
 
     /* Register the init routine. */

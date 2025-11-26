@@ -20,7 +20,7 @@
 #include <string.h>
 #include <time.h>
 
-#include "packet.h"
+#include <epan/packet.h>
 #include "timestamp.h"
 
 #include "osi-utils.h"
@@ -240,6 +240,8 @@ packet_init(void)
 	registered_dissectors = g_hash_table_new_full(g_str_hash, g_str_equal,
 			NULL, NULL);
 
+	postdissectors = g_array_sized_new(false, false, (unsigned)sizeof(postdissector), 1);
+
 	depend_dissector_lists = g_hash_table_new_full(g_str_hash, g_str_equal,
 			g_free, destroy_depend_dissector_list);
 
@@ -369,14 +371,14 @@ register_shutdown_routine(void (*func)(void))
 
 /* Initialize all data structures used for dissection. */
 void
-init_dissection(void)
+init_dissection(const char* app_env_var_prefix)
 {
 	/*
 	 * Reinitialize resolution information. Don't leak host entries from
 	 * one file to another (e.g. embarrassing-host-name.example.com from
 	 * file1.pcapng into a name resolution block in file2.pcapng).
 	 */
-	host_name_lookup_reset();
+	host_name_lookup_reset(app_env_var_prefix);
 
 	wmem_enter_file_scope();
 
@@ -629,7 +631,7 @@ dissect_record(epan_dissect_t *edt, int file_type_subtype, wtap_rec *rec,
 
 	case REC_TYPE_FT_SPECIFIC_EVENT:
 	case REC_TYPE_FT_SPECIFIC_REPORT:
-		edt->pi.pseudo_header = NULL;
+		edt->pi.pseudo_header = &rec->rec_header.ft_specific_header.pseudo_header;
 		break;
 
 	case REC_TYPE_SYSCALL:
@@ -676,11 +678,20 @@ dissect_record(epan_dissect_t *edt, int file_type_subtype, wtap_rec *rec,
 	 * XXX - what is pinfo->rel_ts used for?  All times are
 	 * relative to some zero point on the t axis, so why
 	 * is pinfo->rel_ts used instead of pinfo->abs_ts?
+	 *
+	 * XXX - Some records aren't packets, and some, packets or not, don't
+	 * have time stamps. Should pinfo->rel_ts be relative to the first
+	 * frame (or packet record, or record of the time type as the current
+	 * record?) that *has* a time stamp?
 	 */
 	frame_rel_first_frame_time(edt->session, fd, &edt->pi.rel_ts);
 
-	if (rec->ts_rel_cap_valid) {
-		nstime_copy(&edt->pi.rel_cap_ts, &rec->ts_rel_cap);
+	/* pinfo->rel_cap_ts is used by the new Plot dialog, though
+	 * it could probably just use frame_rel_start_time instead.
+	 */
+	nstime_t rel_time;
+	if (frame_rel_start_time(edt->session, fd, &rel_time)) {
+		nstime_copy(&edt->pi.rel_cap_ts, &rel_time);
 		edt->pi.rel_cap_ts_present = true;
 	}
 
@@ -1587,7 +1598,7 @@ void dissector_delete_all(const char *name, dissector_handle_t handle)
 }
 
 static void
-dissector_delete_from_table(gpointer key _U_, gpointer value, gpointer user_data)
+dissector_delete_from_table(void *key _U_, void *value, void *user_data)
 {
 	dissector_table_t sub_dissectors = (dissector_table_t) value;
 	ws_assert (sub_dissectors);
@@ -3101,7 +3112,7 @@ dissector_try_heuristic(heur_dissector_list_t sub_dissectors, tvbuff_t *tvb,
 		if (hdtbl_entry->protocol != NULL) {
 			proto_id = proto_get_id(hdtbl_entry->protocol);
 			/* do NOT change this behavior - wslua uses the protocol short name set here in order
-			   to determine which Lua-based heurisitc dissector to call */
+			   to determine which Lua-based heuristic dissector to call */
 			pinfo->current_proto =
 				proto_get_protocol_short_name(hdtbl_entry->protocol);
 
@@ -4124,7 +4135,7 @@ dissector_dump_dissectors(void)
 	GHashTableIter iter;
 	struct dissector_info *dissectors_info;
 	unsigned num_protocols;
-	gpointer key, value;
+	void *key, *value;
 	unsigned proto_index;
 
 	g_hash_table_iter_init(&iter, registered_dissectors);
@@ -4150,9 +4161,6 @@ void
 register_postdissector(dissector_handle_t handle)
 {
 	postdissector p;
-
-	if (!postdissectors)
-		postdissectors = g_array_sized_new(false, false, (unsigned)sizeof(postdissector), 1);
 
 	p.handle = handle;
 	p.wanted_hfids = NULL;

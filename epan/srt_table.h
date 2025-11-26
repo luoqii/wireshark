@@ -54,6 +54,10 @@ typedef struct _srt_data_t {
 /** Structure for information about a registered service response table */
 typedef struct register_srt register_srt_t;
 
+/** Initialize the service response time system.
+ */
+extern void srt_table_init(void);
+
 /** Register the service response time table for the srt windows.
  *
  * @param proto_id is the protocol with conversation
@@ -166,6 +170,13 @@ WS_DLL_PUBLIC void srt_table_dissector_init(register_srt_t* srt, GArray* srt_arr
  * @return SRT tap string
  */
 WS_DLL_PUBLIC char* srt_table_get_tap_string(register_srt_t* srt);
+
+/** Helper function to get handler of parameter
+ *
+ * @param srt Registered SRT
+ * @return Parameter function handler for the table
+ */
+WS_DLL_PUBLIC srt_param_handler_cb srt_table_get_param_handler_cb(register_srt_t* srt);
 
 /** Init an srt table data structure.
  *

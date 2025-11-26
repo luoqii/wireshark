@@ -23,7 +23,7 @@
  *
  * Some stuff from:
  *
- * GXSNMP -- An snmp mangament application
+ * GXSNMP -- An snmp management application
  * Copyright (C) 1998 Gregory McLean & Jochen Friedrich
  * Beholder RMON ethernet network monitor,Copyright (C) 1993 DNPAP group
  *
@@ -586,8 +586,8 @@ dissect_snmp_variable_date_and_time(proto_tree *tree, packet_info *pinfo, int hf
 
 /*
  *  dissect_snmp_VarBind
- *  this routine dissects variable bindings, looking for the oid information in our oid reporsitory
- *  to format and add the value adequatelly.
+ *  this routine dissects variable bindings, looking for the oid information in our oid repository
+ *  to format and add the value adequately.
  *
  * The choice to handwrite this code instead of using the asn compiler is to avoid having tons
  * of uses of global variables distributed in very different parts of the code.

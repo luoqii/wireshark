@@ -1123,8 +1123,8 @@ static int dissect_ldap_Filter(bool implicit_tag _U_, tvbuff_t *tvb _U_, int off
 static int
 dissect_ldap_MessageID(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
 
-  offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                                &MessageID);
+  offset = dissect_ber_constrained_integer(implicit_tag, actx, tree, tvb, offset,
+                                                            0U, maxInt, hf_index, &MessageID);
 
 
   ldm_tree = tree;
@@ -1137,8 +1137,8 @@ dissect_ldap_MessageID(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_,
 
 static int
 dissect_ldap_INTEGER_1_127(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-  offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                                NULL);
+  offset = dissect_ber_constrained_integer(implicit_tag, actx, tree, tvb, offset,
+                                                            1U, 127U, hf_index, NULL);
 
   return offset;
 }
@@ -1791,8 +1791,8 @@ dissect_ldap_T_derefAliases(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset
 
 static int
 dissect_ldap_INTEGER_0_maxInt(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-  offset = dissect_ber_integer(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                                NULL);
+  offset = dissect_ber_constrained_integer(implicit_tag, actx, tree, tvb, offset,
+                                                            0U, maxInt, hf_index, NULL);
 
   return offset;
 }
@@ -2284,7 +2284,7 @@ dissect_ldap_AttributeValue(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset
   /* attr_type, should be set before calling this function */
 
   /* extract the value of the octetstring */
-  offset = dissect_ber_octet_string(false, actx, NULL, tvb, offset, hf_index, &next_tvb);
+  offset = dissect_ber_octet_string(false, actx, tree, tvb, offset, -1, &next_tvb);
 
   /* first check if we have a custom attribute type configured */
   if ((hf_id = get_hf_for_header (attr_type)) != NULL)
@@ -3452,8 +3452,8 @@ dissect_ldap_T_state(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, a
 
 static int
 dissect_ldap_SyncUUID(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-  offset = dissect_ber_octet_string(implicit_tag, actx, tree, tvb, offset, hf_index,
-                                       NULL);
+  offset = dissect_ber_constrained_octet_string(implicit_tag, actx, tree, tvb, offset,
+                                                   16, 16, hf_index, NULL);
 
   return offset;
 }
@@ -3735,7 +3735,6 @@ dissect_ldap_payload(tvbuff_t *tvb, packet_info *pinfo,
   unsigned msg_len = 0;
   int messageOffset = 0;
   unsigned headerLength = 0;
-  unsigned length = 0;
   tvbuff_t *msg_tvb = NULL;
   int8_t ber_class;
   bool pc, ind = 0;
@@ -3791,19 +3790,8 @@ one_more_pdu:
      * Construct a tvbuff containing the amount of the payload we have
      * available.  Make its reported length the amount of data in the
      * LDAP message.
-     *
-     * XXX - if reassembly isn't enabled. the subdissector will throw a
-     * BoundsError exception, rather than a ReportedBoundsError exception.
-     * We really want a tvbuff where the length is "length", the reported
-     * length is "plen", and the "if the snapshot length were infinite"
-     * length is the minimum of the reported length of the tvbuff handed
-     * to us and "plen", with a new type of exception thrown if the offset
-     * is within the reported length but beyond that third length, with
-     * that exception getting the "Unreassembled Packet" error.
      */
-    length = length_remaining;
-    if (length > msg_len) length = msg_len;
-    msg_tvb = tvb_new_subset_length_caplen(tvb, offset, length, msg_len);
+    msg_tvb = tvb_new_subset_length(tvb, offset, msg_len);
 
     /*
      * Now dissect the LDAP message.
@@ -3860,7 +3848,6 @@ static void
   int offset = 0;
   conversation_t *conversation;
   bool doing_sasl_security = false;
-  unsigned length_remaining;
   ldap_conv_info_t *ldap_info = NULL;
   proto_item *ldap_item = NULL;
   proto_tree *ldap_tree = NULL;
@@ -3899,7 +3886,7 @@ static void
     }
   }
 
-  length_remaining = tvb_ensure_captured_length_remaining(tvb, offset);
+  tvb_ensure_captured_length_remaining(tvb, offset);
 
   /* It might still be a packet containing a SASL security layer
   * but it's just that we never saw the BIND packet.
@@ -3971,7 +3958,7 @@ static void
   if (doing_sasl_security && tvb_get_uint8(tvb, offset) == 0) {
     proto_tree *sasl_tree;
     tvbuff_t *sasl_tvb;
-    unsigned sasl_len, sasl_msg_len, length;
+    unsigned sasl_len, sasl_msg_len;
     /*
     * Yes.  The frame begins with a 4-byte big-endian length.
     * And we know we have at least 6 bytes
@@ -4001,19 +3988,8 @@ static void
     /*
     * Construct a tvbuff containing the amount of the payload we have
     * available.  Make its reported length the amount of data in the PDU.
-    *
-    * XXX - if reassembly isn't enabled. the subdissector will throw a
-    * BoundsError exception, rather than a ReportedBoundsError exception.
-    * We really want a tvbuff where the length is "length", the reported
-    * length is "plen", and the "if the snapshot length were infinite"
-    * length is the minimum of the reported length of the tvbuff handed
-    * to us and "plen", with a new type of exception thrown if the offset
-    * is within the reported length but beyond that third length, with
-    * that exception getting the "Unreassembled Packet" error.
     */
-    length = length_remaining;
-    if (length > sasl_msg_len) length = sasl_msg_len;
-    sasl_tvb = tvb_new_subset_length_caplen(tvb, offset, length, sasl_msg_len);
+    sasl_tvb = tvb_new_subset_length(tvb, offset, sasl_msg_len);
 
     proto_tree_add_uint(ldap_tree, hf_ldap_sasl_buffer_length, sasl_tvb, 0, 4, sasl_len);
 
@@ -4025,7 +4001,6 @@ static void
       (strcmp(ldap_info->auth_mech, "GSSAPI") == 0))) {
         tvbuff_t *gssapi_tvb = NULL;
         int ver_len;
-        int tmp_length;
         gssapi_encrypt_info_t gssapi_encrypt;
 
         /*
@@ -4036,10 +4011,7 @@ static void
         * the token, from which we compute the offset in the tvbuff at
         * which the plaintext data, i.e. the LDAP message, begins.
         */
-        tmp_length = tvb_reported_length_remaining(sasl_tvb, 4);
-        if ((unsigned)tmp_length > sasl_len)
-          tmp_length = sasl_len;
-        gssapi_tvb = tvb_new_subset_length_caplen(sasl_tvb, 4, tmp_length, sasl_len);
+        gssapi_tvb = tvb_new_subset_length(sasl_tvb, 4, sasl_len);
 
         /* Attempt decryption of the GSSAPI wrapped data if possible */
         memset(&gssapi_encrypt, 0, sizeof(gssapi_encrypt));

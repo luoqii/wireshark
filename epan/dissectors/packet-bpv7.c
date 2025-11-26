@@ -1712,13 +1712,13 @@ static int dissect_bp(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void 
                 && (primary->dst_eid->uri.type != AT_NONE)) {
             // conversation starts in either order
             address *addra, *addrb;
-            if (cmp_address(&(primary->src_nodeid->uri), &(primary->dst_eid->uri)) < 0) {
-                addra = &(primary->src_nodeid->uri);
-                addrb = &(primary->dst_eid->uri);
+            if (cmp_address(&(pinfo->src), &(pinfo->dst)) < 0) {
+                addra = &(pinfo->src);
+                addrb = &(pinfo->dst);
             }
             else {
-                addra = &(primary->dst_eid->uri);
-                addrb = &(primary->src_nodeid->uri);
+                addra = &(pinfo->dst);
+                addrb = &(pinfo->src);
             }
 
             conversation_element_t *conv_el = wmem_alloc_array(pinfo->pool, conversation_element_t, 3);
@@ -2452,7 +2452,7 @@ void proto_register_bpv7(void) {
     expert_module_t *expert = expert_register_protocol(proto_bp);
     expert_register_field_array(expert, expertitems, array_length(expertitems));
 
-    register_dissector("bpv7", dissect_bp, proto_bp);
+    register_dissector_with_description("bpv7", "Bundle Protocol Version 7", dissect_bp, proto_bp);
 
     eid_dissectors = register_dissector_table("bpv7.eid", "BPv7 EID Scheme-Specific Part", proto_bp, FT_UINT32, 0);
     block_dissectors = register_custom_dissector_table("bpv7.block_type", "BPv7 Block", proto_bp, g_int64_hash, g_int64_equal, g_free);
@@ -2473,7 +2473,7 @@ void proto_register_bpv7(void) {
         "bpv7", "bpv7.payload.dtn_serv",
         1, 0, dtn_serv_da_values, NULL, NULL,
         decode_as_default_populate_list, decode_as_default_reset,
-        decode_as_default_change, NULL
+        decode_as_default_change, NULL, NULL, NULL
     };
     register_decode_as(&dtn_serv_da);
 
@@ -2488,7 +2488,7 @@ void proto_register_bpv7(void) {
         "bpv7", "bpv7.payload.ipn_serv",
         1, 0, ipn_serv_da_values, NULL, NULL,
         decode_as_default_populate_list, decode_as_default_reset,
-        decode_as_default_change, NULL
+        decode_as_default_change, NULL, NULL, NULL
     };
     register_decode_as(&ipn_serv_da);
 

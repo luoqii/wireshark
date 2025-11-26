@@ -55,12 +55,6 @@ typedef struct {
     FILE     *pf;
 } write_pref_arg_t;
 
-/**
- * Module used for protocol preferences.
- * With MSVC and a libwireshark.dll, we need a special declaration.
- */
-WS_DLL_PUBLIC module_t *protocols_module;
-
 typedef void (*pref_custom_free_cb) (pref_t* pref);
 typedef void (*pref_custom_reset_cb) (pref_t* pref);
 typedef prefs_set_pref_e (*pref_custom_set_cb) (pref_t* pref, const char* value, unsigned int* changed_flags);
@@ -136,14 +130,6 @@ WS_DLL_PUBLIC
 int prefs_get_type(pref_t *pref);
 
 WS_DLL_PUBLIC uint32_t prefs_get_max_value(pref_t *pref);
-
-/* Bitmask of flags for the effect of a preference in Wireshark */
-#define PREF_EFFECT_DISSECTION        (1u << 0)
-#define PREF_EFFECT_CAPTURE           (1u << 1)
-#define PREF_EFFECT_GUI_LAYOUT        (1u << 2)
-#define PREF_EFFECT_FIELDS            (1u << 3)
-#define PREF_EFFECT_GUI               (1u << 4)
-#define PREF_EFFECT_GUI_COLOR         (1u << 5)
 
 /** Fetch flags that show the effect of the preference
  *
@@ -275,7 +261,7 @@ read_prefs_file(const char *pf_path, FILE *pf, pref_set_pair_cb pref_set_pair_fc
  */
 WS_DLL_PUBLIC
 void
-prefs_read_module(const char *name);
+prefs_read_module(const char *name, const char* app_env_var_prefix);
 
 WS_DLL_PUBLIC
 bool

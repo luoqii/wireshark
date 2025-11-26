@@ -718,6 +718,10 @@ static dissector_table_t rtps_type_name_table;
 #define ENTITYID_TL_SVC_REQ_READER              (0x000300c4)
 #define ENTITYID_TL_SVC_REPLY_WRITER            (0x000301c3)
 #define ENTITYID_TL_SVC_REPLY_READER            (0x000301c4)
+#define ENTITYID_TL_SVC_REQ_SECURE_WRITER       (0xff0300c3)
+#define ENTITYID_TL_SVC_REQ_SECURE_READER       (0xff0300c4)
+#define ENTITYID_TL_SVC_REPLY_SECURE_WRITER     (0xff0301c3)
+#define ENTITYID_TL_SVC_REPLY_SECURE_READER     (0xff0301c4)
 #define ENTITYID_RTI_BUILTIN_PARTICIPANT_BOOTSTRAP_WRITER (0x00010082)
 #define ENTITYID_RTI_BUILTIN_PARTICIPANT_BOOTSTRAP_READER (0x00010087)
 #define ENTITYID_RTI_BUILTIN_PARTICIPANT_CONFIG_WRITER    (0x00010182)
@@ -1067,6 +1071,7 @@ static dissector_table_t rtps_type_name_table;
 #define VENDOR_BUILTIN_ENDPOINT_SET_FLAG_PARTICIPANT_BOOTSTRAP_READER       0x00040000
 
 static int hf_rtps_dissection_boolean;
+static int hf_rtps_dissection_int8;
 static int hf_rtps_dissection_byte;
 static int hf_rtps_dissection_int16;
 static int hf_rtps_dissection_uint16;
@@ -1414,6 +1419,8 @@ static int hf_rtps_type_object_v2_type_flag_is_nested;
 static int hf_rtps_type_object_v2_type_flags;
 static int hf_rtps_type_object_v2_type_name;
 static int hf_rtps_type_object_v2_union_label;
+static int hf_rtps_type_object_v2_unit_name;
+static int hf_rtps_type_object_v2_hash_id;
 static int hf_rtps_xcdr2_delimited_header;
 static int hf_rtps_xcdr2_enhanced_mutable_header;
 static int hf_rtps_xcdr2_length_code;
@@ -3428,7 +3435,7 @@ static rtps_psk_options_t rtps_psk_options = { NULL, 0 };
  * app_id, instance_id, and psk_index. These fields do not require a match if
  * the user leaves them empty or containing only the '*' wildcard character
  * (note that the the psk secret passphrase must always match). Ignoring all the
- * previuos fields will result in an attempt to decode the RTPS message
+ * previous fields will result in an attempt to decode the RTPS message
  * regardless of the GUID or the PSK index.
  */
 UAT_CSTRING_CB_DEF(
@@ -4075,7 +4082,7 @@ static gcry_error_t rtps_util_decrypt_data(
 
 /**
  * @brief Generates the session key and uses it to decrypt the secure payload.
- * The decripted payload is stored in an allocated buffer using the allocator
+ * The decrypted payload is stored in an allocated buffer using the allocator
  * passed as parameter.
  */
 static uint8_t *rtps_decrypt_secure_payload(
@@ -4149,8 +4156,8 @@ static void rtps_strlcpy(char *dest, const char *src, size_t dest_size)
 
 static int check_offset_addition(int offset, uint32_t value, proto_tree *tree, packet_info *pinfo, tvbuff_t *tvb)
 {
-    int new_offset = offset + (int)value;
-    if (new_offset < offset) {
+    int new_offset;
+    if (ckd_add(&new_offset, offset, value)) {
         proto_tree_add_expert_format(tree, pinfo, &ei_rtps_value_too_large, tvb, 0, 0, "Offset value too large: %u", value);
         THROW(ReportedBoundsError);
     }
@@ -4599,7 +4606,7 @@ static int dissect_user_defined(proto_tree *tree, tvbuff_t * tvb, packet_info *p
             }
 
             /* If reached the limit and there are remaining elements we need to show the message and
-             * assign the length of the ramining elements to this */
+             * assign the length of the remaining elements to this */
             if (enable_max_array_data_type_elements && show && !show_current_element) {
                 proto_tree_add_subtree_format(
                     aux_tree,
@@ -4628,8 +4635,8 @@ static int dissect_user_defined(proto_tree *tree, tvbuff_t * tvb, packet_info *p
             ALIGN_ZERO(offset, length, offset_zero);
             unsigned seq_size =  tvb_get_uint32(tvb, offset, encoding);
 
-            /* In case this sequence is not shown and is a native type. We get the sze length for calculating
-             * the whole seuqnece length */
+            /* In case this sequence is not shown and is a native type. We get the element size for calculating
+             * the whole sequence length */
             if (info != NULL) {
                 sequence_kind_length = get_native_type_cdr_length(info->base_type_id);
             }
@@ -4671,7 +4678,7 @@ static int dissect_user_defined(proto_tree *tree, tvbuff_t * tvb, packet_info *p
                          info->base_type_id, temp_buff, EXTENSIBILITY_INVALID, offset_zero, 0, 0, show_current_element);
             }
             /* If reached the limit and there are remaining elements we need to show the message and
-             * assign the length of the ramining elements to this */
+             * assign the length of the remaining elements to this */
             if (enable_max_array_data_type_elements && show && !show_current_element) {
                 proto_tree_add_subtree_format(
                     aux_tree,
@@ -4810,7 +4817,7 @@ static int dissect_user_defined(proto_tree *tree, tvbuff_t * tvb, packet_info *p
                 num_elements = info->num_elements;
               }
               /* If reached the limit and there are remaining elements we need to show the message and
-               * assign the length of the ramining elements to this */
+               * assign the length of the remaining elements to this */
               if (enable_max_array_data_type_elements && show && !show_current_element) {
                 proto_tree_add_subtree_format(
                   aux_tree,
@@ -6385,7 +6392,7 @@ static int rtps_util_add_typecode(proto_tree *tree, tvbuff_t *tvb, packet_info *
      *          <type_code_length>
      *
      * <kind> ::= long (0=TK_NULL, 1=TK_SHORT...)
-     * <type_code_length> ::= unsugned short
+     * <type_code_length> ::= unsigned short
      *
      */
   switch(tk_id) {
@@ -7564,9 +7571,9 @@ static int rtps_util_add_xcdr2_delimited_header(proto_tree* tree, tvbuff_t* tvb,
  * @brief Dissect an XCDR2 enhanced mutable header (EMHEADER)
  *
  * This function handles the dissection of an XCDR2 enhanced mutable header
- * following the OMG XTypes 1.3 specification. It processes the header fields
+ * following the OMG XTypes 1.3 specification. It processes the header fields,
  * including the EMHeader value, must understand flag, length code, and member ID.
- * For length codes greater than 3, it also processes the nextint field which
+ * For length codes greater than 3, it also processes the NEXTINT field which
  * contains additional information.
  *
  * @param tree Protocol tree to add the enhanced mutable header elements to
@@ -7582,7 +7589,7 @@ static int rtps_util_add_xcdr2_enhanced_mutable_header(proto_tree* tree,
    * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    * |                           member ID                     |LC |M|
    * +---------------+---------------+---------------+---------------+
-   * |                            nextint                            |
+   * |                            NEXTINT                            |
    * +---------------+---------------+---------------+---------------+
    * M = Must Understand bit
    * LC = Length Code (3 bits)
@@ -7600,14 +7607,32 @@ static int rtps_util_add_xcdr2_enhanced_mutable_header(proto_tree* tree,
 
   offset += 4;
 
+  /*
+   * LC 0..3: no NEXTINT; LC 4..7: NEXTINT follows; LC 4 adds an extra 32-bit
+   * length; for LC 5..7 the NEXTINT value is reused as the payload’s leading length.
+   */
   const uint32_t length_code = (header & 0x70000000) >> 28;
-  if (length_code > 3)
+  if (length_code <= 3)
   {
+    return offset;
+  }
+
+  if (enable_debug_info)
+  {
+    /* NEXTINT */
+    proto_tree_add_item(tree, hf_rtps_xcdr2_nextint, tvb, offset, 4,
+      ENC_LITTLE_ENDIAN);
+  }
+  offset += 4;
+
+  if (length_code == 4)
+  {
+    /* LC == 4 has an additional 32-bit length after NEXTINT */
     if (enable_debug_info)
     {
-      /* nextint */
-      proto_tree_add_item(tree, hf_rtps_xcdr2_nextint, tvb, offset, 4,
-        ENC_LITTLE_ENDIAN);
+      const uint32_t len4 = tvb_get_uint32(tvb, offset, ENC_LITTLE_ENDIAN);
+      proto_tree_add_uint_format_value(tree, hf_rtps_xcdr2_nextint, tvb, offset, 4,
+        len4, "length (LC=4): %u", len4);
     }
     offset += 4;
   }
@@ -8027,6 +8052,229 @@ static int rtps_util_add_type_object_v2_alias(proto_tree *tree,
   return offset;
 }
 
+/* Helper function to dissect an AnnotationParameterValue */
+static int rtps_util_dissect_annotation_parameter_value(
+  proto_tree* tree,
+  tvbuff_t* tvb,
+  int offset,
+  const char* label_prefix)
+{
+  const uint8_t typekind_discriminator = tvb_get_uint8(tvb, offset);
+  offset++;
+
+  switch (typekind_discriminator)
+  {
+  case TK_BOOLEAN:
+    {
+      const uint8_t boolean_value = tvb_get_uint8(tvb, offset);
+      proto_tree_add_boolean_format_value(tree, hf_rtps_dissection_boolean,
+        tvb, offset, sizeof(uint8_t), boolean_value, "%s: %u", label_prefix,
+        boolean_value);
+      offset += sizeof(uint8_t);
+      break;
+    }
+  case TK_INT8:
+    {
+      const int8_t int8_value = tvb_get_int8(tvb, offset);
+      proto_tree_add_int_format(tree, hf_rtps_dissection_int8,
+        tvb, offset, sizeof(int8_t), int8_value, "%s: %d", label_prefix,
+        int8_value);
+      offset += sizeof(int8_t);
+      break;
+    }
+  case TK_BYTE:
+  case TK_UINT8:
+    {
+      const uint8_t uint8_value = tvb_get_uint8(tvb, offset);
+      proto_tree_add_uint_format(tree, hf_rtps_dissection_byte,
+        tvb, offset, sizeof(uint8_t), uint8_value, "%s: %u", label_prefix,
+        uint8_value);
+      offset += sizeof(uint8_t);
+      break;
+    }
+  case TK_INT16:
+    {
+      SHORT_ALIGN(offset);
+      const int16_t int16_value = tvb_get_int16(tvb, offset, ENC_LITTLE_ENDIAN);
+      proto_tree_add_int_format(tree, hf_rtps_dissection_int16,
+        tvb, offset, sizeof(int16_t), int16_value, "%s: %d", label_prefix,
+        int16_value);
+      offset += sizeof(int16_t);
+      break;
+    }
+  case TK_UINT16:
+    {
+      SHORT_ALIGN(offset);
+      const uint16_t uint16_value = tvb_get_uint16(tvb, offset,
+        ENC_LITTLE_ENDIAN);
+      proto_tree_add_uint_format(tree, hf_rtps_dissection_uint16,
+        tvb, offset, sizeof(uint16_t), uint16_value, "%s: %u", label_prefix,
+        uint16_value);
+      offset += sizeof(uint16_t);
+      break;
+    }
+  case TK_INT32:
+    {
+      LONG_ALIGN(offset);
+      const int32_t int32_value = tvb_get_int32(tvb, offset, ENC_LITTLE_ENDIAN);
+      proto_tree_add_int_format(tree, hf_rtps_dissection_int32,
+        tvb, offset, sizeof(int32_t), int32_value, "%s: %d", label_prefix,
+        int32_value);
+      offset += sizeof(int32_t);
+      break;
+    }
+  case TK_UINT32:
+    {
+      LONG_ALIGN(offset);
+      const uint32_t uint32_value = tvb_get_uint32(tvb, offset,
+        ENC_LITTLE_ENDIAN);
+      proto_tree_add_uint_format(tree, hf_rtps_dissection_uint32,
+        tvb, offset, sizeof(uint32_t), uint32_value, "%s: %u", label_prefix,
+        uint32_value);
+      offset += sizeof(uint32_t);
+      break;
+    }
+  case TK_INT64:
+    {
+      LONG_ALIGN(offset);
+      const int64_t int64_value = tvb_get_int64(tvb, offset, ENC_LITTLE_ENDIAN);
+      proto_tree_add_int64_format(tree, hf_rtps_dissection_int64,
+        tvb, offset, sizeof(int64_t), int64_value, "%s: %" PRId64, label_prefix,
+        int64_value);
+      offset += sizeof(int64_t);
+      break;
+    }
+  case TK_UINT64:
+    {
+      LONG_ALIGN(offset);
+      const uint64_t uint64_value = tvb_get_uint64(tvb, offset,
+        ENC_LITTLE_ENDIAN);
+      proto_tree_add_uint64_format(tree, hf_rtps_dissection_uint64,
+        tvb, offset, sizeof(uint64_t), uint64_value, "%s: %" PRIu64, label_prefix,
+        uint64_value);
+      offset += sizeof(uint64_t);
+      break;
+    }
+  case TK_FLOAT32:
+    {
+      LONG_ALIGN(offset);
+      const float float32_value = tvb_get_ieee_float(tvb, offset,
+        ENC_LITTLE_ENDIAN);
+      proto_tree_add_float_format(tree, hf_rtps_dissection_float,
+        tvb, offset, sizeof(float), float32_value, "%s: %f", label_prefix,
+        float32_value);
+      offset += sizeof(float);
+      break;
+    }
+  case TK_FLOAT64:
+    {
+      LONG_ALIGN(offset);
+      const double float64_value = tvb_get_ieee_double(tvb, offset,
+        ENC_LITTLE_ENDIAN);
+      proto_tree_add_double_format(tree, hf_rtps_dissection_double,
+        tvb, offset, sizeof(double), float64_value, "%s: %f", label_prefix,
+        float64_value);
+      offset += sizeof(double);
+      break;
+    }
+  default:
+    proto_tree_add_item(tree, hf_rtps_type_extended, tvb, offset, 0, ENC_NA);
+    break;
+  }
+
+  return offset;
+}
+
+/* Helper function to dissect optional AnnotationParameterValue */
+static int rtps_util_dissect_optional_annotation_parameter_value(
+  proto_tree* tree,
+  tvbuff_t* tvb,
+  int offset,
+  const char* label_prefix)
+{
+  uint8_t has_optional_value = tvb_get_uint8(tvb, offset);
+  offset++;
+
+  if (has_optional_value)
+  {
+    offset = rtps_util_dissect_annotation_parameter_value(tree, tvb, offset,
+      label_prefix);
+  }
+
+  return offset;
+}
+
+/* Helper function to dissect optional string */
+static int rtps_util_dissect_optional_string(
+  proto_tree* tree,
+  tvbuff_t* tvb,
+  int offset,
+  int hf_field)
+{
+  uint8_t has_optional_value = tvb_get_uint8(tvb, offset);
+  offset++;
+
+  if (has_optional_value)
+  {
+    offset = rtps_util_add_string_no_align(tree, tvb, offset, hf_field,
+      ENC_LITTLE_ENDIAN);
+  }
+
+  return offset;
+}
+
+/* Main function to dissect AppliedBuiltinMemberAnnotations */
+static int rtps_util_dissect_applied_builtin_member_annotations(
+  proto_tree* member_item_tree,
+  tvbuff_t* tvb,
+  int offset)
+{
+  /* dheader is not optional */
+  LONG_ALIGN(offset);
+
+  /*
+   * Peek object size before consuming the header (assumed LE here; consider
+   * using encapsulation endianness)
+   */
+  const uint32_t objectSize = tvb_get_uint32(tvb, offset, ENC_LITTLE_ENDIAN);
+
+  /*
+   * Consume the XCDR2 delimited header, which should also account for the size
+   * in the buffer
+   */
+  offset = rtps_util_add_xcdr2_delimited_header(member_item_tree, tvb, offset);
+
+  /* Store initial offset for object size calculation after dheader */
+  const int initial_offset = offset;
+  const int64_t end_of_object = (int64_t)initial_offset + (int64_t)objectSize;
+
+  /* Optional unit string */
+  offset = rtps_util_dissect_optional_string(member_item_tree, tvb, offset,
+    hf_rtps_type_object_v2_unit_name);
+
+  /* Optional min AnnotationParameterValue */
+  offset = rtps_util_dissect_optional_annotation_parameter_value(
+    member_item_tree, tvb, offset, "Min");
+
+  /* Optional max AnnotationParameterValue */
+  offset = rtps_util_dissect_optional_annotation_parameter_value(
+    member_item_tree, tvb, offset, "Max");
+
+  /* Optional hash_id string */
+  offset = rtps_util_dissect_optional_string(member_item_tree, tvb, offset,
+    hf_rtps_type_object_v2_hash_id);
+
+  /* If we have not yet read all the object, there must be a default parameter */
+  if ((int64_t)offset < end_of_object)
+  {
+    /* Optional default AnnotationParameterValue, RTI extension */
+    offset = rtps_util_dissect_optional_annotation_parameter_value(
+      member_item_tree, tvb, offset, "Default");
+  }
+
+  return offset;
+}
+
 /**
  * @brief Adds a CompleteMemberDetail or MinimalMemberDetail to the protocol tree.
  *
@@ -8054,7 +8302,7 @@ static int rtps_util_add_member_detail(proto_tree* member_item_tree,
      * |end of member name (no padding)|has builtin ann|has custom ann |
      * +---------------+---------------+---------------+---------------+
      *
-     * assumes that optional annotations are not present
+     * this diagram does not show optional annotations are could be present
      *
      * IDL
      *    @extensibility(FINAL) @nested @no_sequence
@@ -8070,17 +8318,32 @@ static int rtps_util_add_member_detail(proto_tree* member_item_tree,
     offset = rtps_util_add_string_no_align(member_item_tree, tvb, offset,
       hf_rtps_type_object_v2_member_name, ENC_LITTLE_ENDIAN);
 
-    /* annotation built-in flags */
+    /* is there a built-in annotation? */
+    uint8_t has_optional_value = tvb_get_uint8(tvb, offset);
     proto_tree_add_item(member_item_tree,
       hf_rtps_type_object_v2_has_ann_builtin, tvb,
       offset, 1, ENC_NA);
     offset++;
 
-    /* annotation custom flags */
+    if (has_optional_value)
+    {
+      /* there is a built-in annotation */
+      offset = rtps_util_dissect_applied_builtin_member_annotations(
+        member_item_tree, tvb, offset);
+    }
+
+    /* is there a custom AppliedAnnotationSeq? */
+    has_optional_value = tvb_get_uint8(tvb, offset);
     proto_tree_add_item(member_item_tree, hf_rtps_type_object_v2_has_ann_custom,
       tvb,
       offset, 1, ENC_NA);
     offset++;
+
+    if (has_optional_value)
+    {
+      /* there is a custom AppliedAnnotationSeq */
+      offset = rtps_util_add_xcdr2_delimited_header(member_item_tree, tvb, offset);
+    }
   }
   else
   {
@@ -8625,6 +8888,8 @@ static int rtps_util_add_type_id_w_size(proto_tree* tree, packet_info* pinfo,
 {
   const int initial_offset = offset;
 
+  offset = rtps_util_add_xcdr2_delimited_header(tree, tvb, offset);
+
   /* TypeIdentifier type_id */
   offset = rtps_util_add_type_id_v2(tree, pinfo, tvb, offset, false);
 
@@ -8709,8 +8974,8 @@ static int rtps_util_add_type_id_w_dependencies(proto_tree* tree,
  *
  * This function handles the dissection of a TypeIdentifierWithDependencies structure
  * with XCDR2 serialization headers following the OMG XTypes 1.3 specification.
- * It processes the XCDR2 enhanced mutable header, followed by an XCDR2 delimited
- * header, and then calls rtps_util_add_type_id_w_dependencies() to process the
+ * It processes the XCDR2 enhanced mutable header, and then calls
+ * rtps_util_add_type_id_w_dependencies() to process the
  * TypeIdentifierWithDependencies data itself.
  *
  * @param tree Protocol tree to add the delimited TypeIdentifierWithDependencies elements to
@@ -8722,18 +8987,12 @@ static int rtps_util_add_type_id_w_dependencies(proto_tree* tree,
 static int rtps_util_add_delimited_type_id_w_dependencies(proto_tree* tree,
   packet_info* pinfo, tvbuff_t* tvb, int offset)
 {
-  const int initial_offset = offset;
-
   /* Enhanced Mutable Header */
   offset = rtps_util_add_xcdr2_enhanced_mutable_header(tree, tvb, offset);
-
-  /* Delimited header */
-  offset = rtps_util_add_xcdr2_delimited_header(tree, tvb, offset);
 
   /* Process the TypeIdentifierWithDependencies */
   offset = rtps_util_add_type_id_w_dependencies(tree, pinfo, tvb, offset);
 
-  proto_item_set_len(tree, offset - initial_offset);
   return offset;
 }
 
@@ -8837,7 +9096,8 @@ static int rtps_util_dissect_get_type_dependencies_out(proto_tree* tree,
   {
     proto_item* dep_seq_item;
     proto_tree* deps_seq_tree = proto_tree_add_subtree_format(tree, tvb, offset,
-      -1, ett_rtps_type_lookup_deps_seq, &dep_seq_item, "Dependent Type IDs [%u]",
+      -1, ett_rtps_type_lookup_deps_seq, &dep_seq_item,
+      "Dependent Type IDs [%u]",
       dependent_typeids_seq_len);
     const int initial_sequence_offset = offset;
 
@@ -8845,10 +9105,8 @@ static int rtps_util_dissect_get_type_dependencies_out(proto_tree* tree,
     {
       proto_item* dep_item;
       proto_tree* dep_tree = proto_tree_add_subtree_format(deps_seq_tree, tvb,
-        offset, -1, ett_rtps_type_dep, &dep_item, "Dependent Type ID [%d]", i);
+        offset, -1, ett_rtps_type_dep, &dep_item, "Dependent Type ID [%u]", i);
       const int initial_dep_offset = offset;
-
-      offset = rtps_util_add_xcdr2_delimited_header(dep_tree, tvb, offset);
 
       offset = rtps_util_add_type_id_w_size(dep_tree, pinfo, tvb, offset);
       proto_item_set_len(dep_item, offset - initial_dep_offset);
@@ -8982,7 +9240,7 @@ static int rtps_util_dissect_get_types_out(proto_tree* tree, packet_info* pinfo,
  * @return The new offset after parsing the request ID
  */
 static int rtps_util_add_type_lookup_request_id(proto_tree* tree, packet_info* pinfo, tvbuff_t* tvb,
-  int offset)
+  int offset, uint16_t encapsulation_id)
 {
   /*
    * 0...2...........7...............15.............23...............31
@@ -9009,6 +9267,14 @@ static int rtps_util_add_type_lookup_request_id(proto_tree* tree, packet_info* p
     ett_rtps_entity, "TypeLookup Writer", NULL);
   offset += 4;
 
+  if (encapsulation_id == ENCAPSULATION_D_CDR2_LE)
+  {
+    /*
+     * since sequence number is appendable, there will be a dheader if we are
+     * using delimited CDR2
+     */
+    offset = rtps_util_add_xcdr2_delimited_header(tree, tvb, offset);
+  }
   /* request id - sequence number */
   rtps_util_add_seq_number(tree, tvb, offset, ENC_LITTLE_ENDIAN,
     "sequenceNumber");
@@ -9035,7 +9301,7 @@ static int rtps_util_add_type_lookup_request_id(proto_tree* tree, packet_info* p
  * @param offset The current offset in the tvb
  */
 static void rtps_util_dissect_type_lookup_reply(proto_tree* tree,
-  packet_info* pinfo, tvbuff_t* tvb, int offset)
+  packet_info* pinfo, tvbuff_t* tvb, int offset, uint16_t encapsulation_id)
 {
   proto_item* type_lookup_reply_item;
   proto_tree* type_lookup_reply_tree = proto_tree_add_subtree(tree, tvb,
@@ -9054,7 +9320,7 @@ static void rtps_util_dissect_type_lookup_reply(proto_tree* tree,
   proto_tree* type_lookup_request_id_tree = proto_tree_add_subtree(
     type_lookup_reply_header_tree, tvb, offset, -1, ett_rtps_type_lookup_request_id,
     &type_lookup_request_id_item, "Related Request ID");
-  offset = rtps_util_add_type_lookup_request_id(type_lookup_request_id_tree, pinfo, tvb, offset);
+  offset = rtps_util_add_type_lookup_request_id(type_lookup_request_id_tree, pinfo, tvb, offset, encapsulation_id);
   proto_item_set_len(type_lookup_request_id_item, offset - initial_offset);
 
   /* reply header - remote exception code */
@@ -9121,7 +9387,7 @@ static void rtps_util_dissect_type_lookup_reply(proto_tree* tree,
  * @param offset The current offset in the tvb
  */
 static void rtps_util_dissect_type_lookup_request(proto_tree* tree,
-  packet_info* pinfo, tvbuff_t* tvb, int offset)
+  packet_info* pinfo, tvbuff_t* tvb, int offset, uint16_t encapsulation_id)
 {
   proto_item* type_lookup_request_item;
   proto_tree* type_lookup_request_tree = proto_tree_add_subtree(tree,
@@ -9142,7 +9408,7 @@ static void rtps_util_dissect_type_lookup_request(proto_tree* tree,
     type_lookup_request_header_tree, tvb, offset, -1,
     ett_rtps_type_lookup_request_id, &type_lookup_request_id_item,
     "Request ID");
-  offset = rtps_util_add_type_lookup_request_id(type_lookup_request_id_tree, pinfo, tvb, offset);
+  offset = rtps_util_add_type_lookup_request_id(type_lookup_request_id_tree, pinfo, tvb, offset, encapsulation_id);
   proto_item_set_len(type_lookup_request_id_item, offset - initial_offset);
 
   /* request header - instance name */
@@ -9651,7 +9917,7 @@ static type_mapping * rtps_util_get_topic_info(endpoint_guid * guid) {
   if (guid) {
     unsigned entity_id_low = 0xFF & guid->entity_id;
     /* If the entity guid low is ENTITYID_NORMAL_META_GROUP_READER or ENTITYID_NORMAL_META_GROUP_WRITER then
-     * is a builtin endpoint that uses the type InstaneStateResponseData. The type_mapping for this type is not
+     * is a builtin endpoint that uses the type InstanceStateResponseData. The type_mapping for this type is not
      * available through discovery. It is defined by code in
      * initialize_instance_state_data_response_dissection_info function.
      */
@@ -9729,7 +9995,7 @@ static const char* rtps_util_add_topic_info(proto_tree *tree, packet_info* pinfo
  * @param[in] size in bytes from the initial offset to the end of the serialized data
  * @param[in] compressed_size size in bytes of the compressed chunk in the tvb.
  * @param[out] True if it tries to uncompress the data. In environment where Zlib is not available this will be false. This is used for
- *   distinguis when the data is not decompressed because Zlib is not available (not warning) and cases where it is but fails (warning).
+ *   distinguish when the data is not decompressed because Zlib is not available (not warning) and cases where it is but fails (warning).
  *
  * @return The uncompressed data on a new TVB if everything goes fine. Otherwise NULL
  */
@@ -9743,7 +10009,7 @@ tvbuff_t *rtps_util_get_uncompressed_tvb_zlib(
 #if defined(HAVE_ZLIB) || defined(HAVE_ZLIBNG)
     /* If ZLIB is available always try to decompress. */
     *tried_to_decompress = true;
-    uncompressed_tvb = tvb_new_subset_length_caplen(tvb, offset, compressed_size, -1);
+    uncompressed_tvb = tvb_new_subset_length(tvb, offset, compressed_size);
     uncompressed_tvb = tvb_child_uncompress_zlib(uncompressed_tvb, uncompressed_tvb, 0, compressed_size);
 #else
     *tried_to_decompress = false;
@@ -9764,7 +10030,7 @@ tvbuff_t *rtps_util_get_uncompressed_tvb_zlib(
  *  C = 0b000 to indicate no compression
 */
 
-/* Dissects the encapsultaion options
+/* Dissects the encapsulation options
 *
 * @param[in] tree
 * @param[in] packet info.
@@ -12397,7 +12663,7 @@ static bool dissect_parameter_sequence_v2(proto_tree *rtps_parameter_tree, packe
      * only applies to an end coherent set sample.
      * Since there are different ways to finish a coherent set it is necessary
      * to store information about the available coherent sets. this PID requires
-     * set the corrresponding coherence set as "is_set".
+     * set the corresponding coherence set as "is_set".
      */
      /* 0...2...........7...............15.............23...............31
      * +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -12840,19 +13106,28 @@ static void dissect_APP_ACK_CONF(tvbuff_t *tvb,
 static void dissect_parameterized_serialized_data(proto_tree *tree, tvbuff_t *tvb,
                        int offset_input, int size, const unsigned encoding)
 {
-  uint32_t member_id, member_length;
-  proto_item * ti;
-  proto_tree * data_tree, * member_tree;
+  proto_item* ti;
+  proto_tree* member_tree;
   int offset = offset_input;
   int deserialized_size = 0;
-  data_tree = proto_tree_add_subtree_format(tree, tvb, offset, -1,
-          ett_rtps_serialized_data, &ti, "serializedData");
+  proto_tree* data_tree = proto_tree_add_subtree_format(tree, tvb, offset, -1,
+    ett_rtps_serialized_data, &ti, "serializedData");
   while (deserialized_size < size) {
-    ALIGN_ZERO(offset, 2, offset_input);
-    member_id = tvb_get_uint16(tvb, offset, encoding);
-    member_length = tvb_get_uint16(tvb, offset+2, encoding);
+    /* PL_CDR/ParameterList style fields are 4-byte aligned relative to the
+     * encapsulation start. */
+    ALIGN_ZERO(offset, 4, offset_input);
+
+    /* Read the 4-byte short header candidate */
+    uint32_t member_id = tvb_get_uint16(tvb, offset, encoding);
+    uint32_t member_length = tvb_get_uint16(tvb, offset + 2, encoding);
 
     if ((member_id & PID_EXTENDED) == PID_EXTENDED) {
+      /* Extended 12-byte header:
+       * [0..1]: PID_EXTENDED
+       * [2..3]: length of extended payload in bytes (should be 8 for [ext_id(4) + ext_len(4)])
+       * [4..7]: extended member id (uint32)
+       * [8..11]: extended member length (uint32)
+       */
       member_id = tvb_get_uint32(tvb, offset+4, encoding);
       member_length = tvb_get_uint32(tvb, offset+8, encoding);
       member_tree = proto_tree_add_subtree_format(data_tree, tvb, offset, member_length + 12,
@@ -12925,8 +13200,8 @@ static void dissect_parameterized_serialized_data(proto_tree *tree, tvbuff_t *tv
  *  could be used to define a custom compressor plugin for matching purposes.
  */
 
- /* Dissects the encapsultaion header and uncompress the serialized
-  *  data if is is compressed and it is compressed in using Zlib.
+ /* Dissects the encapsulation header and uncompress the serialized
+  *  data if it is compressed using Zlib.
   *
   * @param[in] tree
   * @param[in] packet info.
@@ -12934,17 +13209,17 @@ static void dissect_parameterized_serialized_data(proto_tree *tree, tvbuff_t *tv
   * @param[in] offset offset at the beginning of the encapsulation id.
   * @param[in] size in bytes from the initial offset to the end of the serialized data
   * @param[in] uncompress_if_compressed true for uncompressing if the data should be uncompressed.
-  * @param[out] encapsulation_id_out If not null it will contain the encapsultaion_id
+  * @param[out] encapsulation_id_out If not null it will contain the encapsulation_id
   * @param[out] compression_option_out If not null it will contain the compression option
   * @param[out] padding_bytes_out If not null it will contain the padding bytes
   * @param[out] extended_compression_options_out If not null it will contain the extended compression options
   * @param[out] extended_header_bits_out If not null it will contain the extended header bits
-  * @param[out] is_compressed_out If not null it will indicate if the serielized data is compressed
-  * @param[out] uncompressed_ok_out If not null it will indicate if the serizlized data has been successfully uncompressed
-  * @param[out] uncompressed_tvb_out If not null it will contain the uncompressed tvb pointer. If the seriaized data is not uncompressed it will return NULL.
+  * @param[out] is_compressed_out If not null it will indicate if the serialized data is compressed
+  * @param[out] uncompressed_ok_out If not null it will indicate if the serialized data has been successfully uncompressed
+  * @param[out] uncompressed_tvb_out If not null it will contain the uncompressed tvb pointer. If the serialized data is not uncompressed it will return NULL.
   * @param[out] compressed_data_tree_out If not null it will contain the subtree of the uncompressed data.
   *
-  * @return the offset after the at the beginining of the serialized data
+  * @return the offset of the beginning of the serialized data
   * @note All output parameters are optional.
   */
 static
@@ -13110,7 +13385,7 @@ int rtps_prepare_encapsulated_data(
  * type specified the type of endianness of the payload.
  *
  *  Fragmentation : Options only appear on first fragment
- * Serieaized data might be compressed or uncompressed. Depending on that the
+ * Serialized data might be compressed or uncompressed. Depending on that the
  * header contains more elements. This is indicated in the encapsulation
  * options where:
  *
@@ -13227,7 +13502,7 @@ static void dissect_serialized_data(proto_tree *tree, packet_info *pinfo, tvbuff
      * - uncompressed_tvb contains the uncompressed tvb or the packet tvb
      * - compressed_data_tree points to the tree of the uncompressed data
      *       or the rtps_parameter_sequence_tree.
-     * - offset points to 0 of the uncompressed tvb or the offseet of the packet
+     * - offset points to 0 of the uncompressed tvb or the offset of the packet
      *       tvb if it is not decompressed.
      * Only try to dissect the user data if it is not compressed or it is compressed and correctly uncompressed */
     if (is_compressed == uncompressed_ok) {
@@ -13269,10 +13544,40 @@ static void dissect_serialized_data(proto_tree *tree, packet_info *pinfo, tvbuff
         case ENCAPSULATION_CDR2_LE:
           if (guid != NULL && guid->entity_id == ENTITYID_TL_SVC_REQ_WRITER) {
             rtps_util_dissect_type_lookup_request(dissected_data_holder_tree,
-              pinfo, tvb, offset);
+              pinfo, tvb, offset, encapsulation_id);
           } else if (guid != NULL && guid->entity_id == ENTITYID_TL_SVC_REPLY_WRITER) {
             rtps_util_dissect_type_lookup_reply(dissected_data_holder_tree,
-              pinfo, tvb, offset);
+              pinfo, tvb, offset, encapsulation_id);
+          } else {
+            proto_tree_add_item(dissected_data_holder_tree,
+              hf_rtps_data_serialize_data, tvb, offset, size, ENC_NA);
+          }
+          break;
+        case ENCAPSULATION_D_CDR2_LE:
+          if (guid != NULL && guid->entity_id == ENTITYID_TL_SVC_REQ_WRITER) {
+            /*
+             * since the request, request header, sample identity, and GUID
+             * are appendable, there will be a dheader for each one if we are
+             * using delimited CDR2
+             */
+            offset = rtps_util_add_xcdr2_delimited_header(dissected_data_holder_tree, tvb, offset);
+            offset = rtps_util_add_xcdr2_delimited_header(dissected_data_holder_tree, tvb, offset);
+            offset = rtps_util_add_xcdr2_delimited_header(dissected_data_holder_tree, tvb, offset);
+            offset = rtps_util_add_xcdr2_delimited_header(dissected_data_holder_tree, tvb, offset);
+            rtps_util_dissect_type_lookup_request(dissected_data_holder_tree,
+              pinfo, tvb, offset, encapsulation_id);
+          } else if (guid != NULL && guid->entity_id == ENTITYID_TL_SVC_REPLY_WRITER) {
+            /*
+             * since the reply, reply header, sample identity, and GUID
+             * are appendable, there will be a dheader for each one if we are
+             * using delimited CDR2
+             */
+            offset = rtps_util_add_xcdr2_delimited_header(dissected_data_holder_tree, tvb, offset);
+            offset = rtps_util_add_xcdr2_delimited_header(dissected_data_holder_tree, tvb, offset);
+            offset = rtps_util_add_xcdr2_delimited_header(dissected_data_holder_tree, tvb, offset);
+            offset = rtps_util_add_xcdr2_delimited_header(dissected_data_holder_tree, tvb, offset);
+            rtps_util_dissect_type_lookup_reply(dissected_data_holder_tree,
+              pinfo, tvb, offset, encapsulation_id);
           } else {
             proto_tree_add_item(dissected_data_holder_tree,
               hf_rtps_data_serialize_data, tvb, offset, size, ENC_NA);
@@ -13908,28 +14213,30 @@ static void dissect_HEADER_EXTENSION(tvbuff_t* tvb, packet_info* pinfo, int offs
         p_get_proto_data(
             pinfo->pool, pinfo, proto_rtps, RTPS_DECRYPTION_INFO_KEY);
 
-    decryption_info->aad_length =
-        20 /* rtps header size. */
-        + 4 /* header extension submessage id, flags, octetsToNextHeader */
-        + header_extension_length;
+    if (decryption_info) {
+      decryption_info->aad_length =
+          20 /* rtps header size. */
+          + 4 /* header extension submessage id, flags, octetsToNextHeader */
+          + header_extension_length;
 
-    additional_authenticated_data = tvb_get_ptr(
-        rtps_root->tvb,
-        rtps_root->tvb_offset,
-        (int) decryption_info->aad_length);
+      additional_authenticated_data = tvb_get_ptr(
+          rtps_root->tvb,
+          rtps_root->tvb_offset,
+          (int) decryption_info->aad_length);
 
-    /* Do a copy of the bytes, so that we can later zero the necessary parts. */
-    decryption_info->additional_authenticated_data_allocated = true;
-    decryption_info->additional_authenticated_data = g_memdup2(
-        additional_authenticated_data,
-        decryption_info->aad_length);
+      /* Do a copy of the bytes, so that we can later zero the necessary parts. */
+      decryption_info->additional_authenticated_data_allocated = true;
+      decryption_info->additional_authenticated_data = g_memdup2(
+          additional_authenticated_data,
+          decryption_info->aad_length);
+    }
   }
 
   if ((flags & RTPS_HE_MESSAGE_LENGTH_FLAG) == RTPS_HE_MESSAGE_LENGTH_FLAG) {
     proto_tree_add_item(tree, hf_rtps_message_length, tvb, offset, 4, encoding);
     offset += 4;
 
-    if (enable_rtps_psk_decryption) {
+    if (enable_rtps_psk_decryption && decryption_info) {
       memset(
           decryption_info->additional_authenticated_data
               + offsetToHeaderExtensionData,
@@ -15867,7 +16174,7 @@ static void dissect_RTPS_DATA_BATCH(tvbuff_t *tvb, packet_info *pinfo, int offse
   int old_offset = offset;
   uint32_t wid;                  /* Writer EntityID */
   uint32_t status_info = 0xffffffff;
-  int32_t octetsToSLEncapsulationId;
+  uint32_t octetsToSLEncapsulationId;
   int32_t sampleListOffset;
   uint16_t encapsulation_id;
   bool try_dissection_from_type_object = false;
@@ -15955,8 +16262,7 @@ static void dissect_RTPS_DATA_BATCH(tvbuff_t *tvb, packet_info *pinfo, int offse
   proto_tree_add_item_ret_uint(tree, hf_rtps_data_batch_octets_to_sl_encap_id, tvb,
                                offset, 4, encoding, &octetsToSLEncapsulationId);
   offset += 4;
-  sampleListOffset = offset + octetsToSLEncapsulationId;
-
+  sampleListOffset = check_offset_addition(offset, octetsToSLEncapsulationId, tree, pinfo, tvb);
 
   /* Sample info list */
   {
@@ -16573,7 +16879,7 @@ static void dissect_RTI_CRC(tvbuff_t *tvb, packet_info *pinfo, int offset, uint8
 }
 
 /**
- * @brief Do a forward search for the begining of the tags section in the
+ * @brief Do a forward search for the beginning of the tags section in the
  * SRTPS POSTFIX/SEC POSTFIX submessage.
  */
 static int rtps_util_look_for_secure_tag(
@@ -16750,7 +17056,7 @@ static void dissect_SECURE(
      * When decrypting with PSKs there is only one tag in the SRTPS POSTFIX/SEC
      * POSTFIX submessage. The offset is the one until the next submessage.
      * The 4 constant is the sum of submessage_id(1 byte)
-     * + flags (1 byte) + octects to the next submessage(2 bytes)
+     * + flags (1 byte) + octets to the next submessage(2 bytes)
      */
     tag_offset = rtps_util_look_for_secure_tag(
         tvb,
@@ -16897,7 +17203,7 @@ static void dissect_SECURE_PREFIX(tvbuff_t *tvb, packet_info *pinfo _U_, int off
      * +                 octet transformation_key_id[4]                +
      * |                                                               |
      * +---------------+---------------+---------------+---------------+
-     * |                          sesion_id                            |
+     * |                          session_id                           |
      * +---------------+---------------+---------------+---------------+
      * |               init_vector_suffix[8]                           |
      * +---------------+---------------+---------------+---------------+
@@ -17496,7 +17802,7 @@ static bool dissect_rtps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, in
     guid.instance_id = tvb_get_ntohl(tvb, offset+16);
 
     /*
-     * If decription is enabled, store the guid prefix to be used later in the
+     * If decryption is enabled, store the guid prefix to be used later in the
      * dissect_SECURE and dissect_SECURE_PREFIX functions.
      */
     if (enable_rtps_psk_decryption) {
@@ -18064,7 +18370,7 @@ static void initialize_instance_state_data_response_dissection_info(builtin_type
    */
 
   /* This type mapping is not available in the "registry" map. It is used in the function
-   * rtps_util_get_topic_info when the endopint GUID determines that the type is InstanceStateDataResponse
+   * rtps_util_get_topic_info when the endpoint GUID determines that the type is InstanceStateDataResponse
    */
   _builtin_types_dissection_data->type_mappings.instance_state_data_response_type_mapping.type_id = InstanceStateDataResponse_type_id;
   _builtin_types_dissection_data->type_mappings.instance_state_data_response_type_mapping.guid.entity_id = ENTITYID_NORMAL_META_GROUP_READER;
@@ -20272,22 +20578,22 @@ void proto_register_rtps(void) {
     { &hf_rtps_type_object_v2_type_name, {
         "Type Name", "rtps.type_object_v2.type_name",
         FT_STRING, BASE_NONE, NULL, 0,
-        "Type Object V2", HFILL }
+        NULL, HFILL }
     },
     { &hf_rtps_type_object_v2_has_ann_builtin, {
         "Has Builtin Annotation", "rtps.type_object_v2.has_ann_builtin",
         FT_BOOLEAN, BASE_NONE, NULL, 0,
-        "Type Object V2", HFILL }
+        NULL, HFILL }
     },
     { &hf_rtps_type_object_v2_ann_builtin, {
         "Builtin Annotation", "rtps.type_object_v2.ann_builtin",
         FT_NONE, BASE_NONE, NULL, 0,
-        "Type Object V2", HFILL }
+        NULL, HFILL }
     },
     { &hf_rtps_type_object_v2_has_ann_custom, {
         "Has Custom Annotation", "rtps.type_object_v2.has_ann_custom",
         FT_BOOLEAN, BASE_NONE, NULL, 0,
-        "Type Object V2", HFILL }
+        NULL, HFILL }
     },
     { &hf_rtps_type_object_v2_member_id, {
         "Member ID", "rtps.type_object_v2.member_id",
@@ -20333,6 +20639,16 @@ void proto_register_rtps(void) {
         "Member Name", "rtps.type_object_v2.member_name",
         FT_STRING, BASE_NONE, NULL, 0,
         "Type Object V2 Member Name", HFILL }
+    },
+    { &hf_rtps_type_object_v2_unit_name, {
+        "Units", "rtps.type_object_v2.unit_name",
+        FT_STRING, BASE_NONE, NULL, 0,
+        NULL, HFILL }
+    },
+    { &hf_rtps_type_object_v2_hash_id, {
+        "hash_id", "rtps.type_object_v2.hash_id",
+        FT_STRING, BASE_NONE, NULL, 0,
+        NULL, HFILL }
     },
     { &hf_rtps_type_object_v2_member_name_hash, {
         "Member Name Hash", "rtps.type_object_v2.member_name_hash",
@@ -21334,6 +21650,11 @@ void proto_register_rtps(void) {
     { &hf_rtps_dissection_byte,
       {"BYTE", "rtps.dissection.byte",
         FT_UINT8, BASE_DEC, NULL, 0, NULL, HFILL }
+    },
+
+    { &hf_rtps_dissection_int8,
+      {"INT8", "rtps.dissection.int8",
+        FT_INT8, BASE_DEC, NULL, 0, NULL, HFILL }
     },
 
     { &hf_rtps_dissection_int16,

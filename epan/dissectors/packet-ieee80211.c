@@ -68,7 +68,6 @@
 #include <epan/expert.h>
 #include <epan/conversation_table.h>
 #include <epan/uat.h>
-#include <epan/eapol_keydes_types.h>
 #include <epan/proto_data.h>
 #include <epan/tfs.h>
 #include <epan/unit_strings.h>
@@ -173,12 +172,12 @@ static bool wlan_key_mic_len_enable;
 static unsigned wlan_key_mic_len;
 
 /* Counter incremented on each (re)association
- * This value will be assiged to each packet's pinfo->srcport/pinfo->destport
+ * This value will be assigned to each packet's pinfo->srcport/pinfo->destport
  * as a way to uniquely make a one to one mapping between conversations and
  * associations
  */
 static uint32_t association_counter;
-/* associatin_counter is assigned in authentication for AKM 24/MLD */
+/* association_counter is assigned in authentication for AKM 24/MLD */
 static uint32_t assoc_counter_in_auth;
 
 /* Treat all Wi-Fi frames as being S1G frames where it is important */
@@ -834,18 +833,18 @@ static const value_string wfa_action_subtype_vals[] = {
 const value_string wfa_subtype_vals[] = {
   { WFA_SUBTYPE_SUBSCRIPTION_REMEDIATION, "Subscription Remediation" },
   { WFA_SUBTYPE_DEAUTHENTICATION_IMMINENT, "Deauthentication Imminent" },
+  { WFA_WNM_SUBTYPE_NON_PREF_CHAN_REPORT, "Non-preferred Channel Report" },
+  { WFA_WNM_SUBTYPE_CELL_DATA_CAPABILITIES, "Cellular Data Capabilities" },
   { WFA_SUBTYPE_P2P, "P2P" },
   { WFA_SUBTYPE_HS20_INDICATION, "Hotspot 2.0 Indication" },
-  { WFA_SUBTYPE_OSEN, "OSU Server-only l2 Encryption Network" },
   { WFA_SUBTYPE_NAN_IE, "NAN" },
+  { WFA_SUBTYPE_OSEN, "OSU Server-only l2 Encryption Network" },
   { WFA_SUBTYPE_MBO_OCE, "Multi Band Operation - Optimized Connectivity Experience"},
+  { WFA_SUBTYPE_WIFI_60G, "60GHz Information Element" },
   { WFA_SUBTYPE_NAN_ACTION, "NAN Action" },
   { WFA_SUBTYPE_DPP, "Device Provisioning Protocol" },
   { WFA_SUBTYPE_IEEE1905_MULTI_AP, "IEEE1905 Multi-AP" },
   { WFA_SUBTYPE_OWE_TRANSITION_MODE, "OWE Transition Mode" },
-  { WFA_SUBTYPE_WIFI_60G, "60GHz Information Element" },
-  { WFA_WNM_SUBTYPE_NON_PREF_CHAN_REPORT, "Non-preferred Channel Report" },
-  { WFA_WNM_SUBTYPE_CELL_DATA_CAPABILITIES, "Cellular Data Capabilities" },
   { WFA_SUBTYPE_TRANSITION_DISABLE_KDE, "Transition Disable KDE" },
   { WFA_SUBTYPE_QOS_MGMT, "QoS Management" },
   { WFA_SUBTYPE_RSN_OVERRIDE, "RSN Element Override" },
@@ -3549,7 +3548,7 @@ static const value_string he_phy_nominal_packet_padding_vals[] = {
 };
 
 // MBO-OCE attributes
-#define MBO_AP_CAPABILTY_INDICATION     1
+#define MBO_AP_CAPABILITY_INDICATION    1
 #define MBO_NON_PREF_CHANNEL_REPORT     2
 #define MBO_CELLULAR_DATA_CAPABILITIES  3
 #define MBO_ASSOCIATION_DISALLOWED      4
@@ -3557,7 +3556,7 @@ static const value_string he_phy_nominal_packet_padding_vals[] = {
 #define MBO_TRANSITION_REASON           6
 #define MBO_TRANSITION_REJECTION_REASON 7
 #define MBO_ASSOCIATION_RETRY_DELAY     8
-#define OCE_CAPABILTY_INDICATION        101
+#define OCE_CAPABILITY_INDICATION       101
 #define OCE_RSSI_ASSOCIATION_REJECTION  102
 #define OCE_REDUCED_WAN_METRICS         103
 #define OCE_RNR_COMPLETENESS            104
@@ -3565,7 +3564,7 @@ static const value_string he_phy_nominal_packet_padding_vals[] = {
 #define OCE_PROBE_SUPPR_SSID            106
 
 static const value_string wfa_mbo_oce_attr_id_vals[] = {
-  { MBO_AP_CAPABILTY_INDICATION, "MBO AP Capability Indication"},
+  { MBO_AP_CAPABILITY_INDICATION, "MBO AP Capability Indication"},
   { MBO_NON_PREF_CHANNEL_REPORT, "Non-preferred Channel Report"},
   { MBO_CELLULAR_DATA_CAPABILITIES, "Cellular Data Capabilities"},
   { MBO_ASSOCIATION_DISALLOWED, "Association Disallowed"},
@@ -3573,7 +3572,7 @@ static const value_string wfa_mbo_oce_attr_id_vals[] = {
   { MBO_TRANSITION_REASON, "Transition Reason Code BTM Request"},
   { MBO_TRANSITION_REJECTION_REASON, "Transition Rejection Reason Code"},
   { MBO_ASSOCIATION_RETRY_DELAY, "Association Retry Delay"},
-  { OCE_CAPABILTY_INDICATION, "OCE Capability Indication" },
+  { OCE_CAPABILITY_INDICATION, "OCE Capability Indication" },
   { OCE_RSSI_ASSOCIATION_REJECTION, "RSSI-based (Re-)Association Rejection" },
   { OCE_REDUCED_WAN_METRICS, "Reduced WAN Metrics" },
   { OCE_RNR_COMPLETENESS, "RNR Completeness" },
@@ -3604,7 +3603,7 @@ static const value_string wfa_mbo_cellular_cap_vals[] = {
   { 0, NULL }
 };
 
-static const value_string wfa_mbo_assoc_dissallow_reason_vals[] = {
+static const value_string wfa_mbo_assoc_disallow_reason_vals[] = {
   { 1, "Unspecified reason"},
   { 2, "Maximum number of associated STAs reached"},
   { 3, "Air interface is overloaded"},
@@ -3731,6 +3730,7 @@ static int proto_wlan;
 static int proto_centrino;
 static int proto_aggregate;
 static bool ieee80211_tvb_invalid;
+static int proto_eapol; /* Externally retrieved */
 
 /* ************************************************************************* */
 /*                Header field info values for FC-field                      */
@@ -6929,6 +6929,10 @@ static int hf_ieee80211_vs_apple_subtype;
 static int hf_ieee80211_vs_apple_length;
 static int hf_ieee80211_vs_apple_data;
 
+static int hf_ieee80211_vs_ubiquiti_type;
+static int hf_ieee80211_vs_ubiquiti_ap_name;
+static int hf_ieee80211_vs_ubiquiti_data;
+
 static int hf_ieee80211_rsn_ie_ptk_keyid;
 
 static int hf_ieee80211_rsn_ie_gtk_kde_data_type;
@@ -8936,13 +8940,6 @@ sta_is_s1g(packet_info *pinfo)
   return GPOINTER_TO_INT(data_p);
 }
 
-static const unsigned char bssid_broadcast_data[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-static address bssid_broadcast;
-bool
-is_broadcast_bssid(const address *bssid) {
-  return addresses_equal(&bssid_broadcast, bssid);
-}
-
 static heur_dissector_list_t heur_subdissector_list;
 
 static dissector_handle_t ieee80211_handle;
@@ -10462,7 +10459,7 @@ dissect_anqp_network_auth_type_timestamp(proto_tree *tree, tvbuff_t *tvb, int of
       proto_tree_add_item(tree, hf_ieee80211_ff_anqp_nw_auth_type_ts_sec,
                           tvb, offset, 1, ENC_NA);
       proto_tree_add_item(tree, hf_ieee80211_ff_anqp_nw_auth_type_ts_msec,
-                          tvb, offset, 2, ENC_NA);
+                          tvb, offset, 2, ENC_LITTLE_ENDIAN);
       proto_tree_add_item(tree, hf_ieee80211_ff_anqp_nw_auth_type_ts_rsvd,
                           tvb, offset, 1, ENC_NA);
       offset += 10;
@@ -12545,7 +12542,7 @@ static unsigned
 add_ff_tod(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo _U_, int offset)
 {
   proto_tree_add_item(tree, hf_ieee80211_ff_tod, tvb, offset, 4,
-                     ENC_NA);
+                      ENC_LITTLE_ENDIAN);
   return 4;
 }
 
@@ -12553,7 +12550,7 @@ static unsigned
 add_ff_toa(proto_tree *tree, tvbuff_t *tvb, packet_info *pinfo _U_, int offset)
 {
   proto_tree_add_item(tree, hf_ieee80211_ff_toa, tvb, offset, 4,
-                      ENC_NA);
+                      ENC_LITTLE_ENDIAN);
   return 4;
 }
 
@@ -17672,7 +17669,7 @@ init_eht_scidx(struct scidx_ctx *ctx, uint8_t ru_index,
 /* What about the special 20MHz ones? */
 /* Figure out the next SCIDX */
 static bool
-next_eht_scidx(struct scidx_ctx *ctx, int *scidx)
+next_eht_scidx(struct scidx_ctx *ctx, unsigned *scidx)
 {
   if (ctx->just_inited) {
     ctx->last_val = ctx->scidx_array->start_val;
@@ -19107,7 +19104,7 @@ static const value_string ieee80211_rsn_keymgmt_vals[] = {
   {0, NULL}
 };
 
-#define OUIBASELEN (MAXNAMELEN + 12)
+#define OUIBASELEN (MAXNAMELEN + 20)
 
 static void
 oui_base_custom(char *result, uint32_t oui)
@@ -19127,8 +19124,10 @@ oui_base_custom(char *result, uint32_t oui)
     snprintf(result, OUIBASELEN, "%02x:%02x:%02x", p_oui[0], p_oui[1], p_oui[2]);
   }
   else {
+   char name[MAXNAMELEN+2];
+   snprintf(name, MAXNAMELEN+1, "%.*s", MAXNAMELEN, manuf_name);
    /* Found an address string. */
-    snprintf(result, OUIBASELEN, "%02x:%02x:%02x (%.*s)", p_oui[0], p_oui[1], p_oui[2], MAXNAMELEN, manuf_name);
+    snprintf(result, OUIBASELEN, "%02x:%02x:%02x (%s)", p_oui[0], p_oui[1], p_oui[2], name);
   }
 }
 
@@ -20467,7 +20466,7 @@ dissect_mbo_oce(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data 
     len -= 1;
 
     switch (attr_id) {
-    case MBO_AP_CAPABILTY_INDICATION:
+    case MBO_AP_CAPABILITY_INDICATION:
     {
       proto_item *cap_item;
       proto_tree *cap_tree;
@@ -20549,7 +20548,7 @@ dissect_mbo_oce(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data 
                           2, ENC_LITTLE_ENDIAN);
       break;
     }
-    case OCE_CAPABILTY_INDICATION:
+    case OCE_CAPABILITY_INDICATION:
     {
       proto_item *cap_item;
       proto_tree *cap_tree;
@@ -20897,7 +20896,7 @@ dissect_vendor_ie_rsn(proto_item * item, proto_tree * tree, tvbuff_t * tvb,
       offset += 1;
 
       proto_tree_add_item(tree, hf_ieee80211_rsn_ie_mlo_gtk_kde_pn, tvb,
-                          offset, 6, ENC_NA);
+                          offset, 6, ENC_LITTLE_ENDIAN);
       offset += 6;
 
       proto_tree_add_item(tree, hf_ieee80211_rsn_ie_mlo_gtk_kde_gtk, tvb,
@@ -20907,11 +20906,11 @@ dissect_vendor_ie_rsn(proto_item * item, proto_tree * tree, tvbuff_t * tvb,
       break;
     case 17: /* MLO IGTK KDE */
       proto_tree_add_item(tree, hf_ieee80211_rsn_ie_mlo_igtk_kde_key_id, tvb,
-                          offset, 2, ENC_NA);
+                          offset, 2, ENC_LITTLE_ENDIAN);
       offset += 2;
 
       proto_tree_add_item(tree, hf_ieee80211_rsn_ie_mlo_igtk_kde_ipn, tvb,
-                          offset, 6, ENC_NA);
+                          offset, 6, ENC_LITTLE_ENDIAN);
       offset += 6;
 
       proto_tree_add_item(tree, hf_ieee80211_rsn_ie_mlo_igtk_kde_reserved, tvb,
@@ -20927,11 +20926,11 @@ dissect_vendor_ie_rsn(proto_item * item, proto_tree * tree, tvbuff_t * tvb,
       break;
     case 18: /* MLO BIGTK KDE */
       proto_tree_add_item(tree, hf_ieee80211_rsn_ie_mlo_bigtk_kde_key_id, tvb,
-                          offset, 2, ENC_NA);
+                          offset, 2, ENC_LITTLE_ENDIAN);
       offset += 2;
 
       proto_tree_add_item(tree, hf_ieee80211_rsn_ie_mlo_bigtk_kde_ipn, tvb,
-                          offset, 6, ENC_NA);
+                          offset, 6, ENC_LITTLE_ENDIAN);
       offset += 6;
 
       proto_tree_add_item(tree, hf_ieee80211_rsn_ie_mlo_bigtk_kde_reserved, tvb,
@@ -21322,7 +21321,7 @@ this supports:
 
     proto_tree_add_item_ret_string(ietree, hf_ieee80211_vs_cisco_ap_name_v2, tvb, offset, length, ENC_ASCII|ENC_NA, pinfo->pool,&apname);
     proto_item_append_text(ietree, ": AP name v2: %s", apname);
-    // Set to true, so we dont append "Aironet type"
+    // Set to true, so we don't append "Aironet type"
     dont_change = true;
   break;
 
@@ -21611,6 +21610,38 @@ dissect_vendor_ie_mist(proto_item *item _U_, proto_tree *ietree,
     }
 }
 
+#define UBIQUITI_APNAME 0x01
+static const value_string ieee80211_vs_ubiquiti_type_vals[] = {
+    { UBIQUITI_APNAME, "AP Name"},
+    { 0,           NULL }
+};
+static void
+dissect_vendor_ie_ubiquiti(proto_item *item _U_, proto_tree *ietree,
+                       tvbuff_t *tvb, int offset, uint32_t tag_len, packet_info *pinfo)
+{
+    uint32_t type, length;
+    const uint8_t* apname;
+
+    /* VS OUI Type */
+    type = tvb_get_uint8(tvb, offset);
+    proto_tree_add_item(ietree, hf_ieee80211_vs_ubiquiti_type, tvb, offset, 1, ENC_NA);
+    proto_item_append_text(item, ": %s", val_to_str_const(type, ieee80211_vs_ubiquiti_type_vals, "Unknown"));
+    offset += 1;
+    tag_len -= 1;
+
+    switch(type){
+        case UBIQUITI_APNAME:
+            length = tag_len;
+            proto_tree_add_item_ret_string(ietree, hf_ieee80211_vs_ubiquiti_ap_name, tvb, offset, length, ENC_ASCII|ENC_NA, pinfo->pool, &apname);
+            proto_item_append_text(item, " (%s)", apname);
+            break;
+
+        default:
+            proto_tree_add_item(ietree, hf_ieee80211_vs_ubiquiti_data, tvb, offset, tag_len, ENC_NA);
+            break;
+    }
+}
+
 #define RUCKUS_APNAME 3
 static const value_string ieee80211_vs_ruckus_type_vals[] = {
     { RUCKUS_APNAME, "AP Name"},
@@ -21787,7 +21818,7 @@ dissect_vendor_ie_sgdsn(proto_item *item _U_, proto_tree *ietree,
       case SGDSN_LONGITUDE:
         if (tlv_len == 4) {
           int32_t value;
-          proto_tree_add_item_ret_int(tree, hf_ieee80211_vs_sgdsn_gpscoord, tvb, offset, 4, ENC_NA, &value);
+          proto_tree_add_item_ret_int(tree, hf_ieee80211_vs_sgdsn_gpscoord, tvb, offset, 4, ENC_LITTLE_ENDIAN, &value);
           proto_item_append_text(tree, ": %.5f", value / 100000.0);
         } else {
           expert_add_info_format(pinfo, tree, &ei_ieee80211_tag_length, "Value length must be 4");
@@ -21797,7 +21828,7 @@ dissect_vendor_ie_sgdsn(proto_item *item _U_, proto_tree *ietree,
       case SGDSN_ALTITUDE_REL:
         if (tlv_len == 2) {
           int32_t value;
-          proto_tree_add_item_ret_int(tree, hf_ieee80211_vs_sgdsn_altitude, tvb, offset, 2, ENC_NA, &value);
+          proto_tree_add_item_ret_int(tree, hf_ieee80211_vs_sgdsn_altitude, tvb, offset, 2, ENC_LITTLE_ENDIAN, &value);
           proto_item_append_text(tree, ": %d m", value);
         } else {
           expert_add_info_format(pinfo, tree, &ei_ieee80211_tag_length, "Value length must be 4");
@@ -21815,7 +21846,7 @@ dissect_vendor_ie_sgdsn(proto_item *item _U_, proto_tree *ietree,
       case SGDSN_HEADING:
         if (tlv_len == 2) {
           uint32_t value;
-          proto_tree_add_item_ret_uint(tree, hf_ieee80211_vs_sgdsn_heading, tvb, offset, 2, ENC_NA, &value);
+          proto_tree_add_item_ret_uint(tree, hf_ieee80211_vs_sgdsn_heading, tvb, offset, 2, ENC_LITTLE_ENDIAN, &value);
           proto_item_append_text(tree, ": %d deg", value);
         } else {
           expert_add_info_format(pinfo, tree, &ei_ieee80211_tag_length, "Value length must be 2");
@@ -23179,7 +23210,7 @@ dissect_vht_tx_pwr_envelope(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
   case 4:
     /* Power Constraint info is mandatory only for 20MHz, others are optional*/
     /* Power is expressed in terms of 0.5dBm from -64 to 63 and is encoded
-     * as 8-bit 2's compliment */
+     * as 8-bit 2's complement */
     for (i = 0; i <= opt_ie_cnt; i++) {
       switch(i) {
       case 0:
@@ -23663,17 +23694,21 @@ dissect_mmie(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
   int tag_len = tvb_reported_length(tvb);
   ieee80211_tagged_field_data_t* field_data = (ieee80211_tagged_field_data_t*)data;
   int offset = 0;
+  int mic_len = 8;
 
-  if (tag_len < 16) {
+  if (!(tag_len == 16 || tag_len == 24)) {
     expert_add_info_format(pinfo, field_data->item_tag_length, &ei_ieee80211_tag_length,
-                          "MMIE content length must be at least 16 bytes");
+                          "MMIE content length must be 16 or 24 bytes");
     return 1;
   }
 
+  if (tag_len == 24) {
+    mic_len = 16;
+  }
   proto_tree_add_item(tree, hf_ieee80211_tag_mmie_keyid, tvb, offset, 2, ENC_LITTLE_ENDIAN);
   proto_tree_add_item(tree, hf_ieee80211_tag_mmie_ipn, tvb, offset + 2, 6,
-                      ENC_NA);
-  proto_tree_add_item(tree, hf_ieee80211_tag_mmie_mic, tvb, offset + 8, 8,
+                      ENC_LITTLE_ENDIAN);
+  proto_tree_add_item(tree, hf_ieee80211_tag_mmie_mic, tvb, offset + 8, mic_len,
                       ENC_NA);
   return tvb_captured_length(tvb);
 }
@@ -23721,7 +23756,7 @@ dissect_ssid_list(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void*
 
   while (offset + 1 <= tag_len) {
     uint8_t len = tvb_get_uint8(tvb, offset + 1);
-    uint8_t *str;
+    char *str;
 
     if (offset + 2 + len > tag_len)
       break;
@@ -26035,7 +26070,7 @@ dissect_wapi_param_set(tvbuff_t *tvb, packet_info *pinfo,
     proto_item_append_text(ti, " : AKM Suite List:");
     for (loop_cnt = 0; loop_cnt < akm_cnt; loop_cnt++) {
       subtree = proto_item_add_subtree(item, ett_tag_wapi_param_set_akm_tree);
-      proto_tree_add_item(subtree, hf_ieee80211_tag_wapi_param_set_akm_suite_oui, tvb, offset, 3, ENC_NA);
+      proto_tree_add_item(subtree, hf_ieee80211_tag_wapi_param_set_akm_suite_oui, tvb, offset, 3, ENC_BIG_ENDIAN);
       offset += 3;
       akm_suite_type = tvb_get_uint8(tvb, offset);
       proto_tree_add_item(subtree, hf_ieee80211_tag_wapi_param_set_akm_suite_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
@@ -26073,7 +26108,7 @@ dissect_wapi_param_set(tvbuff_t *tvb, packet_info *pinfo,
   }
 
   /* Multicast Cipher Suites*/
-  proto_tree_add_item(tree, hf_ieee80211_tag_wapi_param_set_mcast_cipher_suite_oui, tvb, offset, 3, ENC_NA);
+  proto_tree_add_item(tree, hf_ieee80211_tag_wapi_param_set_mcast_cipher_suite_oui, tvb, offset, 3, ENC_BIG_ENDIAN);
   offset += 3;
   mcast_cipher_type = tvb_get_uint8(tvb, offset);
   proto_tree_add_item(tree, hf_ieee80211_tag_wapi_param_set_mcast_cipher_suite_type, tvb, offset, 1, ENC_LITTLE_ENDIAN);
@@ -26701,7 +26736,7 @@ dissect_bss_ac_access_delay_ie(tvbuff_t *tvb, packet_info *pinfo,
   }
 
   /* TODO: Display the scaled representation of the average
-    medium access delay (a big (precalculed) value_string ?)
+    medium access delay (a big (precalculated) value_string ?)
     See 8.4.2.46 BSS AC Access Delay element ... */
 
   proto_tree_add_item(tree, hf_ieee80211_tag_bss_avg_ac_access_delay_be, tvb, offset, 1, ENC_LITTLE_ENDIAN);
@@ -28080,7 +28115,7 @@ dissect_qos_map_set(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* d
 
   for (i = 0; i < 8; i++) {
     dscp_item = proto_tree_add_item(tree, hf_ieee80211_tag_qos_map_set_range,
-                                    tvb, offset, 2, ENC_NA);
+                                    tvb, offset, 2, ENC_LITTLE_ENDIAN);
     dscp_tree = proto_item_add_subtree(dscp_item, ett_qos_map_set_exception);
 
     item = proto_tree_add_item(dscp_tree, hf_ieee80211_tag_qos_map_set_low,
@@ -28372,7 +28407,7 @@ has_comeback_after(uint8_t flags, tvbuff_t *tvb, int offset, int len _U_)
   }
 
   /*
-   * If there is a comeback field and the comback_after is present ...
+   * If there is a comeback field and the comeback_after is present ...
    */
   if (flags & 0x01) {
         /* Check if the comeback_after field is there? */
@@ -30650,8 +30685,8 @@ dissect_neighbor_report(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
 
     switch (sub_tag_id) {
       case NR_SUB_ID_TSF_INFO:
-        proto_tree_add_item(sub_tag_tree, hf_ieee80211_tag_neighbor_report_subelement_tsf_offset, tvb, offset, 2, ENC_NA);
-        proto_tree_add_item(sub_tag_tree, hf_ieee80211_tag_neighbor_report_subelement_beacon_interval, tvb, offset + 2, 2, ENC_NA);
+        proto_tree_add_item(sub_tag_tree, hf_ieee80211_tag_neighbor_report_subelement_tsf_offset, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+        proto_tree_add_item(sub_tag_tree, hf_ieee80211_tag_neighbor_report_subelement_beacon_interval, tvb, offset + 2, 2, ENC_LITTLE_ENDIAN);
         break;
       case NR_SUB_ID_MEASUREMENT_PILOT_INFO:
         dissect_measurement_pilot_trans_ie(sub_tag_tvb, pinfo, sub_tag_tree, data);
@@ -30663,8 +30698,8 @@ dissect_neighbor_report(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
         proto_tree_add_item(sub_tag_tree, hf_ieee80211_tag_neighbor_report_subelement_bss_trn_can_pref, tvb, offset, 1, ENC_NA);
         break;
       case NR_SUB_ID_BSS_TER_DUR:
-        proto_tree_add_item(sub_tag_tree, hf_ieee80211_tag_neighbor_report_subelement_bss_ter_tsf, tvb, offset, 8, ENC_NA);
-        proto_tree_add_item(sub_tag_tree, hf_ieee80211_tag_neighbor_report_subelement_bss_dur, tvb, offset + 8, 2, ENC_NA);
+        proto_tree_add_item(sub_tag_tree, hf_ieee80211_tag_neighbor_report_subelement_bss_ter_tsf, tvb, offset, 8, ENC_LITTLE_ENDIAN);
+        proto_tree_add_item(sub_tag_tree, hf_ieee80211_tag_neighbor_report_subelement_bss_dur, tvb, offset + 8, 2, ENC_LITTLE_ENDIAN);
         break;
       case NR_SUB_ID_HT_CAPABILITIES:
         dissect_ht_capability_ie_common(sub_tag_tvb, pinfo, sub_tag_tree, 0, sub_tag_len, field_data->item_tag_length, false);
@@ -33492,7 +33527,7 @@ ieee80211_tag_measure_rep(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, v
           /* Retention Expires Relative (optional) */
           if ((sub_tag_end - 1) == 2 ) {
             proto_tree_add_item(sub_elem_tree, hf_ieee80211_tag_measure_report_lci_urp_retention_expires_relative,
-                                  tvb, offset, 2, ENC_NA);
+                                  tvb, offset, 2, ENC_LITTLE_ENDIAN);
             offset += 1;
           }
           break;
@@ -33554,7 +33589,7 @@ ieee80211_tag_measure_rep(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, v
           offset += 2;
 
           proto_tree_add_item(sub_elem_tree, hf_ieee80211_tag_measure_report_location_civic_type,
-                              tvb, offset, 1, ENC_ASCII);
+                              tvb, offset, 1, ENC_NA);
           offset += 1;
 
           proto_tree_add_item_ret_uint(sub_elem_tree, hf_ieee80211_tag_measure_report_location_civic_length,
@@ -33895,6 +33930,9 @@ ieee80211_tag_vendor_specific_ie(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
       break;
     case OUI_MIST:
       dissect_vendor_ie_mist(field_data->item_tag, tree, tvb, offset, tag_vs_len, pinfo);
+      break;
+    case OUI_UBIQUITI:
+      dissect_vendor_ie_ubiquiti(field_data->item_tag, tree, tvb, offset, tag_vs_len, pinfo);
       break;
     case OUI_RUCKUS:
       dissect_vendor_ie_ruckus(field_data->item_tag, tree, tvb, offset, tag_vs_len, pinfo);
@@ -36061,7 +36099,7 @@ ieee80211_tag_mesh_id(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void*
 
   proto_tree_add_item_ret_string(tree, hf_ieee80211_mesh_id, tvb, offset, tag_len, ENC_ASCII|ENC_NA, pinfo->pool, &mesh_id);
   if (tag_len > 0) {
-    char* s = format_text(pinfo->pool, mesh_id, tag_len);
+    char* s = format_text(pinfo->pool, (const char*)mesh_id, tag_len);
     col_append_fstr(pinfo->cinfo, COL_INFO, ", MESHID=%s", s);
     proto_item_append_text(field_data->item_tag, ": %s", s);
   }
@@ -36624,7 +36662,7 @@ ieee80211_tag_dmg_capabilities(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tr
     return tvb_captured_length(tvb);
   }
 
-  proto_tree_add_item(tree, hf_ieee80211_tag_sta_beam_track, tvb, offset, 2, ENC_NA);
+  proto_tree_add_item(tree, hf_ieee80211_tag_sta_beam_track, tvb, offset, 2, ENC_LITTLE_ENDIAN);
   offset += 2;
   proto_tree_add_bitmask_list(tree, tvb, offset, 1, ieee80211_tag_dmg_cap5, ENC_LITTLE_ENDIAN);
   offset += 1;
@@ -38158,7 +38196,7 @@ static const val64_string pre_fec_padding_factor_vals[] = {
 };
 
 static const true_false_string pe_disambiguity_tfs = {
-  "PE Disambiguity ",
+  "PE Disambiguity",
   "no PE Disambiguity"
  };
 
@@ -38811,7 +38849,7 @@ dissect_ieee80211_he_eht_trigger(tvbuff_t *tvb, packet_info *pinfo,
       proto_tree_add_bitmask(common_tree, tvb, offset,
                              hf_ieee80211_he_trigger_ranging_common_info_2,
                              ett_he_trigger_ranging, ranging_headers2,
-                             ENC_NA);
+                             ENC_LITTLE_ENDIAN);
       offset += 2;
       break;
     default:
@@ -38854,14 +38892,14 @@ dissect_ieee80211_s1g_tack(tvbuff_t *tvb, packet_info *pinfo _U_,
   length += 1;
 
   proto_tree_add_item(tree, hf_ieee80211_pentapartial_timestamp, tvb, offset,
-                      5, ENC_NA);
+                      5, ENC_LITTLE_ENDIAN);
   offset += 5;
   length += 5;
 
    if ((flags & 0xC0) == 0xC0)  {
      proto_tree_add_bitmask_with_flags(tree, tvb, offset,
                         hf_ieee80211_tack_next_twt_info, ett_tack_info,
-                        tack_headers, ENC_NA, BMT_NO_APPEND);
+                        tack_headers, ENC_LITTLE_ENDIAN, BMT_NO_APPEND);
      length += 6;
    }
 
@@ -38869,7 +38907,7 @@ dissect_ieee80211_s1g_tack(tvbuff_t *tvb, packet_info *pinfo _U_,
 }
 
 /*
- * Dissect a VHT or an HE NDP accouncement frame. They differ past
+ * Dissect a VHT or an HE NDP announcement frame. They differ past
  * the sounding dialog token with a bit in the SDT indicating VHT vs HE.
  */
 #define NDP_ANNC_VHT_HE 0x02
@@ -39725,7 +39763,7 @@ dissect_ieee80211_pv1(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree,
    * A4 Present, and A-MSDU subfields of the SID are reserved. Should
    * they be dissected differently, and ignored / expert info if set?
    *
-   * For PV1_MANAGMENT frames (9.8.5), A4 and A-MSDU cannot be present.
+   * For PV1_MANAGEMENT frames (9.8.5), A4 and A-MSDU cannot be present.
    * Ignore / expert info if set?
    */
   if (a1_is_sid) {
@@ -39943,7 +39981,7 @@ dissect_ieee80211_pv0(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
        */
       if (!isDMG) {
         /*
-         * Non-DMG PHY; treat this field as hving an HT Control field.
+         * Non-DMG PHY; treat this field as having an HT Control field.
          *
          * XXX - as I read the above, this shouldn't be set except for
          * HT, VHT, or HE PHYs; however, in the capture in issue 11351,
@@ -40091,7 +40129,7 @@ dissect_ieee80211_pv0(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
            */
           if (!isDMG) {
             /*
-             * Non-DMG PHY; treat this field as hving an HT Control field.
+             * Non-DMG PHY; treat this field as having an HT Control field.
              *
              * XXX - as I read the above, this shouldn't be set except for
              * HT, VHT, or HE PHYs; however, in the capture in issue 11351,
@@ -41414,8 +41452,8 @@ dissect_ieee80211_pv0(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
           subframe_tree = proto_item_add_subtree(parent_item, ett_msdu_aggregation_subframe_tree);
           i += 1;
 
-          proto_tree_add_mac48_detail(&mac_da, NULL, ett_addr, tvb, subframe_tree, msdu_offset);
-          proto_tree_add_mac48_detail(&mac_sa, NULL, ett_addr, tvb, subframe_tree, msdu_offset+6);
+          proto_tree_add_mac48_detail(&mac_da, NULL, ett_addr, next_tvb, subframe_tree, msdu_offset);
+          proto_tree_add_mac48_detail(&mac_sa, NULL, ett_addr, next_tvb, subframe_tree, msdu_offset+6);
           proto_tree_add_item(subframe_tree, hf_ieee80211_amsdu_length, next_tvb, msdu_offset+12, 2, ENC_BIG_ENDIAN);
 
           msdu_offset += 14;
@@ -42649,7 +42687,7 @@ set_dot11decrypt_keys(void)
 
     if (dk != NULL)
     {
-      /* parse_key_string() does vaildation, so if it doesn't
+      /* parse_key_string() does validation, so if it doesn't
        * return NULL, we can just copy the results.
        */
       DOT11DECRYPT_KEY_ITEM key = { 0 };
@@ -44275,7 +44313,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_ff_fils_discovery_md,
      {"MD", "wlan.fils_discovery.md",
-      FT_UINT24, BASE_HEX, NULL, 0x0,
+      FT_BYTES, BASE_NONE, NULL, 0x0,
       NULL, HFILL }},
 
 /* 802.11ad */
@@ -44770,7 +44808,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_tag_dmg_capa_aid,
      {"AID", "wlan.dmg_capa.aid",
-      FT_UINT16, BASE_DEC, NULL, 0,
+      FT_UINT8, BASE_DEC, NULL, 0,
       NULL, HFILL }},
 /* 8.4.2.127.2 DMG STA Capability Information field */
     {&hf_ieee80211_tag_reverse_direction, /* DMG STA capa, bits [0] */
@@ -54243,12 +54281,12 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_wfa_ie_owe_band_info,
      {"Band info", "wlan.wfa.ie.owe.band_info",
-      FT_UINT16, BASE_DEC, NULL, 0,
+      FT_UINT8, BASE_DEC, NULL, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_wfa_ie_owe_channel_info,
      {"Channel info", "wlan.wfa.ie.owe.channel_info",
-      FT_UINT16, BASE_DEC, NULL, 0,
+      FT_UINT8, BASE_DEC, NULL, 0,
       NULL, HFILL }},
 
     {&hf_ieee80211_wfa_ie_mbo_oce_attr,
@@ -54297,7 +54335,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_wfa_ie_mbo_assoc_disallow_reason,
      {"Reason Code", "wlan.wfa.ie.mbo.assoc_disallow.reason",
-      FT_UINT8, BASE_DEC, VALS(wfa_mbo_assoc_dissallow_reason_vals),
+      FT_UINT8, BASE_DEC, VALS(wfa_mbo_assoc_disallow_reason_vals),
       0, NULL, HFILL }},
 
     {&hf_ieee80211_wfa_ie_mbo_cellular_pref,
@@ -54480,7 +54518,7 @@ proto_register_ieee80211(void)
       FT_UINT48, BASE_DEC, NULL, 0x0, NULL, HFILL }},
 
     {&hf_ieee80211_rsn_ie_bigtk_bigtk,
-     {"Key ID", "wlan.rsn.ie.bigtk_kde.bigtk",
+     {"BIGTK", "wlan.rsn.ie.bigtk_kde.bigtk",
       FT_BYTES, BASE_NONE, NULL, 0x0, NULL, HFILL }},
 
     {&hf_ieee80211_rsn_ie_mlo_link_info,
@@ -55124,6 +55162,21 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_vs_mist_data,
      {"Data", "wlan.vs.mist.data",
+       FT_BYTES, BASE_NONE, NULL, 0,
+       NULL, HFILL }},
+
+    {&hf_ieee80211_vs_ubiquiti_type,
+     {"Subtype", "wlan.vs.ubiquiti.type",
+      FT_UINT8, BASE_DEC, VALS(ieee80211_vs_ubiquiti_type_vals), 0,
+      NULL, HFILL }},
+
+    {&hf_ieee80211_vs_ubiquiti_ap_name,
+     {"AP Name", "wlan.vs.ubiquiti.ap_name",
+       FT_STRING, BASE_NONE, NULL, 0,
+       NULL, HFILL }},
+
+    {&hf_ieee80211_vs_ubiquiti_data,
+     {"Data", "wlan.vs.ubiquiti.data",
        FT_BYTES, BASE_NONE, NULL, 0,
        NULL, HFILL }},
 
@@ -57212,7 +57265,7 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_tag_mmie_ipn,
      {"IPN", "wlan.mmie.ipn",
-      FT_BYTES, BASE_NONE, NULL, 0, NULL, HFILL }},
+      FT_UINT48, BASE_HEX, NULL, 0, NULL, HFILL }},
 
     {&hf_ieee80211_tag_mmie_mic,
      {"MIC", "wlan.mmie.mic",
@@ -60326,11 +60379,11 @@ proto_register_ieee80211(void)
 
     {&hf_ieee80211_eht_operation_ccfs0,
      {"CCFS0", "wlan.eht.eht_operation_information.ccfs0",
-      FT_UINT32, BASE_HEX, NULL, 0x0, NULL, HFILL }},
+      FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
 
     {&hf_ieee80211_eht_operation_ccfs1,
      {"CCFS1", "wlan.eht.eht_operation_information.ccfs1",
-      FT_UINT32, BASE_HEX, NULL, 0x0, NULL, HFILL }},
+      FT_UINT8, BASE_DEC, NULL, 0x0, NULL, HFILL }},
 
     {&hf_ieee80211_eht_operation_disabled_bitmap,
      {"Disabled Subchannel Bitmap",
@@ -61057,7 +61110,7 @@ proto_register_ieee80211(void)
       FT_BOOLEAN, 8, NULL, 0x01, NULL, HFILL }},
 
     {&hf_ieee80211_eht_bw_indi_param_disabled_subchan_bitmap,
-     {"Disabled Subchannel Bitmap Present", "wlan.eht.bw_indication_params.disabled_subchan_bitamp",
+     {"Disabled Subchannel Bitmap Present", "wlan.eht.bw_indication_params.disabled_subchan_bitmap",
       FT_BOOLEAN, 8, NULL, 0x02, NULL, HFILL }},
 
     {&hf_ieee80211_eht_bw_indi_param_reserved1,
@@ -62023,7 +62076,7 @@ proto_register_ieee80211(void)
 
   /*
    * Create the hash table we will use for holding STA properties that
-   * track newer protocol varients like S1G, DMG, etc. Use the existing
+   * track newer protocol variants like S1G, DMG, etc. Use the existing
    * retransmit hash and equal functions.
    */
   sta_prop_hash = wmem_map_new_autoreset(wmem_epan_scope(), wmem_file_scope(),
@@ -62051,7 +62104,6 @@ proto_register_ieee80211(void)
                                                             ether_len, ether_name_resolution_str, ether_name_resolution_len);
   wlan_bssid_address_type = address_type_dissector_register("AT_ETHER_BSSID", "WLAN BSSID Address", ether_to_str, ether_str_len, NULL, wlan_bssid_col_filter_str,
                                                             ether_len, ether_name_resolution_str, ether_name_resolution_len);
-  set_address(&bssid_broadcast, wlan_bssid_address_type, 6, bssid_broadcast_data);
 
   wlan_ra_ta_address_type = address_type_dissector_register("AT_ETHER_RA_TA", "WLAN RA/TA Address", ether_to_str, ether_str_len, NULL, wlan_ra_ta_col_filter_str,
                                                             ether_len, ether_name_resolution_str, ether_name_resolution_len);
@@ -62299,6 +62351,8 @@ proto_reg_handoff_ieee80211(void)
   epd_llc_handle        = find_dissector_add_dependency("epd_llc", proto_wlan);
   ipx_handle            = find_dissector_add_dependency("ipx", proto_wlan);
   eth_withoutfcs_handle = find_dissector_add_dependency("eth_withoutfcs", proto_wlan);
+
+  proto_eapol = proto_get_id_by_filter_name("eapol");
 
   /*
    * Get the Ethertype dissector table.

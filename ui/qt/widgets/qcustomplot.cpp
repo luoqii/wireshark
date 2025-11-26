@@ -6523,6 +6523,9 @@ double QCPAxisTicker::cleanMantissa(double input) const
 QCPAxisTickerDateTime::QCPAxisTickerDateTime() :
   mDateTimeFormat(QLatin1String("hh:mm:ss\ndd.MM.yy")),
   mDateTimeSpec(Qt::LocalTime),
+# if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+  mTimeZone(QTimeZone::LocalTime),
+# endif
   mDateStrategy(dsNone)
 {
   setTickCount(4);
@@ -28490,9 +28493,9 @@ void QCPErrorBars::drawLegendIcon(QCPPainter *painter, const QRectF &rect) const
   painter->setPen(mPen);
   if (mErrorType == etValueError && mValueAxis && mValueAxis->orientation() == Qt::Vertical)
   {
-    painter->drawLine(QLineF(rect.center().x(), rect.top()+2, rect.center().x(), rect.bottom()-1));
+    painter->drawLine(QLineF(rect.center().x(), rect.top()+2, rect.center().x(), rect.bottom()-2));
     painter->drawLine(QLineF(rect.center().x()-4, rect.top()+2, rect.center().x()+4, rect.top()+2));
-    painter->drawLine(QLineF(rect.center().x()-4, rect.bottom()-1, rect.center().x()+4, rect.bottom()-1));
+    painter->drawLine(QLineF(rect.center().x()-4, rect.bottom()-2, rect.center().x()+4, rect.bottom()-2));
   } else
   {
     painter->drawLine(QLineF(rect.left()+2, rect.center().y(), rect.right()-2, rect.center().y()));

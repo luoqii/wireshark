@@ -54,7 +54,6 @@ static int proto_tecmp;
 static int proto_tecmp_payload;
 
 static dissector_handle_t eth_handle;
-static int proto_vlan;
 
 static bool heuristic_first;
 static bool analog_samples_are_signed_int = true;
@@ -2111,6 +2110,11 @@ dissect_tecmp_control_msg(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, u
 
             if (length + (unsigned)16 - (offset - offset_orig) > 0) {
                 proto_tree_add_item(tecmp_tree, hf_tecmp_payload_ctrl_msg_unparsed_bytes, tvb, offset, length + (unsigned)16 - (offset - offset_orig), ENC_NA);
+
+                col_append_str(pinfo->cinfo, COL_INFO, ": ");
+                col_set_fence(pinfo->cinfo, COL_INFO);
+                tvbuff_t *sub_tvb = tvb_new_subset_length(tvb, offset, length + (unsigned)16 - (offset - offset_orig));
+                call_data_dissector(sub_tvb, pinfo, tree);
             }
         }
     }
@@ -2275,9 +2279,6 @@ static void
 dissect_ethernet_payload(tvbuff_t *sub_tvb, uint32_t offset, uint32_t length, packet_info *pinfo, proto_tree *tree, proto_tree *tecmp_tree) {
 
     tvbuff_t *payload_tvb = tvb_new_subset_length(sub_tvb, offset, length);
-
-    /* resetting VLAN count since this is another embedded Ethernet packet. */
-    p_set_proto_depth(pinfo, proto_vlan, 0);
 
     int32_t len_saved = pinfo->fd->pkt_len;
     pinfo->fd->pkt_len = length;
@@ -3169,10 +3170,10 @@ proto_register_tecmp_payload(void) {
         { &hf_tecmp_payload_status_dev_vendor_technica_temperature_silicon, { "Temperature Silicon", "tecmp.payload.status_dev.vendor_technica.temperature_silicon", FT_INT8, BASE_DEC | BASE_UNIT_STRING, UNS(&units_degree_celsius), 0x0, NULL, HFILL } },
         { &hf_tecmp_payload_status_dev_vendor_technica_lifecycle_counter,   { "Lifecycle Counter [hours]", "tecmp.payload.status_dev.vendor_technica.lifecycle_counter", FT_UINT16, BASE_DEC, NULL, 0x0, NULL, HFILL } },
         { &hf_tecmp_payload_status_dev_vendor_technica_error_flags,         { "Error Flags", "tecmp.payload.status_dev.vendor_technica.error_flags", FT_UINT16, BASE_HEX, NULL, 0x0, NULL, HFILL } },
-        { &hf_tecmp_payload_status_dev_vendor_technica_error_flags_port1,   { "Port 1 Initialization Error", "tecmp.payload.status_dev.vendor_technica.error_flags.port1_init_error", FT_BOOLEAN, 16, TFS(&tfs_yes_no), 0x01, NULL, HFILL } },
-        { &hf_tecmp_payload_status_dev_vendor_technica_error_flags_port2,   { "Port 2 Initialization Error", "tecmp.payload.status_dev.vendor_technica.error_flags.port2_init_error", FT_BOOLEAN, 16, TFS(&tfs_yes_no), 0x02, NULL, HFILL } },
-        { &hf_tecmp_payload_status_dev_vendor_technica_error_flags_port3,   { "Port 3 Initialization Error", "tecmp.payload.status_dev.vendor_technica.error_flags.port3_init_error", FT_BOOLEAN, 16, TFS(&tfs_yes_no), 0x04, NULL, HFILL } },
-        { &hf_tecmp_payload_status_dev_vendor_technica_error_flags_port4,   { "Port 4 Initialization Error", "tecmp.payload.status_dev.vendor_technica.error_flags.port4_init_error", FT_BOOLEAN, 16, TFS(&tfs_yes_no), 0x08, NULL, HFILL } },
+        { &hf_tecmp_payload_status_dev_vendor_technica_error_flags_port1,   { "Port 1 Initialization Error", "tecmp.payload.status_dev.vendor_technica.error_flags.port1_init_error", FT_BOOLEAN, 16, TFS(&tfs_yes_no), 0x0001, NULL, HFILL } },
+        { &hf_tecmp_payload_status_dev_vendor_technica_error_flags_port2,   { "Port 2 Initialization Error", "tecmp.payload.status_dev.vendor_technica.error_flags.port2_init_error", FT_BOOLEAN, 16, TFS(&tfs_yes_no), 0x0002, NULL, HFILL } },
+        { &hf_tecmp_payload_status_dev_vendor_technica_error_flags_port3,   { "Port 3 Initialization Error", "tecmp.payload.status_dev.vendor_technica.error_flags.port3_init_error", FT_BOOLEAN, 16, TFS(&tfs_yes_no), 0x0004, NULL, HFILL } },
+        { &hf_tecmp_payload_status_dev_vendor_technica_error_flags_port4,   { "Port 4 Initialization Error", "tecmp.payload.status_dev.vendor_technica.error_flags.port4_init_error", FT_BOOLEAN, 16, TFS(&tfs_yes_no), 0x0008, NULL, HFILL } },
         { &hf_tecmp_payload_status_dev_vendor_technica_sfpa_tx_frames,      { "SFP+ A TX Frames", "tecmp.payload.status_dev.vendor_technica.sfpa_tx_frames", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL } },
         { &hf_tecmp_payload_status_dev_vendor_technica_sfpb_tx_frames,      { "SFP+ B TX Frames", "tecmp.payload.status_dev.vendor_technica.sfpb_tx_frames", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL } },
         { &hf_tecmp_payload_status_dev_vendor_technica_sfpc_tx_frames,      { "SFP+ C TX Frames", "tecmp.payload.status_dev.vendor_technica.sfpc_tx_frames", FT_UINT32, BASE_DEC, NULL, 0x0, NULL, HFILL } },
@@ -3411,7 +3412,6 @@ proto_register_tecmp_payload(void) {
 void
 proto_reg_handoff_tecmp_payload(void) {
     eth_handle = find_dissector("eth_withfcs");
-    proto_vlan = proto_get_id_by_filter_name("vlan");
 }
 
 void

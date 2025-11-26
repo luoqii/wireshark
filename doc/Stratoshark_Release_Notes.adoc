@@ -27,12 +27,25 @@ If you or your organization would like to contribute or become a sponsor, please
 // Many other improvements have been made.
 // See the “New and Updated Features” section below for more details.
 
+The following changes have been made since version 0.9.3:
+
+* Stratoshark and strato can now read plain Kubernetes Audit logs and Google Cloud Audit logs, and CloudTrail logs.
+
 The following changes have been made since version 0.9.2:
 
 * The Windows installers now ship with Qt 6.8.3.
   They previously shipped with Qt 6.8.1.
 
+* Stratoshark now ships with “strato”, a command line tool similar to tshark.
+
+* The Windows and macOS packages now ship with the gcpaudit and k8saudit plugins.
+
+* The Falco Events dissector now adds IP geolocation fields alongside IPv4 and IPv6 address fields.
+
 The following changes have been made since version 0.9.1:
+
+* A new “Plots” dialog has been added, which provides scatter plots in contrast to the “I/O Graphs” dialog, which provides histograms.
+  The Plots dialog window supports multiple plots, markers, and automatic scrolling.
 
 * The Falco Bridge dissector has been renamed to Falco Events.
   Filter fields now have a "falcoevents" protocol prefix, but a "falcobridge" protocol alias has been added for backward compatibility.

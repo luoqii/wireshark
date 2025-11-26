@@ -39,6 +39,12 @@ enum {
     NUM_FLOW_COLUMNS
 };
 
+/* Global stats */
+uint32_t largest_ul_delay_in_us = 0;
+/* Assuming that it is unlikely we have > 255 radio frames.. */
+int      first_radio_frame = -1;
+int      last_radio_frame = -1;
+
 static const char *flow_titles[] = { " Plane",
                                      "eAxC ID ",
                                      "Direction  ",
@@ -116,6 +122,16 @@ oran_stat_packet(void *phs, packet_info *pinfo _U_, epan_dissect_t *edt _U_,
         return TAP_PACKET_DONT_REDRAW;
     }
 
+    /* Update global stats */
+    if (si->ul_delay_in_us > largest_ul_delay_in_us) {
+        largest_ul_delay_in_us = si->ul_delay_in_us;
+    }
+
+    if (first_radio_frame == -1) {
+        first_radio_frame = (int)si->frame;
+    }
+    last_radio_frame = (int)si->frame;
+
     bool row_found = false;
     /* Look among existing rows for this flow */
     for (tmp = hs->flow_list; tmp != NULL; tmp = tmp->next) {
@@ -182,7 +198,7 @@ oran_stat_packet(void *phs, packet_info *pinfo _U_, epan_dissect_t *edt _U_,
     return TAP_PACKET_REDRAW;
 }
 
-static int compare_flows(gpointer a, gpointer b)
+static int compare_flows(void *a, void *b)
 {
     oran_row_data *flow_a = (oran_row_data*)a;
     oran_row_data *flow_b = (oran_row_data*)b;
@@ -302,6 +318,11 @@ oran_stat_draw(void *phs)
             printf("\n");
         }
     }
+
+    /* Now show global stats */
+    printf("\n Largest UL delay    First radio frame    Last radio frame\n");
+    printf("=============================================================\n");
+    printf("%17u %20u %19u\n", largest_ul_delay_in_us, first_radio_frame, last_radio_frame);
 }
 
 /* Create a new ORAN stats struct */

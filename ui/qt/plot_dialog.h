@@ -54,10 +54,10 @@ typedef struct _plot_settings_t {
     unsigned color;
     uint32_t style;
     char* yfield;
-    uint32_t y_axis_factor;
+    double y_axis_factor;
 } plot_settings_t;
 
-static const value_string graph_style_vs[] = {
+static const value_string plot_graph_style_vs[] = {
     { Graph::psLine, "Line" },
     { Graph::psDotLine, "Dot Line" },
     { Graph::psStepLine, "Step Line" },
@@ -112,7 +112,7 @@ private:
     int getLastPlotIdx();
     /* Add plot with all defined parameters. */
     void addPlot(bool checked, const QString& name, const QString& dfilter, QRgb color_idx,
-        Graph::PlotStyles style, const QString& yfield, int y_axis_factor = Graph::default_y_axis_factor_);
+        Graph::PlotStyles style, const QString& yfield, double y_axis_factor = Graph::default_y_axis_factor_);
     /* Add one of the two (four) default plots. */
     void addDefaultPlot(bool enabled, bool filtered);
 
@@ -141,6 +141,7 @@ private:
     void drawMarkers();
     void addDataPointsMarkers();
     void updateFirstAxisRectHeight();
+    void recreateMultiValueAxes();
     QList<QCPAxisRect*> axisRects() const;
     void autoScroll() const;
     Ui::PlotDialog* ui;
@@ -221,6 +222,7 @@ private slots:
     void on_actionToggleTimeOrigin_triggered();
     void on_rightButtonBox_accepted();
     void on_actionAutoScroll_triggered(bool checked);
+    void on_actionEnableMultiYAxes_triggered(bool checked);
 
     void on_actionAddMarker_triggered();
     void on_actionMoveMarker_triggered();

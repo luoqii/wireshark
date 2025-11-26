@@ -165,7 +165,7 @@ capture_start(capture_options *capture_opts, GPtrArray *capture_comments,
     /* spawn/exec of the capture child, without waiting for any response from it */
     capture_callback_invoke(capture_cb_capture_prepared, cap_session);
 
-    wtap_rec_init(&cap_session->rec, 1514);
+    wtap_rec_init(&cap_session->rec, DEFAULT_INIT_BUFFER_SIZE_2048);
 
     cap_session->wtap = NULL;
 
@@ -480,7 +480,7 @@ capture_input_new_file(capture_session *cap_session, char *new_file)
             wtap_close(cap_session->wtap);
         }
 
-        cap_session->wtap = wtap_open_offline(new_file, WTAP_TYPE_AUTO, &err, &err_info, false);
+        cap_session->wtap = wtap_open_offline(new_file, WTAP_TYPE_AUTO, &err, &err_info, false, application_configuration_environment_prefix());
         if (!cap_session->wtap) {
             err_msg = ws_strdup_printf(cf_open_error_message(err, err_info),
                                       new_file);
@@ -513,7 +513,7 @@ capture_info_new_packets(int to_read, wtap *wth, info_data_t* cap_info)
 
     /*ws_warning("new packets: %u", to_read);*/
 
-    wtap_rec_init(&rec, 1514);
+    wtap_rec_init(&rec, DEFAULT_INIT_BUFFER_SIZE_2048);
     while (to_read > 0) {
         wtap_cleareof(wth);
         if (!wtap_read(wth, &rec, &err, &err_info, &data_offset)) {
@@ -919,7 +919,7 @@ capture_stat_start(capture_options *capture_opts)
      * mechanism, so opening all the devices and presenting packet
      * counts might not always be a good idea.
      */
-    if (sync_interface_stats_open(&stat_fd, &fork_child, NULL, &msg, NULL) == 0) {
+    if (sync_interface_stats_open(capture_opts->app_name, &stat_fd, &fork_child, NULL, &msg, NULL) == 0) {
         sc->stat_fd = stat_fd;
         sc->fork_child = fork_child;
 
@@ -941,7 +941,7 @@ capture_stat_start(capture_options *capture_opts)
 }
 
 if_stat_cache_t *
-capture_interface_stat_start(capture_options *capture_opts _U_, GList **if_list)
+capture_interface_stat_start(capture_options *capture_opts, GList **if_list)
 {
     int stat_fd;
     ws_process_id fork_child;
@@ -977,7 +977,7 @@ capture_interface_stat_start(capture_options *capture_opts _U_, GList **if_list)
      */
     int status;
     iface_mon_enable(false);
-    status = sync_interface_stats_open(&stat_fd, &fork_child, &data, &msg, NULL);
+    status = sync_interface_stats_open(capture_opts->app_name, &stat_fd, &fork_child, &data, &msg, NULL);
     iface_mon_enable(true);
     /* In order to initialize the stat cache (below), we need to have
      * filled in capture_opts->all_ifaces

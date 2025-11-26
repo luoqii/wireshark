@@ -13,17 +13,17 @@
 
 #include <epan/packet.h>
 #include <epan/conversation.h>
-#include <epan/ppptypes.h>
 #include <epan/reassemble.h>
-#include <epan/eap.h>
 #include <epan/expert.h>
 #include <epan/proto_data.h>
 #include <wsutil/strtoi.h>
 
+#include "packet-eap.h"
 #include "packet-eapol.h"
 #include "packet-wps.h"
 #include "packet-e212.h"
 #include "packet-tls-utils.h"
+#include "packet-ppp.h"
 
 void proto_register_eap(void);
 void proto_reg_handoff_eap(void);
@@ -2117,16 +2117,11 @@ dissect_eap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
         if (size > 0) {
 
           tvbuff_t *next_tvb = NULL;
-          int       tvb_len;
           bool      save_fragmented;
-
-          tvb_len = tvb_captured_length_remaining(tvb, offset);
-          if (size < tvb_len)
-            tvb_len = size;
 
           /* If this is a retransmission, do not save the fragment. */
           if (is_duplicate_id) {
-            next_tvb = tvb_new_subset_length_caplen(tvb, offset, tvb_len, size);
+            next_tvb = tvb_new_subset_length(tvb, offset, size);
             call_data_dissector(next_tvb, pinfo, eap_tree);
             break;
           }
@@ -2143,14 +2138,14 @@ dissect_eap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
 
             The only way to know is, by knowing
             that we are already in defragmentation
-            "mode" and we are expecing packet
+            "mode" and we are expecting packet
             carrying fragment of data. (either
             because we have not received expected
             amount of data, or because the packet before
             had "F"ragment flag set.)
 
             The situation is alleviated by fact that it
-            is simple ack/nack protcol so there's no
+            is simple ack/nack protocol so there's no
             place for out-of-order packets like it is
             possible with IP.
 
@@ -2259,7 +2254,7 @@ dissect_eap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
             We test here to see whether EAP-TLS packet
             carry fragmented of TLS data.
 
-            If this is the case, we do reasembly below,
+            If this is the case, we do reassembly below,
             otherwise we just call dissector.
           */
           if (needs_reassembly) {
@@ -2290,7 +2285,7 @@ dissect_eap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
                   eap_tree, pinfo, next_tvb, &frag_tree_item);
 
                 /*
-                 * We're finished reassembing this frame.
+                 * We're finished reassembling this frame.
                  * Reinitialize the reassembly state.
                  */
                 if (!pinfo->fd->visited)
@@ -2305,7 +2300,7 @@ dissect_eap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data _U_)
             pinfo->fragmented = save_fragmented;
 
           } else { /* this data is NOT fragmented */
-            next_tvb = tvb_new_subset_length_caplen(tvb, offset, tvb_len, size);
+            next_tvb = tvb_new_subset_length(tvb, offset, size);
           }
 
           if (next_tvb) {
@@ -2522,19 +2517,13 @@ skip_tls_dissector:
 
         if (size > 0) {
           tvbuff_t* next_tvb = NULL;
-          int       tvb_len;
-
-          tvb_len = tvb_captured_length_remaining(tvb, offset);
-          if (size < tvb_len) {
-            tvb_len = size;
-          }
 
           if (has_length || more_fragments) {
             /* TODO: Add fragmentation support
              * Length of integrity check data needs to be determined in case of fragmentation. Chosen INTEG transform?
              */
           } else {
-            next_tvb = tvb_new_subset_length_caplen(tvb, offset, tvb_len, size);
+            next_tvb = tvb_new_subset_length(tvb, offset, size);
             unsigned tmp = call_dissector(isakmp_handle, next_tvb, pinfo, eap_tree);
             size -= tmp;
             offset += tmp;

@@ -283,7 +283,7 @@ static int list_config(char *interface)
     printf("arg {number=%u}{call=--remote-capture-command-select}{display=Remote capture command selection}"
             "{type=radio}{tooltip=The remote capture command to build a command line for}{group=Capture}\n", inc);
     printf("value {arg=%u}{value=sysdig}{display=sysdig}\n", inc);
-    // XXX Add falcodump?
+    // XXX Add dumpcalls?
     printf("value {arg=%u}{value=other}{display=Other:}\n", inc++);
     printf("arg {number=%u}{call=--remote-capture-command}{display=Remote capture command}"
             "{type=string}{tooltip=The remote command used to capture}{group=Capture}\n", inc++);
@@ -350,15 +350,15 @@ int main(int argc, char *argv[])
      * Attempt to get the pathname of the directory containing the
      * executable file.
      */
-    err_msg = configuration_init(argv[0]);
     set_application_flavor(APPLICATION_FLAVOR_STRATOSHARK);
+    err_msg = configuration_init(argv[0], "stratoshark");
     if (err_msg != NULL) {
         ws_warning("Can't get pathname of directory containing the extcap program: %s.",
                 err_msg);
         g_free(err_msg);
     }
 
-    help_url = data_file_url("sshdig.html");
+    help_url = data_file_url("sshdig.html", application_configuration_environment_prefix());
     extcap_base_set_util_info(extcap_conf, argv[0], SSHDIG_VERSION_MAJOR, SSHDIG_VERSION_MINOR,
             SSHDIG_VERSION_RELEASE, help_url);
     g_free(help_url);

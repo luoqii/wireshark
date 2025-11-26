@@ -15,7 +15,7 @@
 
 #include <wsutil/pint.h>
 
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include "file_wrappers.h"
 
 /*
@@ -355,7 +355,7 @@ static bool visual_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
        payload save to fail since then captured len != orig len.
 
        We adjust the original length to remove the FCS bytes we counted based
-       on the file encapsualtion type.  The only downside to this fix is
+       on the file encapsulation type.  The only downside to this fix is
        throughput calculations will be slightly lower as it won't include
        the FCS bytes.  However, as noted, that problem also exists with
        other capture formats.

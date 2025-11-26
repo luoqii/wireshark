@@ -291,6 +291,7 @@ static int st_node_service_rrt = -1;
 static int proto_dns;
 static int proto_mdns;
 static int proto_llmnr;
+static int proto_svc_params;
 static int hf_dns_length;
 static int hf_dns_flags;
 static int hf_dns_flags_response;
@@ -398,18 +399,19 @@ static int hf_dns_zonemd_hash_algo;
 static int hf_dns_zonemd_digest;
 static int hf_dns_svcb_priority;
 static int hf_dns_svcb_target;
-static int hf_dns_svcb_param_key;
-static int hf_dns_svcb_param_length;
-static int hf_dns_svcb_param_value;
-static int hf_dns_svcb_param;
-static int hf_dns_svcb_param_mandatory_key;
-static int hf_dns_svcb_param_alpn_length;
-static int hf_dns_svcb_param_alpn;
-static int hf_dns_svcb_param_port;
-static int hf_dns_svcb_param_ipv4hint_ip;
-static int hf_dns_svcb_param_ipv6hint_ip;
-static int hf_dns_svcb_param_dohpath;
-static int hf_dns_svcb_param_odohconfig;
+
+static int hf_svc_param_key;
+static int hf_svc_param_length;
+static int hf_svc_param_value;
+static int hf_svc_param_mandatory_key;
+static int hf_svc_param_alpn_length;
+static int hf_svc_param_alpn;
+static int hf_svc_param_port;
+static int hf_svc_param_ipv4hint_ip;
+static int hf_svc_param_ipv6hint_ip;
+static int hf_svc_param_dohpath;
+static int hf_svc_param_odohconfig;
+
 static int hf_dns_dsync_type;
 static int hf_dns_dsync_scheme;
 static int hf_dns_dsync_target_port;
@@ -609,6 +611,12 @@ static int hf_dns_caa_unknown;
 static int hf_dns_caa_tag_length;
 static int hf_dns_caa_tag;
 static int hf_dns_caa_value;
+static int hf_dns_amtrelay_precedence;
+static int hf_dns_amtrelay_disc_opt;
+static int hf_dns_amtrelay_relay_type;
+static int hf_dns_amtrelay_relay_ipv4;
+static int hf_dns_amtrelay_relay_ipv6;
+static int hf_dns_amtrelay_relay_dns;
 static int hf_dns_extraneous_data;
 static int hf_dns_extraneous_length;
 
@@ -662,7 +670,7 @@ static int ett_caa_data;
 static int ett_dns_csdync_flags;
 static int ett_dns_dso;
 static int ett_dns_dso_tlv;
-static int ett_dns_svcb;
+static int ett_svc_param;
 static int ett_dns_extraneous;
 static int ett_dns_dnscrypt;
 
@@ -734,7 +742,8 @@ typedef struct _dns_conv_info_t {
 #define UDP_PORT_MDNS           5353
 #define UDP_PORT_LLMNR          5355
 #define TCP_PORT_DNS_TLS         853
-#define UDP_PORT_DNS_DTLS        853
+/* Disable experimental feature conflicting with DNS over QUIC */
+#define UDP_PORT_DNS_DTLS          0
 #if 0
 /* PPID used for DNS/SCTP (will be changed when IANA assigned) */
 #define DNS_PAYLOAD_PROTOCOL_ID 1000
@@ -1416,6 +1425,14 @@ static const value_string gw_type_vals[] = {
   { 2,     "IPv6 Gateway" },
   { 3,     "DNS Gateway" },
   { 0,      NULL }
+};
+
+static const value_string amtrelay_type_vals[] = {
+  { 0,     "No Relay" },
+  { 1,     "IPv4 Relay" },
+  { 2,     "IPv6 Relay" },
+  { 3,     "DNS Relay" },
+  { 0,     NULL }
 };
 
 const value_string dns_classes[] = {
@@ -2323,6 +2340,104 @@ dissect_dns_svcparam_base64(proto_tree *param_tree, packet_info* pinfo, proto_it
   g_free(str);
 }
 
+static int
+dissect_svc_params(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
+{
+  uint32_t       value;
+  uint32_t       svc_param_key;
+  uint32_t       svc_param_offset;
+  uint32_t       svc_param_length;
+  uint32_t       svc_param_alpn_length;
+  const uint8_t *dohpath;
+  int            cur_offset = 0;
+  int            offset_end = tvb_captured_length(tvb);
+  proto_item    *svcb_param_ti;
+  proto_tree    *svcb_param_tree;
+
+  while (cur_offset < offset_end) {
+    svcb_param_ti = proto_tree_add_item(tree, proto_svc_params, tvb, cur_offset, -1, ENC_NA);
+    svcb_param_tree = proto_item_add_subtree(svcb_param_ti, ett_svc_param);
+
+    proto_tree_add_item_ret_uint(svcb_param_tree, hf_svc_param_key, tvb, cur_offset, 2, ENC_BIG_ENDIAN, &svc_param_key);
+    cur_offset += 2;
+
+    proto_tree_add_item_ret_uint(svcb_param_tree, hf_svc_param_length, tvb, cur_offset, 2, ENC_BIG_ENDIAN, &svc_param_length);
+    cur_offset += 2;
+
+    proto_item_append_text(svcb_param_ti, ": %s", val_to_str(pinfo->pool, svc_param_key, dns_svcb_param_key_vals, "key%u"));
+    proto_item_set_len(svcb_param_ti, svc_param_length + 4);
+
+    switch(svc_param_key) {
+      case DNS_SVCB_KEY_MANDATORY:
+        for (svc_param_offset = 0; svc_param_offset < svc_param_length; svc_param_offset += 2) {
+          uint32_t key;
+          proto_tree_add_item_ret_uint(svcb_param_tree, hf_svc_param_mandatory_key, tvb, cur_offset, 2, ENC_BIG_ENDIAN, &key);
+          proto_item_append_text(svcb_param_ti, "%c%s", (svc_param_offset == 0 ? '=' : ','), val_to_str(pinfo->pool, key, dns_svcb_param_key_vals, "key%u"));
+          cur_offset += 2;
+        }
+        break;
+      case DNS_SVCB_KEY_ALPN:
+        for (svc_param_offset = 0; svc_param_offset < svc_param_length; ) {
+          const uint8_t *alpn;
+          proto_tree_add_item_ret_uint(svcb_param_tree, hf_svc_param_alpn_length, tvb, cur_offset, 1, ENC_BIG_ENDIAN, &svc_param_alpn_length);
+          cur_offset += 1;
+          proto_tree_add_item_ret_string(svcb_param_tree, hf_svc_param_alpn, tvb, cur_offset, svc_param_alpn_length, ENC_ASCII|ENC_NA, pinfo->pool, &alpn);
+          cur_offset += svc_param_alpn_length;
+          proto_item_append_text(svcb_param_ti, "%c%s", (svc_param_offset == 0 ? '=' : ','), alpn);
+          svc_param_offset += 1 + svc_param_alpn_length;
+        }
+        break;
+      case DNS_SVCB_KEY_NOALPN:
+        break;
+      case DNS_SVCB_KEY_PORT:
+        proto_tree_add_item_ret_uint(svcb_param_tree, hf_svc_param_port, tvb, cur_offset, 2, ENC_BIG_ENDIAN, &value);
+        proto_item_append_text(svcb_param_ti, "=%u", value);
+        cur_offset += 2;
+        break;
+      case DNS_SVCB_KEY_IPV4HINT:
+        for (svc_param_offset = 0; svc_param_offset < svc_param_length; svc_param_offset += 4) {
+          proto_tree_add_item(svcb_param_tree, hf_svc_param_ipv4hint_ip, tvb, cur_offset, 4, ENC_BIG_ENDIAN);
+          proto_item_append_text(svcb_param_ti, "%c%s", (svc_param_offset == 0 ? '=' : ','), tvb_ip_to_str(pinfo->pool, tvb, cur_offset));
+          cur_offset += 4;
+        }
+        break;
+      case DNS_SVCB_KEY_ECH:
+      {
+        tvbuff_t *next_tvb = tvb_new_subset_length(tvb, cur_offset, svc_param_length);
+        cur_offset += call_dissector(tls_echconfig_handle, next_tvb, pinfo, svcb_param_tree);
+        break;
+      }
+      case DNS_SVCB_KEY_IPV6HINT:
+        for (svc_param_offset = 0; svc_param_offset < svc_param_length; svc_param_offset += 16) {
+          proto_tree_add_item(svcb_param_tree, hf_svc_param_ipv6hint_ip, tvb, cur_offset, 16, ENC_NA);
+          proto_item_append_text(svcb_param_ti, "%c%s", (svc_param_offset == 0 ? '=' : ','), tvb_ip6_to_str(pinfo->pool, tvb, cur_offset));
+          cur_offset += 16;
+        }
+        break;
+      case DNS_SVCB_KEY_DOHPATH:
+        proto_tree_add_item_ret_string(svcb_param_tree, hf_svc_param_dohpath, tvb, cur_offset, svc_param_length, ENC_UTF_8|ENC_NA, pinfo->pool, &dohpath);
+        cur_offset += svc_param_length;
+        proto_item_append_text(svcb_param_ti, "=%s", dohpath);
+        break;
+      case DNS_SVCB_KEY_OHTTP:
+        break;
+      case DNS_SVCB_KEY_ODOHCONFIG:
+        dissect_dns_svcparam_base64(svcb_param_tree, pinfo, svcb_param_ti, hf_svc_param_odohconfig, tvb, cur_offset, svc_param_length);
+        cur_offset += svc_param_length;
+        break;
+      default:
+        if (svc_param_length > 0) {
+          proto_tree_add_item(svcb_param_tree, hf_svc_param_value, tvb, cur_offset, svc_param_length, ENC_NA);
+          proto_item_append_text(svcb_param_ti, "=%s", tvb_format_text(pinfo->pool, tvb, cur_offset, svc_param_length));
+          cur_offset += svc_param_length;
+        }
+        break;
+    }
+  }
+
+  return tvb_captured_length(tvb);
+}
+
 static void
 add_timestamp(proto_tree *tree, int hf_id, tvbuff_t *tvb, int offset)
 {
@@ -2867,7 +2982,7 @@ dissect_dns_answer(tvbuff_t *tvb, int offsetx, int dns_data_offset,
           && tvb_get_uint32(tvb, txt_offset, ENC_BIG_ENDIAN) == DNSCRYPT_CERT_MAGIC){
           dissect_dnscrypt(rr_tree, tvb, txt_offset, txt_len);
         } else {
-            proto_tree_add_item(rr_tree, hf_dns_txt, tvb, txt_offset, txt_len, is_mdns ? ENC_UTF_8 : ENC_ASCII);
+            proto_tree_add_item(rr_tree, hf_dns_txt, tvb, txt_offset, txt_len, ENC_UTF_8);
         }
         txt_offset +=  txt_len;
         rr_len     -= txt_len;
@@ -3136,7 +3251,7 @@ dissect_dns_answer(tvbuff_t *tvb, int offsetx, int dns_data_offset,
         cur_offset += 4;
 
         ti = proto_tree_add_item(rr_tree, hf_dns_loc_altitude, tvb, cur_offset, 4, ENC_BIG_ENDIAN);
-        proto_item_append_text(ti, " (%g m)", (tvb_get_ntohil(tvb, cur_offset) - 10000000)/100.0);
+        proto_item_append_text(ti, " (%g m)", (tvb_get_ntohil(tvb, cur_offset) - 10000000.0)/100.0);
       } else {
         proto_tree_add_item(rr_tree, hf_dns_loc_unknown_data, tvb, cur_offset, data_len, ENC_NA);
       }
@@ -4028,17 +4143,11 @@ dissect_dns_answer(tvbuff_t *tvb, int offsetx, int dns_data_offset,
     case T_SVCB: /* Service binding and parameter specification (64) */
     case T_HTTPS: /* Service binding and parameter specification (65) */
     {
-      uint32_t      priority = 0, value;
-      uint32_t      svc_param_key;
-      uint32_t      svc_param_offset;
-      uint32_t      svc_param_length;
-      uint32_t      svc_param_alpn_length;
+      uint32_t      priority = 0;
       const char   *target;
       int           target_len;
-      const uint8_t *dohpath;
       int           start_offset = cur_offset;
-      proto_item   *svcb_param_ti;
-      proto_tree   *svcb_param_tree;
+      tvbuff_t     *next_tvb;
 
       proto_tree_add_item_ret_uint(rr_tree, hf_dns_svcb_priority, tvb, cur_offset, 2, ENC_BIG_ENDIAN, &priority);
       cur_offset += 2;
@@ -4050,86 +4159,8 @@ dissect_dns_answer(tvbuff_t *tvb, int offsetx, int dns_data_offset,
       cur_offset += used_bytes;
 
       if (data_len > cur_offset - start_offset) {
-        while (data_len > cur_offset - start_offset) {
-          svcb_param_ti = proto_tree_add_item(rr_tree, hf_dns_svcb_param, tvb, cur_offset, -1, ENC_NA);
-          svcb_param_tree = proto_item_add_subtree(svcb_param_ti, ett_dns_svcb);
-
-          proto_tree_add_item_ret_uint(svcb_param_tree, hf_dns_svcb_param_key, tvb, cur_offset, 2, ENC_BIG_ENDIAN, &svc_param_key);
-          cur_offset += 2;
-
-          proto_tree_add_item_ret_uint(svcb_param_tree, hf_dns_svcb_param_length, tvb, cur_offset, 2, ENC_BIG_ENDIAN, &svc_param_length);
-          cur_offset += 2;
-
-          proto_item_append_text(svcb_param_ti, ": %s", val_to_str(pinfo->pool, svc_param_key, dns_svcb_param_key_vals, "key%u"));
-          proto_item_set_len(svcb_param_ti, svc_param_length + 4);
-
-          switch(svc_param_key) {
-            case DNS_SVCB_KEY_MANDATORY:
-              for (svc_param_offset = 0; svc_param_offset < svc_param_length; svc_param_offset += 2) {
-                uint32_t key;
-                proto_tree_add_item_ret_uint(svcb_param_tree, hf_dns_svcb_param_mandatory_key, tvb, cur_offset, 2, ENC_BIG_ENDIAN, &key);
-                proto_item_append_text(svcb_param_ti, "%c%s", (svc_param_offset == 0 ? '=' : ','), val_to_str(pinfo->pool, key, dns_svcb_param_key_vals, "key%u"));
-                cur_offset += 2;
-              }
-              break;
-            case DNS_SVCB_KEY_ALPN:
-              for (svc_param_offset = 0; svc_param_offset < svc_param_length; ) {
-                const uint8_t *alpn;
-                proto_tree_add_item_ret_uint(svcb_param_tree, hf_dns_svcb_param_alpn_length, tvb, cur_offset, 1, ENC_BIG_ENDIAN, &svc_param_alpn_length);
-                cur_offset += 1;
-                proto_tree_add_item_ret_string(svcb_param_tree, hf_dns_svcb_param_alpn, tvb, cur_offset, svc_param_alpn_length, ENC_ASCII|ENC_NA, pinfo->pool, &alpn);
-                cur_offset += svc_param_alpn_length;
-                proto_item_append_text(svcb_param_ti, "%c%s", (svc_param_offset == 0 ? '=' : ','), alpn);
-                svc_param_offset += 1 + svc_param_alpn_length;
-              }
-              break;
-            case DNS_SVCB_KEY_NOALPN:
-              break;
-            case DNS_SVCB_KEY_PORT:
-              proto_tree_add_item_ret_uint(svcb_param_tree, hf_dns_svcb_param_port, tvb, cur_offset, 2, ENC_BIG_ENDIAN, &value);
-              proto_item_append_text(svcb_param_ti, "=%u", value);
-              cur_offset += 2;
-              break;
-            case DNS_SVCB_KEY_IPV4HINT:
-              for (svc_param_offset = 0; svc_param_offset < svc_param_length; svc_param_offset += 4) {
-                proto_tree_add_item(svcb_param_tree, hf_dns_svcb_param_ipv4hint_ip, tvb, cur_offset, 4, ENC_BIG_ENDIAN);
-                proto_item_append_text(svcb_param_ti, "%c%s", (svc_param_offset == 0 ? '=' : ','), tvb_ip_to_str(pinfo->pool, tvb, cur_offset));
-                cur_offset += 4;
-              }
-              break;
-            case DNS_SVCB_KEY_ECH:
-            {
-              tvbuff_t *next_tvb = tvb_new_subset_length(tvb, cur_offset, svc_param_length);
-              cur_offset += call_dissector(tls_echconfig_handle, next_tvb, pinfo, svcb_param_tree);
-              break;
-            }
-            case DNS_SVCB_KEY_IPV6HINT:
-              for (svc_param_offset = 0; svc_param_offset < svc_param_length; svc_param_offset += 16) {
-                proto_tree_add_item(svcb_param_tree, hf_dns_svcb_param_ipv6hint_ip, tvb, cur_offset, 16, ENC_NA);
-                proto_item_append_text(svcb_param_ti, "%c%s", (svc_param_offset == 0 ? '=' : ','), tvb_ip6_to_str(pinfo->pool, tvb, cur_offset));
-                cur_offset += 16;
-              }
-              break;
-            case DNS_SVCB_KEY_DOHPATH:
-              proto_tree_add_item_ret_string(svcb_param_tree, hf_dns_svcb_param_dohpath, tvb, cur_offset, svc_param_length, ENC_UTF_8|ENC_NA, pinfo->pool, &dohpath);
-              cur_offset += svc_param_length;
-              proto_item_append_text(svcb_param_ti, "=%s", dohpath);
-              break;
-            case DNS_SVCB_KEY_OHTTP:
-              break;
-            case DNS_SVCB_KEY_ODOHCONFIG:
-              dissect_dns_svcparam_base64(svcb_param_tree, pinfo, svcb_param_ti, hf_dns_svcb_param_odohconfig, tvb, cur_offset, svc_param_length);
-              cur_offset += svc_param_length;
-              break;
-            default:
-              if (svc_param_length > 0) {
-                proto_tree_add_item(svcb_param_tree, hf_dns_svcb_param_value, tvb, cur_offset, svc_param_length, ENC_NA);
-                proto_item_append_text(svcb_param_ti, "=%s", tvb_format_text(pinfo->pool, tvb, cur_offset, svc_param_length));
-                cur_offset += svc_param_length;
-              }
-              break;
-          }
-        }
+        next_tvb = tvb_new_subset_length(tvb, cur_offset, start_offset + data_len - cur_offset);
+        dissect_svc_params(next_tvb, pinfo, rr_tree, NULL);
       }
     }
     break;
@@ -4442,6 +4473,54 @@ dissect_dns_answer(tvbuff_t *tvb, int offsetx, int dns_data_offset,
     }
     break;
 
+    case T_AMTRELAY: /* Automatic Multicast Tunneling Relay (260) */
+    {
+      uint32_t    relay_type;
+      const char  *relay_name;
+      int         relay_name_len;
+
+      proto_tree_add_item(rr_tree, hf_dns_amtrelay_precedence, tvb, cur_offset, 1, ENC_BIG_ENDIAN);
+      cur_offset += 1;
+
+      proto_tree_add_item(rr_tree, hf_dns_amtrelay_disc_opt, tvb, cur_offset, 1, ENC_BIG_ENDIAN);
+      proto_tree_add_item_ret_uint(rr_tree, hf_dns_amtrelay_relay_type, tvb, cur_offset, 1, ENC_BIG_ENDIAN, &relay_type);
+      cur_offset += 1;
+
+      switch (relay_type) {
+
+        case 0:
+        {
+          /* No relay */
+        }
+        break;
+
+        case 1:
+        {
+          proto_tree_add_item(rr_tree, hf_dns_amtrelay_relay_ipv4, tvb, cur_offset, 4, ENC_BIG_ENDIAN);
+        }
+        break;
+
+        case 2:
+        {
+          proto_tree_add_item(rr_tree, hf_dns_amtrelay_relay_ipv6, tvb, cur_offset, 16, ENC_NA);
+        }
+        break;
+
+        case 3:
+        {
+          used_bytes = get_dns_name(pinfo->pool, tvb, cur_offset, 0, dns_data_offset, &relay_name, &relay_name_len);
+          name_out = format_text(pinfo->pool, (const unsigned char *)relay_name, relay_name_len);
+          proto_tree_add_string(rr_tree, hf_dns_amtrelay_relay_dns, tvb, cur_offset, used_bytes, name_out);
+        }
+        break;
+
+        default:
+        break;
+      }
+    }
+    break;
+
+
     case T_WINS:  /* Microsoft's WINS (65281)*/
     {
       int     rr_len = data_len;
@@ -4721,7 +4800,36 @@ dissect_dns_common(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
   /*
    * Do we have a conversation for this connection?
    */
-  conversation = find_or_create_conversation(pinfo);
+  if (is_llmnr && transport == DNS_TRANSPORT_UDP) {
+    /* LLMNR over UDP: requests are sent to link-scope multicast addresses
+     * and "an LLMNR response MUST be sent to the sender via unicast."
+     * (RFC 4795, 2.3)
+     *
+     * XXX - What about mDNS? It sends responses over multicast, so the opposite
+     * logic could be used. However, mDNS does not use the transaction ID at all
+     * nor is the question repeated in the response, so requests and responses
+     * are harder to associate. Perhaps requests and responses should not be
+     * tracked in mDNS at all.
+     */
+    conversation_element_t *conv_key = wmem_alloc_array(pinfo->pool, conversation_element_t, 3);
+    conv_key[0].type = CE_ADDRESS;
+    conv_key[1].type = CE_PORT;
+    conv_key[2].type = CE_CONVERSATION_TYPE;
+    conv_key[2].conversation_type_val = CONVERSATION_UDP;
+    if (flags & F_RESPONSE) {
+      conv_key[0].addr_val = pinfo->dst;
+      conv_key[1].port_val = pinfo->destport;
+    } else {
+      conv_key[0].addr_val = pinfo->src;
+      conv_key[1].port_val = pinfo->srcport;
+    }
+    conversation = find_conversation_full(pinfo->num, conv_key);
+    if (!conversation) {
+      conversation = conversation_new_full(pinfo->num, conv_key);
+    }
+  } else {
+    conversation = find_or_create_conversation(pinfo);
+  }
 
   /*
    * DoH: Each DNS query-response pair is mapped into an HTTP exchange.
@@ -6788,63 +6896,58 @@ proto_register_dns(void)
         FT_STRING, BASE_NONE, NULL, 0x0,
         NULL, HFILL }},
 
-    { &hf_dns_svcb_param_key,
-      { "SvcParamKey", "dns.svcb.svcparam.key",
+    { &hf_svc_param_key,
+      { "SvcParamKey", "svc_params.key",
         FT_UINT16, BASE_DEC, VALS(dns_svcb_param_key_vals), 0x0,
         NULL, HFILL }},
 
-    { &hf_dns_svcb_param_length,
-      { "SvcParamValue length", "dns.svcb.svcparam.value.length",
+    { &hf_svc_param_length,
+      { "SvcParamValue length", "svc_params.value.length",
         FT_UINT16, BASE_DEC, NULL, 0x0,
         NULL, HFILL }},
 
-    { &hf_dns_svcb_param_value,
-      { "SvcParamValue", "dns.svcb.svcparam.value",
+    { &hf_svc_param_value,
+      { "SvcParamValue", "svc_params.value",
         FT_BYTES, BASE_NONE, NULL, 0x0,
         NULL, HFILL }},
 
-    { &hf_dns_svcb_param,
-      { "SvcParam", "dns.svcb.svcparam",
-        FT_NONE, BASE_NONE, NULL, 0x0,
-        NULL, HFILL }},
-
-    { &hf_dns_svcb_param_mandatory_key,
-      { "Mandatory key", "dns.svcb.svcparam.mandatory.key",
+    { &hf_svc_param_mandatory_key,
+      { "Mandatory key", "svc_params.mandatory.key",
         FT_UINT16, BASE_DEC, VALS(dns_svcb_param_key_vals), 0x0,
         "Mandatory keys in this RR", HFILL }},
 
-    { &hf_dns_svcb_param_alpn_length,
-      { "ALPN length", "dns.svcb.svcparam.alpn.length",
+    { &hf_svc_param_alpn_length,
+      { "ALPN length", "svc_params.alpn.length",
         FT_UINT8, BASE_DEC, NULL, 0x0,
         NULL, HFILL }},
 
-    { &hf_dns_svcb_param_alpn,
-      { "ALPN", "dns.svcb.svcparam.alpn",
+    { &hf_svc_param_alpn,
+      { "ALPN", "svc_params.alpn",
         FT_STRING, BASE_NONE, NULL, 0x0,
         "Additional supported protocols", HFILL }},
 
-    { &hf_dns_svcb_param_port,
-      { "Port", "dns.svcb.svcparam.port",
+    { &hf_svc_param_port,
+      { "Port", "svc_params.port",
         FT_UINT16, BASE_DEC, NULL, 0x0,
         "Port for alternative endpoint", HFILL }},
 
-    { &hf_dns_svcb_param_ipv4hint_ip,
-      { "IP", "dns.svcb.svcparam.ipv4hint.ip",
+    { &hf_svc_param_ipv4hint_ip,
+      { "IP", "svc_params.ipv4hint.ip",
         FT_IPv4, BASE_NONE, NULL, 0x0,
         "IPv4 address hints", HFILL }},
 
-    { &hf_dns_svcb_param_ipv6hint_ip,
-      { "IP", "dns.svcb.svcparam.ipv6hint.ip",
+    { &hf_svc_param_ipv6hint_ip,
+      { "IP", "svc_params.ipv6hint.ip",
         FT_IPv6, BASE_NONE, NULL, 0x0,
         "IPv6 address hints", HFILL }},
 
-    { &hf_dns_svcb_param_dohpath,
-      { "DoH path", "dns.svcb.svcparam.dohpath",
+    { &hf_svc_param_dohpath,
+      { "DoH path", "svc_params.dohpath",
         FT_STRING, BASE_NONE, NULL, 0x0,
         "DoH URI template", HFILL}},
 
-    { &hf_dns_svcb_param_odohconfig,
-      { "ODoHConfig", "dns.svcb.svcparam.odohconfig",
+    { &hf_svc_param_odohconfig,
+      { "ODoHConfig", "svc_params.odohconfig",
         FT_BYTES, BASE_NONE, NULL, 0x0,
         "Oblivious DoH keys", HFILL }},
 
@@ -7650,7 +7753,7 @@ proto_register_dns(void)
         NULL, HFILL }},
 
     { &hf_dns_hip_pk_algo,
-      { "HIT length", "dns.hip.hit.pk.algo",
+      { "PK algorithm", "dns.hip.hit.pk.algo",
         FT_UINT8, BASE_DEC, VALS(hip_algo_vals), 0,
         NULL, HFILL }},
 
@@ -7879,6 +7982,36 @@ proto_register_dns(void)
         FT_STRING, BASE_NONE, NULL, 0x0,
         NULL, HFILL }},
 
+    { &hf_dns_amtrelay_precedence,
+      { "Precedence", "dns.amtrelay.precedence",
+        FT_UINT8, BASE_DEC, NULL, 0,
+        NULL, HFILL }},
+
+    { &hf_dns_amtrelay_disc_opt,
+      { "Discovery Optional", "dns.amtrelay.disc_opt",
+        FT_BOOLEAN, 8, TFS(&tfs_set_notset), 0x80,
+        NULL, HFILL }},
+
+    { &hf_dns_amtrelay_relay_type,
+      { "Relay Type", "dns.amtrelay.relay_type",
+        FT_UINT8, BASE_DEC, VALS(amtrelay_type_vals), 0x7f,
+        NULL, HFILL }},
+
+    { &hf_dns_amtrelay_relay_ipv4,
+      { "IPv4 Relay", "dns.amtrelay.relay_ipv4",
+        FT_IPv4, BASE_NONE, NULL, 0,
+        NULL, HFILL }},
+
+    { &hf_dns_amtrelay_relay_ipv6,
+      { "IPv6 Relay", "dns.amtrelay.relay_ipv6",
+        FT_IPv6, BASE_NONE, NULL, 0,
+        NULL, HFILL }},
+
+    { &hf_dns_amtrelay_relay_dns,
+      { "DNS Relay", "dns.amtrelay.relay_dns",
+        FT_STRING, BASE_NONE, NULL, 0,
+        NULL, HFILL }},
+
     { &hf_dns_extraneous_data,
       { "Extraneous Data Bytes", "dns.extraneous.data",
         FT_BYTES, BASE_NONE, NULL, 0x0,
@@ -8042,7 +8175,7 @@ proto_register_dns(void)
     &ett_dns_csdync_flags,
     &ett_dns_dso,
     &ett_dns_dso_tlv,
-    &ett_dns_svcb,
+    &ett_svc_param,
     &ett_dns_extraneous,
     &ett_dns_dnscrypt
   };
@@ -8053,6 +8186,8 @@ proto_register_dns(void)
   proto_dns = proto_register_protocol("Domain Name System", "DNS", "dns");
   proto_mdns = proto_register_protocol("Multicast Domain Name System", "mDNS", "mdns");
   proto_llmnr = proto_register_protocol("Link-local Multicast Name Resolution", "LLMNR", "llmnr");
+  proto_svc_params = proto_register_protocol_in_name_only("SVC params", "svc_params", "svc_params", proto_dns, FT_BYTES);
+
   proto_register_field_array(proto_dns, hf, array_length(hf));
   proto_register_subtree_array(ett, array_length(ett));
   expert_dns = expert_register_protocol(proto_dns);
@@ -8101,6 +8236,8 @@ proto_register_dns(void)
   mdns_udp_handle = register_dissector("mdns", dissect_mdns_udp, proto_mdns);
   llmnr_udp_handle = register_dissector("llmnr", dissect_llmnr_udp, proto_llmnr);
   doq_handle = register_dissector("dns.doq", dissect_dns_doq, proto_dns);
+
+  register_dissector("svc_params", dissect_svc_params, proto_svc_params);
 
   dns_tap = register_tap("dns");
 }

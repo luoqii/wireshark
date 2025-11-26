@@ -59,12 +59,14 @@
 #define DOT11DECRYPT_CIPHER_BIP_CMAC256		13
 
 /*
- * Min length of encrypted data (TKIP=21bytes, CCMP=17bytes)
- * CCMP = 8 octets of CCMP header, 1 octet of data, 8 octets of MIC.
+ * Min length of encrypted data (WEP=9bytes, TKIP=21bytes, CCMP=17bytes, GCMP=25bytes)
+ * WEP = 4 octets of IV, 1 octet of data, 4 octets of ICV.
  * TKIP = 4 octets of IV/Key ID, 4 octets of Extended IV, 1 octet of data,
- *  8 octets of MIC, 4 octets of ICV
+ *  8 octets of MIC, 4 octets of ICV.
+ * CCMP = 8 octets of CCMP header, 1 octet of data, 8 octets of MIC.
+ * GCMP = 8 octets of GCMP header, 1 octet of data, 16 octets of MIC.
  */
-#define	DOT11DECRYPT_CRYPTED_DATA_MINLEN	17
+#define	DOT11DECRYPT_CRYPTED_DATA_MINLEN	9
 
 #define DOT11DECRYPT_TA_OFFSET	10
 
@@ -183,6 +185,14 @@ typedef struct _DOT11DECRYPT_MAC_FRAME_ADDR4_QOS {
 
 /******************************************************************************/
 
+/*
+ * Decrypt CCMP encrypted MPDU.
+ *
+ * @Return
+ * - -1: Length constraint is not satisfied indicating that decryption is impossible
+ * - 1: Decryption fails
+ * - 0: Decryption succeeds
+ */
 int Dot11DecryptCcmpDecrypt(
 	uint8_t *m,
 	int mac_header_len,
@@ -191,6 +201,14 @@ int Dot11DecryptCcmpDecrypt(
 	int tk_len,
 	int mic_len);
 
+/*
+ * Decrypt GCMP encrypted MPDU.
+ *
+ * @Return
+ * - -1: Length constraint is not satisfied indicating that decryption is impossible
+ * - 1: Decryption fails
+ * - 0: Decryption succeeds
+ */
 int Dot11DecryptGcmpDecrypt(
 	uint8_t *m,
 	int mac_header_len,
@@ -198,11 +216,41 @@ int Dot11DecryptGcmpDecrypt(
 	uint8_t *TK1,
 	int tk_len);
 
+/*
+ * Decrypt TKIP encrypted MPDU.
+ *
+ * @Return
+ * - -1: Length constraint is not satisfied indicating that decryption is impossible
+ * - 1: Decryption fails
+ * - 0: Decryption succeeds
+ */
 int Dot11DecryptTkipDecrypt(
-	unsigned char *tkip_mpdu,
+	uint8_t *mpdu,
+	size_t mac_header_len,
 	size_t mpdu_len,
-	unsigned char TA[DOT11DECRYPT_MAC_LEN],
-	unsigned char TK[DOT11DECRYPT_TK_LEN])
-	;
+	unsigned char TK[DOT11DECRYPT_TK_LEN]);
+
+/*
+ * Decrypt WEP-encrypted 802.11 payload using RC4 stream cipher.
+ *
+ * Performs WEP decryption on the provided `cypher_text` buffer using the RC4
+ * algorithm seeded with the specified initialization vector and WEP key.
+ * The decryption is done in-place, modifying `cypher_text` directly.
+ *
+ * This function assumes the input data is WEP-encrypted and that the seed
+ * contains both the IV and the shared WEP key. It verifies the ICV assumed
+ * to follow right after the cypher_text.
+ *
+ * @param seed        Pointer to the RC4 seed (IV + WEP key).
+ * @param seed_len    Length of the seed in bytes.
+ * @param cypher_text Pointer to the encrypted data buffer (will be decrypted in-place).
+ * @param data_len    Length of the encrypted data in bytes.
+ * @return            0 on success, non-zero on failure.
+ */
+WS_DLL_PUBLIC int Dot11DecryptWepDecrypt(
+	const unsigned char *seed,
+	size_t seed_len,
+	unsigned char *cypher_text,
+	size_t data_len);
 
 #endif

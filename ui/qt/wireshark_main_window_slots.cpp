@@ -44,6 +44,7 @@ DIAG_ON(frame-larger-than=)
 
 #include "wsutil/file_util.h"
 #include "wsutil/filesystem.h"
+#include "wsutil/application_flavor.h"
 #include <wsutil/wslog.h>
 #include <wsutil/ws_assert.h>
 
@@ -57,13 +58,13 @@ DIAG_ON(frame-larger-than=)
 #include "epan/plugin_if.h"
 #include "epan/uat.h"
 #include "epan/uat-int.h"
-#include "epan/value_string.h"
+#include "epan/secrets.h"
+#include <wsutil/value_string.h>
 
 #ifdef HAVE_LUA
 #include <epan/wslua/init_wslua.h>
 #endif
 
-#include "ui/alert_box.h"
 #ifdef HAVE_LIBPCAP
 #include "ui/capture_ui_utils.h"
 #endif
@@ -74,7 +75,6 @@ DIAG_ON(frame-larger-than=)
 #include "ui/preference_utils.h"
 #include "ui/recent.h"
 #include "ui/recent_utils.h"
-#include "ui/ssl_key_export.h"
 #include "ui/ws_ui_util.h"
 #include "ui/all_files_wildcard.h"
 #include "ui/qt/simple_dialog.h"
@@ -123,6 +123,7 @@ DIAG_ON(frame-larger-than=)
 #include "iax2_analysis_dialog.h"
 #include "interface_toolbar.h"
 #include "io_graph_dialog.h"
+#include "ui/io_graph_uat.h"
 #include "plot_dialog.h"
 #include <ui/qt/widgets/additional_toolbar.h>
 #include "lbm_stream_dialog.h"
@@ -176,6 +177,7 @@ DIAG_ON(frame-larger-than=)
 #include <QDesktopServices>
 #include <QUrl>
 #include <QMutex>
+#include <ui/tap-aggregation.h>
 
 // XXX You must uncomment QT_WINEXTRAS_LIB lines in CMakeList.txt and
 // cmakeconfig.h.in.
@@ -766,6 +768,7 @@ void WiresharkMainWindow::captureEventHandler(CaptureEvent ev)
 void WiresharkMainWindow::captureFileOpened() {
     if (capture_file_.window() != this) return;
 
+    register_tap_listener_aggregation();
     file_set_dialog_->fileOpened(capture_file_.capFile());
     setMenusForFileSet(true);
     emit setCaptureFile(capture_file_.capFile());
@@ -1018,6 +1021,25 @@ void WiresharkMainWindow::stopCapture() {
     capture_stop(&cap_session_);
 #endif // HAVE_LIBPCAP
 
+}
+
+void WiresharkMainWindow::aggregationViewChanged(bool enable) const {
+    recent.aggregation_view = enable;
+    main_ui_->actionAggregationView->setEnabled(false);
+    QTimer::singleShot(100,
+        [this]() {
+            bool tap_registered = register_tap_listener_aggregation();
+            bool cf_ready = capture_file_.capFile() && !capture_file_.capFile()->read_lock;
+            if (recent.aggregation_view) {
+                if (cf_ready && tap_registered) {
+                    cf_retap_aggregation_packets(capture_file_.capFile(), recent.aggregation_view);
+                }
+            }
+            else if (cf_ready) {
+                cf_retap_aggregation_packets(capture_file_.capFile(), recent.aggregation_view);
+            }
+            main_ui_->actionAggregationView->setEnabled(true);
+        });
 }
 
 // Keep focus rects from showing through the welcome screen. Primarily for
@@ -1575,7 +1597,7 @@ void WiresharkMainWindow::checkDisplayFilter()
 void WiresharkMainWindow::fieldsChanged()
 {
     char *err_msg = NULL;
-    if (!color_filters_reload(&err_msg, color_filter_add_cb)) {
+    if (!color_filters_reload(&err_msg, color_filter_add_cb, application_configuration_environment_prefix())) {
         simple_dialog(ESD_TYPE_ERROR, ESD_BTN_OK, "%s", err_msg);
         g_free(err_msg);
     }
@@ -1613,7 +1635,7 @@ void WiresharkMainWindow::reloadLuaPlugins()
 
     mainApp->setReloadingLua(true);
 
-    wslua_reload_plugins(NULL, NULL);
+    wslua_reload_plugins(NULL, NULL, application_configuration_environment_prefix());
     this->clearAddedPacketMenus();
     funnel_statistics_reload_menus();
     reloadDynamicMenus();
@@ -1974,36 +1996,43 @@ void WiresharkMainWindow::exportTLSSessionKeys()
 {
     QString file_name;
     QString save_title;
-    int keylist_len;
+    size_t keylist_len = 0;
+    unsigned num_keys = 0;
+    char* keylist = NULL;
 
-    keylist_len = ssl_session_key_count();
-    /* don't show up the dialog, if no data has to be saved */
-    if (keylist_len < 1) {
+    secrets_export_values ret = secrets_export("TLS", &keylist, &keylist_len, &num_keys);
+    switch (ret)
+    {
+    case SECRETS_NO_SECRETS:
+    {
         /* shouldn't happen as the menu item should have been greyed out */
         QMessageBox::warning(
-                    this,
-                    tr("No Keys"),
-                    tr("There are no TLS Session Keys to save."),
-                    QMessageBox::Ok
-                    );
+            this,
+            tr("No Keys"),
+            tr("There are no TLS Session Keys to save."),
+            QMessageBox::Ok
+        );
         return;
     }
+    case SECRETS_EXPORT_SUCCESS:
+        save_title.append(mainApp->windowTitleString(tr("Export TLS Session Keys (%Ln key(s))", "", num_keys)));
+        file_name = WiresharkFileDialog::getSaveFileName(this,
+            save_title,
+            mainApp->openDialogInitialDir().canonicalPath(),
+            tr("TLS Session Keys (*.keys *.txt);;All Files (" ALL_FILES_WILDCARD ")")
+        );
+        if (file_name.length() > 0) {
+            write_file_binary_mode(qUtf8Printable(file_name), keylist, keylist_len);
 
-    save_title.append(mainApp->windowTitleString(tr("Export TLS Session Keys (%Ln key(s))", "", keylist_len)));
-    file_name = WiresharkFileDialog::getSaveFileName(this,
-                                            save_title,
-                                            mainApp->openDialogInitialDir().canonicalPath(),
-                                            tr("TLS Session Keys (*.keys *.txt);;All Files (" ALL_FILES_WILDCARD ")")
-                                            );
-    if (file_name.length() > 0) {
-        size_t keylist_length;
-        char *keylist = ssl_export_sessions(&keylist_length);
-        write_file_binary_mode(qUtf8Printable(file_name), keylist, keylist_length);
-
-        /* Save the directory name for future file dialogs. */
-        mainApp->setLastOpenDirFromFilename(file_name);
-        g_free(keylist);
+            /* Save the directory name for future file dialogs. */
+            mainApp->setLastOpenDirFromFilename(file_name);
+        }
+        break;
+    default:
+        break;
     }
+
+    g_free(keylist);
 }
 
 void WiresharkMainWindow::printFile()
@@ -2149,8 +2178,11 @@ void WiresharkMainWindow::connectEditMenuActions()
     connect(main_ui_->actionDeleteAllPacketComments, &QAction::triggered, this,
             [this]() { deleteAllPacketComments(); }, Qt::QueuedConnection);
 
-    connect(main_ui_->actionEditInjectSecrets, &QAction::triggered, this,
-            [this]() { injectSecrets(); }, Qt::QueuedConnection);
+    connect(main_ui_->actionEditInjectTLSSecrets, &QAction::triggered, this,
+            [this]() { injectSecrets("TLS", "TLS#tls-decryption"); }, Qt::QueuedConnection);
+
+    connect(main_ui_->actionEditInjectESPSecrets, &QAction::triggered, this,
+            [this]() { injectSecrets("ESP", "ESP_Preferences#esp-preferences"); }, Qt::QueuedConnection);
 
     connect(main_ui_->actionEditDiscardAllSecrets, &QAction::triggered, this,
             [this]() { discardAllSecrets(); }, Qt::QueuedConnection);
@@ -2437,37 +2469,36 @@ void WiresharkMainWindow::deleteAllPacketCommentsFinished(int result)
     }
 }
 
-void WiresharkMainWindow::injectSecrets()
+void WiresharkMainWindow::injectSecrets(const char* proto_name, const char* wiki_link)
 {
-    int keylist_len;
+    if (!capture_file_.isValid())
+        return;
 
-    keylist_len = ssl_session_key_count();
-    /* don't do anything if no data has to be saved */
-    if (keylist_len < 1) {
+    secrets_export_values ret = secrets_export_dsb(proto_name, capture_file_.capFile());
+    switch (ret)
+    {
+    case SECRETS_NO_SECRETS:
+    {
         QMessageBox::Button ret = QMessageBox::warning(
             this,
-            tr("No TLS Secrets"),
-            tr("There are no available secrets used to decrypt TLS traffic in the capture file.\
-  Would you like to view information about how to decrypt TLS traffic on the wiki?"),
+            tr("No %1 Secrets").arg(proto_name),
+            tr("There are no available secrets used to decrypt %1 traffic in the capture file.\
+  Would you like to view information about how to decrypt %2 traffic on the wiki?").arg(proto_name).arg(proto_name),
             QMessageBox::Yes | QMessageBox::No,
             QMessageBox::No);
 
         if (ret != QMessageBox::Yes) return;
 
-        QUrl wiki_url = QString(WS_WIKI_URL("TLS#tls-decryption"));
+        QUrl wiki_url = QString(WS_WIKI_URL("")) + QString(wiki_link);
         QDesktopServices::openUrl(wiki_url);
-        return;
+        break;
     }
-
-    if (!capture_file_.isValid())
-        return;
-
-    /* XXX: It would be nice to handle other types of secrets that
-     * can be written to a DSB, maybe have a proper dialog.
-     */
-    capture_file *cf = capture_file_.capFile();
-    tls_export_dsb(cf);
-    updateForUnsavedChanges();
+    case SECRETS_EXPORT_SUCCESS:
+        updateForUnsavedChanges();
+        break;
+    default:
+        break;
+    }
 }
 
 void WiresharkMainWindow::discardAllSecrets()
@@ -2521,6 +2552,7 @@ void WiresharkMainWindow::showPreferencesDialog(QString module_name)
     pref_dialog->setWindowModality(Qt::ApplicationModal);
     pref_dialog->setAttribute(Qt::WA_DeleteOnClose);
     pref_dialog->show();
+    pref_dialog->enableAggregationOptions(!main_ui_->actionAggregationView->isChecked());
 }
 
 // View Menu
@@ -3043,6 +3075,8 @@ void WiresharkMainWindow::connectGoMenuActions()
     // a temporary change)
     connect(main_ui_->actionGoAutoScroll, &QAction::toggled, this,
             [this](bool checked) { packet_list_->setVerticalAutoScroll(checked); });
+
+    connect(main_ui_->actionAggregationView, &QAction::toggled, this, &WiresharkMainWindow::aggregationViewChanged);
 }
 
 void WiresharkMainWindow::goToConversationFrame(bool go_next, bool start_current) {
@@ -3153,7 +3187,7 @@ void WiresharkMainWindow::showCaptureOptionsDialog()
         connect(capture_options_dialog_, &CaptureOptionsDialog::showExtcapOptions,
                 this, &WiresharkMainWindow::showExtcapOptionsDialog);
     }
-    capture_options_dialog_->updateInterfaces();
+    capture_options_dialog_->updateInterfaces(&global_capture_opts);
 
     if (capture_options_dialog_->isMinimized()) {
         capture_options_dialog_->showNormal();
@@ -3364,7 +3398,6 @@ void WiresharkMainWindow::applyExportObject()
         return;
 
     ExportObjectDialog* export_dialog = new ExportObjectDialog(*this, capture_file_, export_action->exportObject());
-    export_dialog->setWindowModality(Qt::ApplicationModal);
     export_dialog->setAttribute(Qt::WA_DeleteOnClose);
     export_dialog->show();
 }
@@ -3631,6 +3664,23 @@ void WiresharkMainWindow::statCommandIOGraph(const char *, void *)
     showIOGraphDialog(IOG_ITEM_UNIT_PACKETS, QString());
 }
 
+UAT_VS_DEF(io_graph, yaxis, io_graph_settings_t, uint32_t, 0, "Packets")
+
+static uat_field_t io_graph_packet_fields[] = {
+    UAT_FLD_BOOL_ENABLE(io_graph, enabled, "Enabled", "Graph visibility"),
+    UAT_FLD_CSTRING(io_graph, name, "Graph Name", "The name of the graph"),
+    UAT_FLD_DISPLAY_FILTER(io_graph, dfilter, "Display Filter", "Graph packets matching this display filter"),
+    UAT_FLD_COLOR(io_graph, color, "Color", "Graph color (#RRGGBB)"),
+    UAT_FLD_VS(io_graph, style, "Style", io_graph_style_vs, "Graph style (Line, Bars, etc.)"),
+    UAT_FLD_VS(io_graph, yaxis, "Y Axis", y_axis_packet_vs, "Y Axis units"),
+    UAT_FLD_PROTO_FIELD(io_graph, yfield, "Y Field", "Apply calculations to this field"),
+    UAT_FLD_SMA_PERIOD(io_graph, sma_period, "SMA Period", moving_avg_vs, "Simple moving average period"),
+    UAT_FLD_DBL(io_graph, y_axis_factor, "Y Axis Factor", "Y Axis Factor"),
+    UAT_FLD_BOOL_ENABLE(io_graph, asAOT, "Avg over Time", "Average over time interpretation"),
+
+    UAT_END_FIELDS
+};
+
 void WiresharkMainWindow::showIOGraphDialog(io_graph_item_unit_t value_units, QString yfield)
 {
     const DisplayFilterEdit *df_edit = qobject_cast<DisplayFilterEdit *>(df_combo_box_->lineEdit());
@@ -3666,7 +3716,7 @@ void WiresharkMainWindow::showIOGraphDialog(io_graph_item_unit_t value_units, QS
 
     if (iog_dialog == nullptr) {
         QVector<QString> conv_filters;
-        iog_dialog = new IOGraphDialog(*this, capture_file_, displayFilter, value_units, yfield, false, conv_filters);
+        iog_dialog = new IOGraphDialog(*this, capture_file_, io_graph_packet_fields, "Packets", displayFilter, value_units, yfield, false, conv_filters);
         connect(iog_dialog, &IOGraphDialog::goToPacket, this, [=](int packet_num) {packet_list_->goToPacket(packet_num);});
         connect(this, &WiresharkMainWindow::reloadFields, iog_dialog, &IOGraphDialog::reloadFields);
     }
@@ -3736,7 +3786,7 @@ void WiresharkMainWindow::openIOGraph(bool filtered, QVector<uint> typed_conv_id
         }
     }
 
-    IOGraphDialog *iog_dialog = new IOGraphDialog(*this, capture_file_, displayFilter, IOG_ITEM_UNIT_PACKETS, QString(), true, conv_filters);
+    IOGraphDialog *iog_dialog = new IOGraphDialog(*this, capture_file_, io_graph_packet_fields, "Packets", displayFilter, IOG_ITEM_UNIT_PACKETS, QString(), true, conv_filters);
     connect(this, SIGNAL(reloadFields()), iog_dialog, SLOT(reloadFields()));
     iog_dialog->show();
 }

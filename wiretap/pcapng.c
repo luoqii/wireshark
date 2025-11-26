@@ -25,9 +25,6 @@
 #include <string.h>
 #include <errno.h>
 
-#include <jtckdint.h>
-
-#include <wsutil/application_flavor.h>
 #include <wsutil/wslog.h>
 #include <wsutil/strtoi.h>
 #include <wsutil/glib-compat.h>
@@ -36,13 +33,14 @@
 #include <wsutil/ws_padding_to.h>
 #include <wsutil/unicode-utils.h>
 
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include "file_wrappers.h"
 #include "required_file_handlers.h"
 #include "pcap-common.h"
 #include "pcap-encap.h"
 #include "pcapng_module.h"
 #include "secrets-types.h"
+#include "pcapng-darwin-custom.h"
 
 #define NS_PER_S 1000000000U
 
@@ -121,6 +119,13 @@ typedef struct pcapng_custom_block_s {
     uint32_t pen;
     /* Custom data and options */
 } pcapng_custom_block_t;
+
+/* pcapng: legacy DPEB (Darwin Process Event Block) file encoding */
+typedef struct pcapng_legacy_darwin_process_event_block_s {
+    uint32_t process_id;
+    /* Options */
+}  pcapng_legacy_darwin_process_event_block_t;
+
 
 /*
  * We require __REALTIME_TIMESTAMP in the Journal Export Format reader in
@@ -239,9 +244,17 @@ register_pcapng_block_type_information(pcapng_block_type_information_t* handler)
 
     /* Don't allow duplication of block types */
     if (g_hash_table_lookup(block_handlers, GUINT_TO_POINTER(handler->type)) != NULL) {
-        ws_warning("Attempt to register plugin for an existing block type 0x%08x not allowed",
-            handler->type);
-        return;
+
+        if (handler->type == BLOCK_TYPE_LEGACY_DPIB) {
+
+            /* This special exception because stuff happened the way it had happened */
+            g_hash_table_remove(block_handlers, GUINT_TO_POINTER(handler->type));
+        }
+        else {
+            ws_warning("Attempt to register plugin for an existing block type 0x%08x not allowed",
+                handler->type);
+            return;
+        }
     }
 
     g_hash_table_insert(block_handlers, GUINT_TO_POINTER(handler->type),
@@ -454,6 +467,17 @@ pcapng_get_cb_section_info_data(section_info_t *section_info, uint32_t pen,
     return data;
 }
 
+static void
+pcapng_destroy_section_info(section_info_t *section_info)
+{
+    if (section_info->interfaces != NULL)
+        g_array_free(section_info->interfaces, true);
+    if (section_info->custom_block_data != NULL)
+        g_hash_table_destroy(section_info->custom_block_data);
+    if (section_info->local_block_data != NULL)
+        g_hash_table_destroy(section_info->local_block_data);
+}
+
 void *
 pcapng_get_lb_section_info_data(section_info_t *section_info,
                                 uint32_t block_type,
@@ -528,7 +552,7 @@ pcapng_process_uint32_option(wtapng_block_t *wblock,
          *
          * XXX - options are aligned on 32-bit boundaries, so, while
          * it may be true that 64-bit options aren't guaranteed to be
-         * aligned on 64-bit bounaries, it shouldn't be true that 32-bit
+         * aligned on 64-bit boundaries, it shouldn't be true that 32-bit
          * options aren't guaranteed to be aligned on 32-bit boundaries.
          */
         memcpy(&uint32, option_content, sizeof(uint32_t));
@@ -736,21 +760,28 @@ void
 pcapng_process_string_option(wtapng_block_t *wblock, uint16_t option_code,
                              uint16_t option_length, const uint8_t *option_content)
 {
-    const char *opt = (const char *)option_content;
+    const uint8_t *opt = (const uint8_t*)option_content;
     size_t optlen = option_length;
     char *str;
 
     /* Validate UTF-8 encoding. */
-    str = ws_utf8_make_valid(NULL, opt, optlen);
+    str = (char*)ws_utf8_make_valid(NULL, opt, optlen);
 
-    wtap_block_add_string_option_owned(wblock->block, option_code, str);
+    /*
+     * If this option can appear only once in a block, this call
+     * will fail on the second and later occurrences of the option;
+     * we silently ignore the failure.
+     */
+    if (wtap_block_add_string_option_owned(wblock->block, option_code, str) != WTAP_OPTTYPE_SUCCESS) {
+        g_free(str);
+    }
 }
 
 void
 pcapng_process_bytes_option(wtapng_block_t *wblock, uint16_t option_code,
                             uint16_t option_length, const uint8_t *option_content)
 {
-    wtap_block_add_bytes_option(wblock->block, option_code, (const char *)option_content, option_length);
+    wtap_block_add_bytes_option(wblock->block, option_code, option_content, option_length);
 }
 
 static bool
@@ -816,7 +847,7 @@ pcapng_process_custom_string_option(wtapng_block_t *wblock,
                                              &pen, err, err_info)) {
         return false;
     }
-    ret = wtap_block_add_custom_string_option(wblock->block, option_code, pen, option_content + 4, option_length - 4) == WTAP_OPTTYPE_SUCCESS;
+    ret = wtap_block_add_custom_string_option(wblock->block, option_code, pen, (const char*)(option_content + 4), option_length - 4) == WTAP_OPTTYPE_SUCCESS;
     ws_debug("returning %d", ret);
     return ret;
 }
@@ -831,7 +862,7 @@ pcapng_process_custom_binary_option(wtapng_block_t *wblock,
                                     int *err, char **err_info)
 {
     uint32_t pen;
-    pcapng_custom_block_enterprise_handler_t* pen_handler;
+    pcapng_custom_block_enterprise_handler_t const *pen_handler;
     bool ret;
 
     if (!pcapng_process_custom_option_common(section_info, option_length,
@@ -840,7 +871,7 @@ pcapng_process_custom_binary_option(wtapng_block_t *wblock,
         return false;
     }
 
-    pen_handler = (pcapng_custom_block_enterprise_handler_t*)g_hash_table_lookup(custom_enterprise_handlers, GUINT_TO_POINTER(pen));
+    pen_handler = (pcapng_custom_block_enterprise_handler_t const *)g_hash_table_lookup(custom_enterprise_handlers, GUINT_TO_POINTER(pen));
 
     if (pen_handler != NULL)
     {
@@ -981,6 +1012,7 @@ pcapng_process_options(FILE_T fh, wtapng_block_t *wblock,
             *err = WTAP_ERR_INTERNAL;
             *err_info = ws_strdup_printf("pcapng: invalid byte order %d passed to pcapng_process_options()",
                                         byte_order);
+            g_free(option_content);
             return false;
         }
         option_ptr += sizeof (*oh); /* 4 bytes, so it remains aligned */
@@ -1209,7 +1241,7 @@ pcapng_read_section_header_block(FILE_T fh, pcapng_block_header_t *bh,
 
        Version 1.2 is written by some programs that write additional
        block types (which can be read by any code that handles them,
-       regarless of whether the minor version if 0 or 2, so that's
+       regardless of whether the minor version if 0 or 2, so that's
        not a reason to change the minor version number).
 
        XXX - the pcapng specification says that readers should
@@ -1250,8 +1282,10 @@ pcapng_read_section_header_block(FILE_T fh, pcapng_block_header_t *bh,
     opt_cont_buf_len = bh->block_total_length - MIN_SHB_SIZE;
     if (!pcapng_process_options(fh, wblock, section_info, opt_cont_buf_len,
                                 pcapng_process_section_header_block_option,
-                                OPT_SECTION_BYTE_ORDER, err, err_info))
+                                OPT_SECTION_BYTE_ORDER, err, err_info)) {
+        pcapng_destroy_section_info(section_info);
         return PCAPNG_BLOCK_ERROR;
+    }
 
     /*
      * We don't return these to the caller in pcapng_read().
@@ -1353,7 +1387,7 @@ pcapng_process_if_descr_block_option(wtapng_block_t *wblock,
         case(OPT_IDB_FILTER): /* if_filter */
             if (option_length < 1) {
                 *err = WTAP_ERR_BAD_FILE;
-                *err_info = ws_strdup_printf("pcapng: packet block verdict option length %u is < 1",
+                *err_info = ws_strdup_printf("pcapng: IDB interface filter option length %u is < 1",
                                             option_length);
                 /* XXX - free anything? */
                 return false;
@@ -2726,8 +2760,10 @@ read_options:
     opt_cont_buf_len = to_read;
     if (!pcapng_process_options(fh, wblock, section_info, opt_cont_buf_len,
                                 pcapng_process_name_resolution_block_option,
-                                OPT_SECTION_BYTE_ORDER, err, err_info))
+                                OPT_SECTION_BYTE_ORDER, err, err_info)) {
+        ws_buffer_free(&nrb_rec);
         return false;
+    }
 
     ws_buffer_free(&nrb_rec);
 
@@ -2885,9 +2921,9 @@ pcapng_read_interface_statistics_block(wtap *wth _U_, FILE_T fh,
 }
 
 void
-register_pcapng_custom_block_enterprise_handler(unsigned enterprise_number, pcapng_custom_block_enterprise_handler_t* handler)
+register_pcapng_custom_block_enterprise_handler(unsigned enterprise_number, pcapng_custom_block_enterprise_handler_t const *handler)
 {
-    g_hash_table_insert(custom_enterprise_handlers, GUINT_TO_POINTER(enterprise_number), handler);
+    g_hash_table_insert(custom_enterprise_handlers, GUINT_TO_POINTER(enterprise_number), (void *)handler);
 }
 
 static bool
@@ -2898,7 +2934,7 @@ pcapng_read_custom_block(wtap *wth _U_, FILE_T fh, uint32_t block_type,
 {
     pcapng_custom_block_t cb;
     uint32_t pen;
-    pcapng_custom_block_enterprise_handler_t* pen_handler;
+    pcapng_custom_block_enterprise_handler_t const *pen_handler;
 
     /* Is this block long enough to be an CB? */
     if (block_content_length < sizeof cb) {
@@ -2929,7 +2965,7 @@ pcapng_read_custom_block(wtap *wth _U_, FILE_T fh, uint32_t block_type,
     wtap_setup_custom_block_rec(wblock->rec, pen, block_payload_length,
                                 (block_type == BLOCK_TYPE_CB_COPY));
 
-    pen_handler = (pcapng_custom_block_enterprise_handler_t*)g_hash_table_lookup(custom_enterprise_handlers, GUINT_TO_POINTER(pen));
+    pen_handler = (pcapng_custom_block_enterprise_handler_t const *)g_hash_table_lookup(custom_enterprise_handlers, GUINT_TO_POINTER(pen));
 
     if (pen_handler != NULL)
     {
@@ -2937,6 +2973,9 @@ pcapng_read_custom_block(wtap *wth _U_, FILE_T fh, uint32_t block_type,
             if (*err == WTAP_ERR_REC_MALFORMED) {
                 /* Allow the packet to be kept */
                 wblock->rec->rec_header.packet_header.pkt_encap = WTAP_ENCAP_NULL;
+                *err = 0;
+                g_free(*err_info);
+                *err_info = NULL;
             }
             else {
                 return false;
@@ -3055,7 +3094,7 @@ pcapng_read_systemd_journal_export_block(wtap *wth, FILE_T fh,
 }
 
 static bool
-pcapng_read_unknown_block(FILE_T fh, guint32 block_content_length,
+pcapng_read_unknown_block(FILE_T fh, uint32_t block_content_length,
     section_info_t *section_info _U_, wtapng_block_t *wblock,
     int *err, char **err_info)
 {
@@ -3122,6 +3161,7 @@ pcapng_read_block(wtap *wth, FILE_T fh,
     pcapng_block_type_information_t *handler;
     block_return_val ret;
     pcapng_block_header_t bh;
+    uint32_t block_padded_length;
     uint32_t block_content_length;
 
     wblock->block = NULL;
@@ -3175,11 +3215,6 @@ pcapng_read_block(wtap *wth, FILE_T fh,
          */
         section_info = new_section_info;
 
-        /*
-         * Get information for this block type, for use when setting the
-         * internal flag.
-         */
-        handler = g_hash_table_lookup(block_handlers, GUINT_TO_POINTER(bh.block_type));
     } else {
         /*
          * Not an SHB.
@@ -3223,7 +3258,7 @@ pcapng_read_block(wtap *wth, FILE_T fh,
          * it reports an error if the block total length isn't a
          * multiple of 4.)
          */
-        bh.block_total_length = WS_ROUNDUP_4(bh.block_total_length);
+        block_padded_length = WS_ROUNDUP_4(bh.block_total_length);
 
         wblock->type = bh.block_type;
 
@@ -3234,7 +3269,7 @@ pcapng_read_block(wtap *wth, FILE_T fh,
            any address space or memory+backing store for anything else.
 
            We do that by imposing a maximum block size of MAX_BLOCK_SIZE. */
-        if (bh.block_total_length > MAX_BLOCK_SIZE) {
+        if (block_padded_length < bh.block_total_length || block_padded_length > MAX_BLOCK_SIZE) {
             *err = WTAP_ERR_BAD_FILE;
             *err_info = ws_strdup_printf("pcapng: total block length %u is too large (> %u)",
                                         bh.block_total_length, MAX_BLOCK_SIZE);
@@ -3244,7 +3279,7 @@ pcapng_read_block(wtap *wth, FILE_T fh,
         /*
          * Length of the contents of the block.
          */
-        block_content_length = bh.block_total_length - MIN_BLOCK_SIZE;
+        block_content_length = block_padded_length - MIN_BLOCK_SIZE;
 
         /*
          * Do we have a handler for this block type?
@@ -3258,7 +3293,7 @@ pcapng_read_block(wtap *wth, FILE_T fh,
                 return false;
         } else {
             ws_debug("Unknown block_type: 0x%08x (block ignored), block total length %u",
-                     bh.block_type, bh.block_total_length);
+                     bh.block_type, block_padded_length);
             if (!pcapng_read_unknown_block(fh, block_content_length,
                                            section_info, wblock,
                                            err, err_info))
@@ -3627,12 +3662,13 @@ pcapng_open(wtap *wth, int *err, char **err_info)
     wth->file_type_subtype = pcapng_file_type_subtype;
 
     /* Always initialize the lists of Decryption Secret Blocks, Name
-     * Resolution Blocks, and Sysdig meta event blocks such that a
-     * wtap_dumper can refer to them right after opening the capture
-     * file. */
+     * Resolution Blocks, Sysdig meta event blocks, and Darwin Process Event Blocks,
+     * such that a wtap_dumper can refer to them right after
+     * opening the capture file. */
     wth->dsbs = g_array_new(false, false, sizeof(wtap_block_t));
     wth->nrbs = g_array_new(false, false, sizeof(wtap_block_t));
     wth->meta_events = g_array_new(false, false, sizeof(wtap_block_t));
+    wth->dpibs = g_array_new(false, false, sizeof(wtap_block_t));
 
     /* Most other capture types (such as pcap) support a single link-layer
      * type, indicated in the header, and don't support WTAP_ENCAP_PER_PACKET.
@@ -3863,13 +3899,8 @@ pcapng_close(wtap *wth)
      * Free up the interfaces tables for all the sections.
      */
     for (unsigned i = 0; i < pcapng->sections->len; i++) {
-        section_info_t *section_info = &g_array_index(pcapng->sections,
-                                                      section_info_t, i);
-        g_array_free(section_info->interfaces, true);
-        if (section_info->custom_block_data != NULL)
-            g_hash_table_destroy(section_info->custom_block_data);
-        if (section_info->local_block_data != NULL)
-            g_hash_table_destroy(section_info->local_block_data);
+        pcapng_destroy_section_info(&g_array_index(pcapng->sections,
+                                                   section_info_t, i));
     }
     g_array_free(pcapng->sections, true);
 }
@@ -4927,7 +4958,7 @@ compute_epb_option_size(wtap_block_t block _U_, unsigned option_id, wtap_opttype
         break;
     default:
         /* Unknown options - size by datatype? */
-        size = 0;
+        size = pcapng_compute_epb_legacy_darwin_size(option_id, optval);
         break;
     }
     return size;
@@ -4969,9 +5000,13 @@ static bool write_wtap_epb_option(wtap_dumper *wdh, wtap_block_t block _U_,
         if (!pcapng_write_uint64_option(wdh, OPT_PKT_PROCIDTHRDID, optval, err))
             return false;
         break;
-    default:
+    default: {
+        /* Check if this is legacy darwin option */
+        if (!pcapng_write_epb_legacy_darwin_option(wdh, block, option_id, option_type, optval, err, err_info))
+            return false;
         /* Unknown options - write by datatype? */
         break;
+    }
     }
     return true; /* success */
 }
@@ -5207,7 +5242,7 @@ static bool
 pcapng_write_custom_block_copy(wtap_dumper *wdh, const wtap_rec *rec,
                                int *err, char **err_info _U_)
 {
-    pcapng_custom_block_enterprise_handler_t *pen_handler;
+    pcapng_custom_block_enterprise_handler_t const *pen_handler;
     uint32_t block_content_length;
     pcapng_custom_block_t cb;
     uint32_t pad_len;
@@ -5217,7 +5252,7 @@ pcapng_write_custom_block_copy(wtap_dumper *wdh, const wtap_rec *rec,
         return true;
     }
 
-    pen_handler = (pcapng_custom_block_enterprise_handler_t*)g_hash_table_lookup(custom_enterprise_handlers, GUINT_TO_POINTER(rec->rec_header.custom_block_header.pen));
+    pen_handler = (pcapng_custom_block_enterprise_handler_t const *)g_hash_table_lookup(custom_enterprise_handlers, GUINT_TO_POINTER(rec->rec_header.custom_block_header.pen));
     if (pen_handler != NULL)
     {
         if (!pen_handler->writer(wdh, rec, err, err_info))
@@ -6084,6 +6119,21 @@ static bool pcapng_write_internal_blocks(wtap_dumper *wdh, int *err)
         }
     }
 
+    /* Write (optional) Darwin Process Event Blocks that were collected while
+     * reading packet blocks. */
+     if (wdh->dpibs_growing) {
+        ws_noisy("writing internal blocks: dpibs_growing: written: %u len: %u",
+            wdh->dpibs_growing_written, wdh->dpibs_growing->len);
+        for (unsigned i = wdh->dpibs_growing_written; i < wdh->dpibs_growing->len; i++) {
+
+            wtap_block_t dpib = g_array_index(wdh->dpibs_growing, wtap_block_t, i);
+            if (!pcapng_write_legacy_darwin_process_event_block(wdh, dpib, err)) {
+                return false;
+            }
+            ++wdh->dpibs_growing_written;
+        }
+    }
+
     return true;
 }
 
@@ -6472,6 +6522,13 @@ static const struct supported_option_type systemd_journal_export_block_options_s
     { OPT_CUSTOM_BIN_NO_COPY, MULTIPLE_OPTIONS_SUPPORTED }
 };
 
+/* Options for file-type-specific information. */
+static const struct supported_option_type ftr_specific_information_block_options_supported[] = {
+    { OPT_COMMENT, MULTIPLE_OPTIONS_SUPPORTED },
+    { OPT_DPIB_NAME, ONE_OPTION_SUPPORTED },
+    { OPT_DPIB_UUID, ONE_OPTION_SUPPORTED },
+};
+
 static const struct supported_block_type pcapng_blocks_supported[] = {
     /* Multiple sections. */
     { WTAP_BLOCK_SECTION, MULTIPLE_BLOCKS_SUPPORTED, OPTION_TYPES_SUPPORTED(section_block_options_supported) },
@@ -6505,6 +6562,9 @@ static const struct supported_block_type pcapng_blocks_supported[] = {
 
     /* Multiple custom blocks. */
     { WTAP_BLOCK_CUSTOM, MULTIPLE_BLOCKS_SUPPORTED, NO_OPTIONS_SUPPORTED },
+
+    /* Multiple file-type-specific information blocks. */
+    { WTAP_BLOCK_FT_SPECIFIC_INFORMATION, MULTIPLE_BLOCKS_SUPPORTED, OPTION_TYPES_SUPPORTED(ftr_specific_information_block_options_supported) },
 };
 
 static const struct file_type_subtype_info wireshark_pcapng_info = {
@@ -6519,12 +6579,21 @@ static const struct file_type_subtype_info stratoshark_pcapng_info = {
     pcapng_dump_can_write_encap, pcapng_dump_open, NULL
 };
 
-void register_pcapng(void)
+void register_pcapng(const char* app_env_var_prefix)
 {
-    if (application_flavor_is_wireshark()) {
-        pcapng_file_type_subtype = wtap_register_file_type_subtype(&wireshark_pcapng_info);
-    } else {
-        pcapng_file_type_subtype = wtap_register_file_type_subtype(&stratoshark_pcapng_info);
+    if (app_env_var_prefix != NULL) {
+        /* XXX - It would be great if this could be refactored out of the wiretap library,
+          but dependencies currently look daunting */
+
+        if (strcmp(app_env_var_prefix, "WIRESHARK") == 0)
+            pcapng_file_type_subtype = wtap_register_file_type_subtype(&wireshark_pcapng_info);
+        else if (strcmp(app_env_var_prefix, "STRATOSHARK") == 0)
+            pcapng_file_type_subtype = wtap_register_file_type_subtype(&stratoshark_pcapng_info);
+        else
+        {
+            /* XXX - Allow support of applications that use wiretap, but not pcapNG */
+            return;
+        }
     }
 
     wtap_register_backwards_compatibility_lua_name("PCAPNG",

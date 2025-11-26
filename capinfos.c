@@ -60,9 +60,12 @@
 
 #include <wsutil/cmdarg_err.h>
 #include <wsutil/filesystem.h>
+#include <wsutil/application_flavor.h>
+#include <wsutil/file_compressed.h>
 #include <wsutil/privileges.h>
 #include <cli_main.h>
 #include <wsutil/version_info.h>
+#include <wsutil/report_message.h>
 #include <wiretap/wtap_opttypes.h>
 
 #ifdef HAVE_PLUGINS
@@ -183,7 +186,7 @@ typedef struct _pkt_cmt {
 typedef struct _capture_info {
     const char           *filename;
     uint16_t              file_type;
-    wtap_compression_type compression_type;
+    ws_compression_type   compression_type;
     int                   file_encap;
     int                   file_tsprec;
     wtap                 *wth;
@@ -483,7 +486,7 @@ print_stats(const char *filename, capture_info *cf_info)
     if (filename)           printf     ("File name:           %s\n", filename);
     if (cap_file_type) {
         const char *compression_type_description;
-        compression_type_description = wtap_compression_type_description(cf_info->compression_type);
+        compression_type_description = ws_compression_type_description(cf_info->compression_type);
         if (compression_type_description == NULL)
             printf     ("File type:           %s\n",
                     file_type_string);
@@ -1103,9 +1106,9 @@ process_cap_file(const char *filename, bool need_separator)
 
     pkt_cmt *pc = NULL, *prev = NULL;
 
-    cf_info.wth = wtap_open_offline(filename, WTAP_TYPE_AUTO, &err, &err_info, false);
+    cf_info.wth = wtap_open_offline(filename, WTAP_TYPE_AUTO, &err, &err_info, false, application_configuration_environment_prefix());
     if (!cf_info.wth) {
-        cfile_open_failure_message(filename, err, err_info);
+        report_cfile_open_failure(filename, err, err_info);
         return 2;
     }
 
@@ -1154,7 +1157,7 @@ process_cap_file(const char *filename, bool need_separator)
     wtap_set_cb_new_secrets(cf_info.wth, count_decryption_secret);
 
     /* Tally up data that we need to parse through the file to find */
-    wtap_rec_init(&rec, 1514);
+    wtap_rec_init(&rec, DEFAULT_INIT_BUFFER_SIZE_2048);
     while (wtap_read(cf_info.wth, &rec, &err, &err_info, &data_offset))  {
         if (rec.presence_flags & WTAP_HAS_TS) {
             prev_time = cur_time;
@@ -1289,7 +1292,7 @@ process_cap_file(const char *filename, bool need_separator)
         fprintf(stderr,
                 "capinfos: An error occurred after reading %u packets from \"%s\".\n",
                 packet, filename);
-        cfile_read_failure_message(filename, err, err_info);
+        report_cfile_read_failure(filename, err, err_info);
         if (err == WTAP_ERR_SHORT_READ) {
             /* Don't give up completely with this one. */
             status = 1;
@@ -1467,6 +1470,8 @@ main(int argc, char *argv[])
         LONGOPT_WSLOG
         {0, 0, 0, 0 }
     };
+    const struct file_extension_info* file_extensions;
+    unsigned num_extensions;
 
 #define OPTSTRING "abcdehiklmnopqrstuvxyzABCDEFHIKLMNPQRST"
     static const char optstring[] = OPTSTRING;
@@ -1489,7 +1494,7 @@ main(int argc, char *argv[])
     cmdarg_err_init(stderr_cmdarg_err, stderr_cmdarg_err_cont);
 
     /* Initialize log handler early so we can have proper logging during startup. */
-    ws_log_init(vcmdarg_err);
+    ws_log_init(vcmdarg_err, "Capinfos Debug Console");
 
     /* Early logging command-line initialization. */
     ws_log_parse_args(&argc, argv, optstring, long_options, vcmdarg_err, WS_EXIT_INVALID_OPTION);
@@ -1512,7 +1517,7 @@ main(int argc, char *argv[])
      * Attempt to get the pathname of the directory containing the
      * executable file.
      */
-    configuration_init_error = configuration_init(argv[0]);
+    configuration_init_error = configuration_init(argv[0], "wireshark");
     if (configuration_init_error != NULL) {
         fprintf(stderr,
                 "capinfos: Can't get pathname of directory containing the capinfos program: %s.\n",
@@ -1521,11 +1526,12 @@ main(int argc, char *argv[])
     }
 
     /* Initialize the version information. */
-    ws_init_version_info("Capinfos", NULL, NULL);
+    ws_init_version_info("Capinfos", NULL, get_ws_vcs_version_info, NULL, NULL);
 
     init_report_failure_message("capinfos");
 
-    wtap_init(true);
+    application_file_extensions(&file_extensions, &num_extensions);
+    wtap_init(true, application_configuration_environment_prefix(), file_extensions, num_extensions);
 
     /* Process the options */
     while ((opt = ws_getopt_long(argc, argv, optstring, long_options, NULL)) !=-1) {

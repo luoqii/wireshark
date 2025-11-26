@@ -25,7 +25,7 @@
 #include <epan/addr_resolv.h>
 #include <epan/ipproto.h>
 #include <epan/expert.h>
-#include <epan/eap.h>
+#include <epan/dissectors/packet-eap.h>
 
 #include <wsutil/filesystem.h>
 #include <wsutil/report_message.h>
@@ -488,7 +488,7 @@ static const enum_val_t wimaxasncp_nwg_versions[] = {
 
 /* NWG version */
 #define WIMAXASNCP_DEF_NWGVER       WIMAXASNCP_NWGVER_R10_V121
-static unsigned global_wimaxasncp_nwg_ver = WIMAXASNCP_DEF_NWGVER;
+static int global_wimaxasncp_nwg_ver = WIMAXASNCP_DEF_NWGVER;
 
 /* ========================================================================= */
 
@@ -538,9 +538,9 @@ wimaxasncp_find_tlv_info(void* data, void* user_data)
     if (tlv->type == info_data->type)
     {
         /* if the TLV is defined for current NWG version */
-        if (tlv->since <= global_wimaxasncp_nwg_ver)
+        if (tlv->since <= (unsigned)global_wimaxasncp_nwg_ver)
         {
-            /* if the current TLV is newer then last found TLV, save it */
+            /* if the current TLV is newer than last found TLV, save it */
             if ((info_data->res == NULL) || (tlv->since > info_data->res->since))
             {
                 info_data->res = tlv;
@@ -832,7 +832,7 @@ static void wimaxasncp_dissect_tlv_value(
     {
         if (tree)
         {
-            const char   *s = tvb_get_string_enc(pinfo->pool, tvb, offset, length, ENC_ASCII);
+            const char   *s = (const char*)tvb_get_string_enc(pinfo->pool, tvb, offset, length, ENC_ASCII);
 
             proto_tree_add_string_format(
                 tree, tlv_info->hf_value,
@@ -1423,7 +1423,7 @@ static void wimaxasncp_dissect_tlv_value(
     case WIMAXASNCP_TLV_IP_ADDRESS_MASK_LIST:
     {
         /* --------------------------------------------------------------------
-         * The definion of these TLVs are ambiguous. The length in octets is
+         * The definition of these TLVs are ambiguous. The length in octets is
          * described as Nx8 (IPv4) or Nx32 (IPv6), but this function cannot
          * always differentiate between IPv4 and IPv6. For example, if length
          * = 32, then is it IPv4 where N=4 (4x8) or IPv6 where N=1 (1x32)?
@@ -1927,7 +1927,7 @@ static unsigned dissect_wimaxasncp_backend(
     unsigned  offset = 0;
     uint16_t  ui16;
     uint32_t  ui32;
-    const uint8_t *pmsid;
+    char *pmsid;
     uint16_t  tid    = 0;
     bool      dbit_show;
 
@@ -2125,7 +2125,7 @@ dissect_wimaxasncp(
     col_clear(pinfo->cinfo, COL_INFO);
 
     /* ========================================================================
-     * Disesction starts here
+     * Dissection starts here
      * ========================================================================
      */
 
@@ -2708,7 +2708,7 @@ wimaxasncp_dict_print_tlv(void* data, void* user_data)
     wimaxasncp_dict_tlv_t* tlv = (wimaxasncp_dict_tlv_t*)data;
     FILE* fh = (FILE*)user_data;
 
-    char* str_decoder = val_to_str(NULL, tlv->decoder, wimaxasncp_decode_type_vals, "Unknown");
+    const char* str_decoder = val_to_str_const(tlv->decoder, wimaxasncp_decode_type_vals, "Unknown");
     fprintf(fh, "TLV: %s[%u] %s[%d] %s (since %u)\n",
         tlv->name ? (char*)tlv->name : "-",
         tlv->type,
@@ -2716,7 +2716,6 @@ wimaxasncp_dict_print_tlv(void* data, void* user_data)
         tlv->decoder,
         tlv->description ? (char*)tlv->description : "",
         tlv->since);
-    wmem_free(NULL, str_decoder);
     g_slist_foreach(tlv->enums, wimaxasncp_dict_print_tlv_enum, fh);
 }
 
@@ -2733,7 +2732,7 @@ wimaxasncp_print_tlv(void* data, void* user_data)
     wimaxasncp_tlv_new_t* tlv = (wimaxasncp_tlv_new_t*)data;
     FILE* fh = (FILE*)user_data;
 
-    char* str_decoder = val_to_str(NULL, tlv->decoder, wimaxasncp_decode_type_vals, "Unknown");
+    const char* str_decoder = val_to_str_const(tlv->decoder, wimaxasncp_decode_type_vals, "Unknown");
     fprintf(fh,
         "%s\n"
         "  type                   = %u\n"
@@ -2767,7 +2766,6 @@ wimaxasncp_print_tlv(void* data, void* user_data)
         tlv->hf_ipv6_mask,
         tlv->hf_vendor_id,
         tlv->hf_vendor_rest_of_info);
-    wmem_free(NULL, str_decoder);
 }
 
 static bool
@@ -2802,26 +2800,26 @@ wimaxasncp_dictionary_process_file(const char* filename, GSList** tlvs)
             xmlChar* str_type = xmlGetProp(current_node, (const xmlChar*)"type");
             if (str_type != NULL)
             {
-                if (g_ascii_strncasecmp(str_type, "0x", 2) == 0)
+                if (g_ascii_strncasecmp((const char*)str_type, "0x", 2) == 0)
                 {
-                    ws_hexstrtou16(str_type, NULL, &element->type);
+                    ws_hexstrtou16((const char*)str_type, NULL, &element->type);
                 }
                 else
                 {
-                    ws_strtou16(str_type, NULL, &element->type);
+                    ws_strtou16((const char*)str_type, NULL, &element->type);
                 }
                 xmlFree(str_type);
             }
             xmlChar* str_since = xmlGetProp(current_node, (const xmlChar*)"since");
             if (str_since != NULL)
             {
-                ws_strtou32(str_since, NULL, &element->since);
+                ws_strtou32((const char*)str_since, NULL, &element->since);
                 xmlFree(str_since);
             }
             xmlChar* str_decoder = xmlGetProp(current_node, (const xmlChar*)"decoder");
             if (str_decoder != NULL)
             {
-                element->decoder = wimaxasncp_decode_type(str_decoder);
+                element->decoder = wimaxasncp_decode_type((const char*)str_decoder);
                 xmlFree(str_decoder);
             }
 
@@ -2837,13 +2835,13 @@ wimaxasncp_dictionary_process_file(const char* filename, GSList** tlvs)
                     xmlChar* str_code = xmlGetProp(tlv_children, (const xmlChar*)"code");
                     if (str_code != NULL)
                     {
-                        if (g_ascii_strncasecmp(str_code, "0x", 2) == 0)
+                        if (g_ascii_strncasecmp((const char*)str_code, "0x", 2) == 0)
                         {
-                            ws_hexstrtou32(str_code, NULL, &tlv_enum->code);
+                            ws_hexstrtou32((const char*)str_code, NULL, &tlv_enum->code);
                         }
                         else if (g_ascii_isdigit(str_code[0]))
                         {
-                            ws_strtou32(str_code, NULL, &tlv_enum->code);
+                            ws_strtou32((const char*)str_code, NULL, &tlv_enum->code);
                         }
                         else
                         {
@@ -2855,11 +2853,11 @@ wimaxasncp_dictionary_process_file(const char* filename, GSList** tlvs)
                                     G_REGEX_DEFAULT, 0, NULL);
                             }
 
-                            if (g_regex_match_full(regex, str_code, -1, 0, 0, &match_info, NULL))
+                            if (g_regex_match_full(regex, (const char*)str_code, -1, 0, 0, &match_info, NULL))
                             {
                                 unsigned bit_value = 0, bit_shift = 0;
-                                gchar* bit_value_str = g_match_info_fetch(match_info, 2);
-                                gchar* parenthesized_value_str = g_match_info_fetch(match_info, 3);
+                                char* bit_value_str = g_match_info_fetch(match_info, 2);
+                                char* parenthesized_value_str = g_match_info_fetch(match_info, 3);
 
                                 ws_strtou32(bit_value_str, NULL, &bit_value);
                                 g_free(bit_value_str);
@@ -2867,15 +2865,15 @@ wimaxasncp_dictionary_process_file(const char* filename, GSList** tlvs)
                                 {
                                 case 8:
                                     if (ws_strtou32(parenthesized_value_str, NULL, &bit_shift))
-                                        tlv_enum->code = 1 << (7 - bit_shift);
+                                        tlv_enum->code = 1U << (7 - bit_shift);
                                     break;
                                 case 16:
                                     if (ws_strtou32(parenthesized_value_str, NULL, &bit_shift))
-                                        tlv_enum->code = 1 << (15 - bit_shift);
+                                        tlv_enum->code = 1U << (15 - bit_shift);
                                     break;
                                 case 32:
                                     if (ws_strtou32(parenthesized_value_str, NULL, &bit_shift))
-                                        tlv_enum->code = 1 << (31 - bit_shift);
+                                        tlv_enum->code = 1U << (31 - bit_shift);
                                     break;
                                 }
                                 g_free(parenthesized_value_str);
@@ -2905,7 +2903,7 @@ wimaxasncp_dict_enum_process(void* data, void* user_data)
     wimaxasncp_dict_tlv_enum_t* dict_enum = (wimaxasncp_dict_tlv_enum_t*)data;
     wmem_array_t* array = (wmem_array_t*)user_data;
 
-    value_string item = { dict_enum->code, wmem_strdup(wmem_epan_scope(), dict_enum->name) };
+    value_string item = { dict_enum->code, wmem_strdup(wmem_epan_scope(), (const char*)dict_enum->name) };
     wmem_array_append_one(array, item);
 }
 
@@ -2917,8 +2915,8 @@ wimaxasncp_dict_process(void* data, void* user_data)
     wimaxasncp_tlv_new_t* tlv = wmem_new0(wmem_epan_scope(), wimaxasncp_tlv_new_t);
 
     tlv->type = dict_tlv->type;
-    tlv->name = wmem_strdup(wmem_epan_scope(), dict_tlv->name);
-    tlv->description = wmem_strdup(wmem_epan_scope(), dict_tlv->description);
+    tlv->name = wmem_strdup(wmem_epan_scope(), (const char*)dict_tlv->name);
+    tlv->description = wmem_strdup(wmem_epan_scope(), (const char*)dict_tlv->description);
     tlv->decoder = dict_tlv->decoder;
     tlv->since = dict_tlv->since;
 
@@ -3271,7 +3269,7 @@ register_wimaxasncp_fields(const char* unused _U_)
      * load the XML dictionary
      * ------------------------------------------------------------------------
      */
-    char* dir = ws_strdup_printf("%s" G_DIR_SEPARATOR_S "wimaxasncp" G_DIR_SEPARATOR_S "dictionary.xml", get_datafile_dir());
+    char* dir = ws_strdup_printf("%s" G_DIR_SEPARATOR_S "wimaxasncp" G_DIR_SEPARATOR_S "dictionary.xml", get_datafile_dir(epan_get_environment_prefix()));
     bool success = wimaxasncp_dictionary_process_file(dir, &all_tlvs);
     g_free(dir);
 

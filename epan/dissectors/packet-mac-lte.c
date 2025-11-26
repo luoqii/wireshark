@@ -2486,7 +2486,7 @@ static void show_drx_info(packet_info *pinfo, proto_tree *tree, tvbuff_t *tvb,
 
         /* Show which timers are still running and how long they have to go.
            TODO: Complain if it looks like DRX looks like it should be on
-           TODO: if PDU is a retranmission, would be good to check to see if DRX
+           TODO: if PDU is a retransmission, would be good to check to see if DRX
                  would have been on for original Tx! */
 
         /* Is onduration timer running? */
@@ -2567,7 +2567,7 @@ static const char *get_mac_lte_rapid_description(uint8_t rapid)
 static void
 get_mac_lte_ue_ext_bsr_sizes(mac_lte_info *p_mac_lte_info)
 {
-    gpointer p_orig_key, p_ue_params;
+    void *p_orig_key, *p_ue_params;
 
     /* Use the _extended function to check the key presence and avoid overriding a
        value already set by the framing protocol while no RRC value is configured */
@@ -2584,7 +2584,7 @@ get_mac_lte_ue_ext_bsr_sizes(mac_lte_info *p_mac_lte_info)
 static void
 get_mac_lte_ue_simult_pucch_pusch(mac_lte_info *p_mac_lte_info)
 {
-    gpointer p_orig_key, p_ue_params;
+    void *p_orig_key, *p_ue_params;
 
     /* Use the _extended function to check the key presence and avoid overriding a
        value already set by the framing protocol while no RRC value is configured */

@@ -2741,68 +2741,74 @@ static void dissect_mq_pdu(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree)
     else if ((p_mq_parm->mq_opcode == MQ_TST_MQINQ || p_mq_parm->mq_opcode == MQ_TST_MQINQ_REPLY || p_mq_parm->mq_opcode == MQ_TST_MQSET) && capLen >= 12)
     {
         /* The MQINQ/MQSET structure is special because it does not start with a structid */
-        int iNbSelectors;
-        int iNbIntegers;
-        int iCharLen;
+        uint32_t uNbSelectors;
+        uint32_t uNbIntegers;
+        uint32_t uCharLen;
         int iOffsetINQ;
-        int iSelector;
 
-        iNbSelectors = tvb_get_uint32(tvb, offset, p_mq_parm->mq_int_enc);
-        iNbIntegers = tvb_get_uint32(tvb, offset + 4, p_mq_parm->mq_int_enc);
-        iCharLen = tvb_get_uint32(tvb, offset + 8, p_mq_parm->mq_int_enc);
+        int iSizeINQSelectors;
+        tvbuff_t *INQ_tvb;
 
         mq_tree = proto_tree_add_subtree(mqroot_tree, tvb, offset, -1, ett_mq_inq, NULL, MQ_TEXT_INQ);
 
-        proto_tree_add_item(mq_tree, hf_mq_inq_nbsel, tvb, offset, 4, p_mq_parm->mq_int_enc);
-        proto_tree_add_item(mq_tree, hf_mq_inq_nbint, tvb, offset + 4, 4, p_mq_parm->mq_int_enc);
-        proto_tree_add_item(mq_tree, hf_mq_inq_charlen, tvb, offset + 8, 4, p_mq_parm->mq_int_enc);
+        /* These are MQLONG, so signed, but values < 0 are nonsensical.
+         * Note the maximum number of selectors allowed is 256. */
+        proto_tree_add_item_ret_uint(mq_tree, hf_mq_inq_nbsel, tvb, offset, 4, p_mq_parm->mq_int_enc, &uNbSelectors);
+        proto_tree_add_item_ret_uint(mq_tree, hf_mq_inq_nbint, tvb, offset + 4, 4, p_mq_parm->mq_int_enc, &uNbIntegers);
+        proto_tree_add_item_ret_uint(mq_tree, hf_mq_inq_charlen, tvb, offset + 8, 4, p_mq_parm->mq_int_enc, &uCharLen);
 
-        iOffsetINQ = 12;
-        if (tvb_reported_length_remaining(tvb, offset + iOffsetINQ) >= iNbSelectors * 4)
+        offset += 12;
+        INQ_tvb = tvb_new_subset_remaining(tvb, offset);
+        iOffsetINQ = 0;
+
+        if (!ckd_mul(&iSizeINQSelectors, uNbSelectors, 4) && tvb_reported_length_remaining(INQ_tvb, iOffsetINQ) >= iSizeINQSelectors)
         {
-            unsigned _posSel = offset + iOffsetINQ;
-            unsigned _posSelE = _posSel + iNbSelectors * 4 + 4;
-            const uint8_t* _pVal = NULL;
-            for (iSelector = 0; iSelector < iNbSelectors; iSelector++)
+            const uint8_t* _pVal;
+            uint32_t _lSel;
+            wmem_array_t *iSelArray = wmem_array_new(pinfo->pool, sizeof(uint32_t));
+            for (unsigned uSelector = 0; uSelector < uNbSelectors; uSelector++)
             {
-                proto_tree_add_item(mq_tree, hf_mq_inq_sel, tvb, offset + iOffsetINQ + iSelector * 4, 4, p_mq_parm->mq_int_enc);
+                proto_tree_add_item_ret_uint(mq_tree, hf_mq_inq_sel, INQ_tvb, iOffsetINQ, 4, p_mq_parm->mq_int_enc, &_lSel);
+                if (_lSel >= MQ_MQIA_FIRST && _lSel <= MQ_MQIA_LAST) {
+                    wmem_array_append_one(iSelArray, _lSel);
+                }
+                iOffsetINQ += 4;
             }
-            iOffsetINQ += iNbSelectors * 4;
             if (p_mq_parm->mq_opcode == MQ_TST_MQINQ_REPLY || p_mq_parm->mq_opcode == MQ_TST_MQSET)
             {
                 int iSizeINQValues;
-                iSizeINQValues = iNbIntegers * 4 + iCharLen;
-                if (tvb_reported_length_remaining(tvb, offset + iOffsetINQ) >= iSizeINQValues)
+                if (!ckd_mul(&iSizeINQValues, uNbIntegers, 4) && !ckd_add(&iSizeINQValues, iSizeINQValues, uCharLen) && tvb_reported_length_remaining(INQ_tvb, iOffsetINQ) >= iSizeINQValues)
                 {
-                    int iInteger;
                     unsigned _lVal;
-                    unsigned _lSel;
-                    for (iInteger = 0; iInteger < iNbIntegers; iInteger++)
+                    for (unsigned uInteger = 0; uInteger < uNbIntegers; uInteger++)
                     {
-                        _lSel = tvb_get_uint32(tvb, _posSel, p_mq_parm->mq_int_enc);
-                        while (_posSel < _posSelE && (_lSel < MQ_MQIA_FIRST || _lSel > MQ_MQIA_LAST))
-                        {
-                            _posSel += 4;
-                            _lSel = tvb_get_uint32(tvb, _posSel, p_mq_parm->mq_int_enc);
+                        _pVal = NULL;
+                        if (wmem_array_try_index(iSelArray, uInteger, &_lSel) == 0) {
+                            _lVal = tvb_get_uint32(INQ_tvb, iOffsetINQ, p_mq_parm->mq_int_enc);
+                            _pVal = dissect_mqpcf_parm_getintval(_lSel, _lVal);
                         }
-                        _lVal = tvb_get_uint32(tvb, offset + iOffsetINQ + iInteger * 4, p_mq_parm->mq_int_enc);
-                        _pVal = dissect_mqpcf_parm_getintval(_lSel, _lVal);
-                        _posSel += 4;
-                        if (_pVal)
-                            proto_tree_add_uint_format(mq_tree, hf_mq_inq_intvalue, tvb, offset + iOffsetINQ + iInteger * 4, 4, 0,
+                        if (_pVal) {
+                            proto_tree_add_uint_format(mq_tree, hf_mq_inq_intvalue, INQ_tvb, iOffsetINQ, 4, _lVal,
                                 "Integer value...: %s (%d)", _pVal, _lVal);
-                        else
-                            proto_tree_add_item(mq_tree, hf_mq_inq_intvalue, tvb, offset + iOffsetINQ + iInteger * 4, 4, p_mq_parm->mq_int_enc);
+                        } else {
+                            proto_tree_add_item(mq_tree, hf_mq_inq_intvalue, INQ_tvb, iOffsetINQ, 4, p_mq_parm->mq_int_enc);
+                        }
+                        iOffsetINQ += 4;
                     }
-                    iOffsetINQ += iNbIntegers * 4;
-                    if (iCharLen != 0)
+                    /* TODO: Ideally one would get the string length for each
+                     * MQCA_ selector and add separate strings.
+                     *
+                     * https://www.ibm.com/docs/en/ibm-mq/9.4.x?topic=calls-mqinq-inquire-object-attributes
+                     * https://www.ibm.com/docs/en/ibm-mq/9.4.x?topic=constants-mq-string-lengths
+                     */
+                    if (uCharLen != 0)
                     {
-                        proto_tree_add_item(mq_tree, hf_mq_inq_charvalues, tvb, offset + iOffsetINQ, iCharLen, p_mq_parm->mq_str_enc);
+                        proto_tree_add_item(mq_tree, hf_mq_inq_charvalues, INQ_tvb, iOffsetINQ, uCharLen, p_mq_parm->mq_str_enc);
                     }
                 }
             }
         }
-        offset += tvb_reported_length(tvb);
+        offset += tvb_reported_length(INQ_tvb);
     }
     else if (p_mq_parm->mq_opcode == MQ_TST_NOTIFICATION)
     {
@@ -3965,7 +3971,7 @@ static int reassemble_mq(tvbuff_t* tvb, packet_info* pinfo, proto_tree* tree, vo
 
                 /*
                 2 or more fragments.
-                Build Up the full pdu to be dissected correwctly
+                Build Up the full pdu to be dissected correctly
                 */
                 next_tvb = tvb_new_chain(tvb, fd_head->tvb_data);
                 add_new_data_source(pinfo, next_tvb, "Reassembled MQ");
@@ -4210,7 +4216,7 @@ void proto_register_mq(void)
         {&hf_mq_id_cf2_CanTrcRte, {"Trace Rte Capab", "mq.id.icf2.cantraceroute", FT_BOOLEAN, 8, TFS(&tfs_set_notset), MQ_CF2_TRACE_ROUTE_CAPABLE, "ID ICF2 Trace Route Capable", HFILL}},
 
         {&hf_mq_id_cf3_CanMsgPrp, {"Msg Property Cap", "mq.id.ief3.msgpropertycap", FT_BOOLEAN, 8, TFS(&tfs_set_notset), MQ_CF3_MSG_PROP_CAPABLE, "ID ICF3 Message PropertyCapable", HFILL}},
-        {&hf_mq_id_cf3_CanMulticast, {"Multicast Cap", "mq.id.ief3.multicastcap", FT_BOOLEAN, 8, TFS(&tfs_set_notset), MQ_CF3_MULTICAST_CAPABLE, "ID ICF3 Mutlicast Capabilities", HFILL}},
+        {&hf_mq_id_cf3_CanMulticast, {"Multicast Cap", "mq.id.ief3.multicastcap", FT_BOOLEAN, 8, TFS(&tfs_set_notset), MQ_CF3_MULTICAST_CAPABLE, "ID ICF3 Multicast Capabilities", HFILL}},
         {&hf_mq_id_cf3_PropIntSep, {"Prop Int Separate", "mq.id.ief3.propintseparate", FT_BOOLEAN, 8, TFS(&tfs_set_notset), MQ_CF3_MSG_PROP_INT_SEPARATE, "ID ICF3 Property Int Separate", HFILL}},
         {&hf_mq_id_cf3_MPlxSyGet, {"Multiplex_synchget", "mq.id.ief3.multiplexsynchget", FT_BOOLEAN, 8, TFS(&tfs_set_notset), MQ_CF3_MULTIPLEX_SYNCGET, "ID ICF3 MULTIPLEX_SYNCGET", HFILL}},
         {&hf_mq_id_cf3_ProtAlgorit, {"Prot Algorithms", "mq.id.ief3.protalgorithms", FT_BOOLEAN, 8, TFS(&tfs_set_notset), MQ_CF3_PROT_ALGORITHMS, "ID ICF3 Prot Algorithms", HFILL}},
@@ -4252,7 +4258,7 @@ void proto_register_mq(void)
         {&hf_mq_fapmqcno_retconntag, {"retcontag", "mq.fapmqcno.retcontag", FT_BYTES, BASE_NONE, NULL, 0x0, "FAPMQCNO restry connection tag", HFILL} },
         {&hf_mq_fapmqcno_type, {"type.....", "mq.fapmqcno.type", FT_UINT32, BASE_DEC, NULL, 0x0, "FAPMQCNO Type", HFILL} },
         {&hf_mq_fapmqcno_timeout, {"timeout..", "mq.fapmqcno.timeout", FT_UINT32, BASE_HEX_DEC, NULL, 0x0, "FAPMQCNO Timeout", HFILL} },
-        {&hf_mq_fapmqcno_balopts, {"balopt...", "mq.fapmqcno.balopts", FT_UINT32, BASE_HEX_DEC, NULL, 0x0, "FAPMQCNO balance oprtions", HFILL} },
+        {&hf_mq_fapmqcno_balopts, {"balopt...", "mq.fapmqcno.balopts", FT_UINT32, BASE_HEX_DEC, NULL, 0x0, "FAPMQCNO balance options", HFILL} },
 
         {&hf_mq_fcno_StructID, {"structid..", "mq.fcno.structid", FT_STRING, BASE_NONE, NULL, 0x0, "FCNO structure id", HFILL}},
         {&hf_mq_fcno_version, {"version...", "mq.fcno.version", FT_UINT32, BASE_HEX_DEC, NULL, 0x0, "FCNO version", HFILL}},

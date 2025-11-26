@@ -33,7 +33,8 @@ PacketListRecord::PacketListRecord(frame_data *frameData) :
     color_ver_(0),
     colorized_(false),
     conv_index_(0),
-    read_failed_(false)
+    read_failed_(false),
+    row_(0)
 {
 }
 
@@ -65,7 +66,7 @@ const QString PacketListRecord::columnString(capture_file *cap_file, int column,
     // packet_list_store.c:packet_list_get_value
     Q_ASSERT(fdata_);
 
-    if (!cap_file || column < 0 || column >= cap_file->cinfo.num_cols) {
+    if (!cap_file || column < 0 || (unsigned)column >= cap_file->cinfo.num_cols) {
         return QString();
     }
 
@@ -96,7 +97,7 @@ void PacketListRecord::resetColumns(column_info *cinfo)
     }
 
     cinfo_column_.clear();
-    int i, j;
+    unsigned i, j;
     for (i = 0, j = 0; i < cinfo->num_cols; i++) {
         if (!col_based_on_frame_data(cinfo, i)) {
             cinfo_column_[i] = j;
@@ -121,7 +122,7 @@ void PacketListRecord::dissect(capture_file *cap_file, bool dissect_columns, boo
         cinfo = &cap_file->cinfo;
     }
 
-    wtap_rec_init(&rec, 1514);
+    wtap_rec_init(&rec, DEFAULT_INIT_BUFFER_SIZE_2048);
     if (read_failed_) {
         read_failed_ = !cf_read_record_no_alert(cap_file, fdata_, &rec);
     } else {
@@ -217,7 +218,7 @@ void PacketListRecord::cacheColumnStrings(column_info *cinfo)
     lines_ = 1;
     line_count_changed_ = false;
 
-    for (int column = 0; column < cinfo->num_cols; ++column) {
+    for (unsigned column = 0; column < cinfo->num_cols; ++column) {
         int col_lines = 1;
 
         QString col_str;

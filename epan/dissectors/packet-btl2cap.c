@@ -19,6 +19,7 @@
 #include "config.h"
 
 #include <epan/packet.h>
+#include <epan/crc16-tvb.h>
 #include <epan/exceptions.h>
 #include <epan/expert.h>
 #include <epan/decode_as.h>
@@ -105,14 +106,25 @@ static int hf_btl2cap_option_identifier;
 static int hf_btl2cap_option_sdu_size;
 static int hf_btl2cap_option_sdu_arrival_time;
 static int hf_btl2cap_option_access_latency;
-static int hf_btl2cap_control;
+static int hf_btl2cap_control_field;
+static int hf_btl2cap_ext_control_field;
 static int hf_btl2cap_control_sar;
+static int hf_btl2cap_ext_control_sar;
 static int hf_btl2cap_control_reqseq;
+static int hf_btl2cap_ext_control_reqseq;
 static int hf_btl2cap_control_txseq;
+static int hf_btl2cap_ext_control_txseq;
 static int hf_btl2cap_control_retransmissiondisable;
+static int hf_btl2cap_control_poll;
+static int hf_btl2cap_ext_control_poll;
+static int hf_btl2cap_control_final;
+static int hf_btl2cap_ext_control_final;
 static int hf_btl2cap_control_supervisory;
+static int hf_btl2cap_ext_control_supervisory;
 static int hf_btl2cap_control_type;
+static int hf_btl2cap_ext_control_type;
 static int hf_btl2cap_fcs;
+static int hf_btl2cap_fcs_status;
 static int hf_btl2cap_sdulength;
 static int hf_btl2cap_continuation_to;
 static int hf_btl2cap_reassembled_in;
@@ -158,6 +170,7 @@ static int ett_btl2cap_le_sdu_fragments;
 static expert_field ei_btl2cap_parameter_mismatch;
 static expert_field ei_btl2cap_sdulength_bad;
 static expert_field ei_btl2cap_length_bad;
+static expert_field ei_btl2cap_fcs_bad;
 static expert_field ei_btl2cap_unknown_command_code;
 
 /* Initialize dissector table */
@@ -184,16 +197,28 @@ static wmem_tree_t *cid_to_psm_table;
  * 0x04 Streaming mode
  * Other values Reserved for future use
  */
+#define L2CAP_BASIC_MODE                      0
+#define L2CAP_RETRANSMISSION_MODE             1
+#define L2CAP_FLOW_CONTROL_MODE               2
+#define L2CAP_ENHANCED_RETRANSMISSION_MODE    3
+#define L2CAP_STREAMING_MODE                  4
 
-#define L2CAP_BASIC_MODE 0
 /* XXX Cheat and define a vaue for
  * Connection-Oriented Channels in LE Credit Based Flow Control Mode
  */
 #define L2CAP_LE_CREDIT_BASED_FLOW_CONTROL_MODE 0xff
 
+enum l2cap_ctl_field_format {
+    L2CAP_IFRAME_CONTROL_FIELD_STANDARD,
+    L2CAP_IFRAME_CONTROL_FIELD_ENHANCED,
+    L2CAP_IFRAME_CONTROL_FIELD_EXTENDED,
+};
+
 typedef struct _config_data_t {
     uint8_t     mode;
     uint8_t     txwindow;
+    /* Extended Window Size option */
+    uint16_t    maxwindowsize;
     wmem_tree_t *start_fragments;  /* indexed by pinfo->num */
     /* Used for LE frame reassembly */
     unsigned segmentation_started : 1;  /* 0 = No, 1 = Yes */
@@ -1427,6 +1452,7 @@ dissect_options(tvbuff_t *tvb, int offset, packet_info *pinfo _U_, proto_tree *t
     if (config_data) {
         config_data->mode     = L2CAP_BASIC_MODE;
         config_data->txwindow = 0;
+        config_data->maxwindowsize = 0xFFFF;
     }
 
     while (length > 0) {
@@ -1540,6 +1566,10 @@ dissect_options(tvbuff_t *tvb, int offset, packet_info *pinfo _U_, proto_tree *t
                 break;
 
             case 0x07: /* Extended Window Size */
+                if (config_data)
+                {
+                    config_data->maxwindowsize = tvb_get_letohs(tvb, offset);
+                }
                 proto_tree_add_item(ti_option_subtree, hf_btl2cap_option_window, tvb, offset, 2, ENC_LITTLE_ENDIAN);
                 offset += 2;
 
@@ -2273,7 +2303,7 @@ dissect_b_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 {
     tvbuff_t *next_tvb;
 
-    next_tvb = tvb_new_subset_length_caplen(tvb, offset, tvb_captured_length_remaining(tvb, offset), length);
+    next_tvb = tvb_new_subset_length(tvb, offset, length);
 
     col_append_str(pinfo->cinfo, COL_INFO, "Connection oriented channel");
 
@@ -2482,21 +2512,33 @@ dissect_le_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
 }
 
 static int
-dissect_i_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
-        proto_tree *btl2cap_tree, psm_data_t *psm_data, uint16_t length,
-        int offset, config_data_t *config_data, btl2cap_data_t *l2cap_data)
+dissect_i_frame_control_field(tvbuff_t *tvb, packet_info *pinfo, proto_tree *btl2cap_tree,
+        int offset, config_data_t *config_data, uint16_t *segment)
 {
-    tvbuff_t         *next_tvb = NULL;
-    uint16_t          control, segment;
-    uint16_t          sdulen;
-    proto_item*       ti_control;
-    proto_tree*       ti_control_subtree;
-    sdu_reassembly_t *mfp      = NULL;
-    uint16_t          psm      = (psm_data ? psm_data->psm : 0);
+    uint32_t          control;
+    uint16_t          seg;
+    enum l2cap_ctl_field_format ctl_format = L2CAP_IFRAME_CONTROL_FIELD_STANDARD;
 
-    control = tvb_get_letohs(tvb, offset);
-    segment = (control & 0xC000) >> 14;
-    switch (segment) {
+    if (config_data->mode == L2CAP_ENHANCED_RETRANSMISSION_MODE) {
+        ctl_format = L2CAP_IFRAME_CONTROL_FIELD_ENHANCED;
+    } else if (config_data->mode == L2CAP_STREAMING_MODE) {
+        ctl_format = L2CAP_IFRAME_CONTROL_FIELD_ENHANCED;
+        if (config_data->maxwindowsize == 0) {
+            ctl_format = L2CAP_IFRAME_CONTROL_FIELD_EXTENDED;
+        }
+    }
+
+    if (ctl_format == L2CAP_IFRAME_CONTROL_FIELD_EXTENDED) {
+        control = tvb_get_letohl(tvb, offset);
+        seg = (control & 0x00030000) >> 16;
+    } else {
+        control = tvb_get_letohs(tvb, offset);
+        seg = (control & 0xC000) >> 14;
+    }
+    if (segment) {
+        *segment = seg;
+    }
+    switch (seg) {
     case 0:
         col_append_str(pinfo->cinfo, COL_INFO, "[I] Unsegmented SDU");
         break;
@@ -2510,19 +2552,56 @@ dissect_i_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         col_append_str(pinfo->cinfo, COL_INFO, "[I] Continuation SDU");
         break;
     }
-    ti_control = proto_tree_add_none_format(btl2cap_tree, hf_btl2cap_control, tvb,
-                                            offset, 2, "Control: %s reqseq:%d r:%d txseq:%d",
-                                            val_to_str_const((control & 0xC000) >> 14, control_sar_vals, "unknown"),
-                                            (control & 0x3F00) >> 8,
-                                            (control & 0x0080) >> 7,
-                                            (control & 0x007E) >> 1);
-    ti_control_subtree = proto_item_add_subtree(ti_control, ett_btl2cap_control);
-    proto_tree_add_item(ti_control_subtree, hf_btl2cap_control_sar, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-    proto_tree_add_item(ti_control_subtree, hf_btl2cap_control_reqseq, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-    proto_tree_add_item(ti_control_subtree, hf_btl2cap_control_retransmissiondisable, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-    proto_tree_add_item(ti_control_subtree, hf_btl2cap_control_txseq, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-    proto_tree_add_item(ti_control_subtree, hf_btl2cap_control_type, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-    offset  +=  2;
+    if (ctl_format == L2CAP_IFRAME_CONTROL_FIELD_EXTENDED) {
+        static int * const fields[] = {
+            &hf_btl2cap_ext_control_txseq,
+            &hf_btl2cap_ext_control_sar,
+            &hf_btl2cap_ext_control_reqseq,
+            &hf_btl2cap_ext_control_final,
+            &hf_btl2cap_ext_control_type,
+            NULL
+        };
+        proto_tree_add_bitmask(btl2cap_tree, tvb, offset, hf_btl2cap_ext_control_field, ett_btl2cap_control, fields, ENC_LITTLE_ENDIAN);
+        offset += 4;
+    } else {
+        if (ctl_format == L2CAP_IFRAME_CONTROL_FIELD_ENHANCED) {
+            static int * const fields[] = {
+                &hf_btl2cap_control_sar,
+                &hf_btl2cap_control_reqseq,
+                &hf_btl2cap_control_final,
+                &hf_btl2cap_control_txseq,
+                &hf_btl2cap_control_type,
+                NULL
+            };
+            proto_tree_add_bitmask(btl2cap_tree, tvb, offset, hf_btl2cap_control_field, ett_btl2cap_control, fields, ENC_LITTLE_ENDIAN);
+        } else {
+            static int * const fields[] = {
+                &hf_btl2cap_control_sar,
+                &hf_btl2cap_control_reqseq,
+                &hf_btl2cap_control_retransmissiondisable,
+                &hf_btl2cap_control_txseq,
+                &hf_btl2cap_control_type,
+                NULL
+            };
+            proto_tree_add_bitmask(btl2cap_tree, tvb, offset, hf_btl2cap_control_field, ett_btl2cap_control, fields, ENC_LITTLE_ENDIAN);
+        }
+        offset += 2;
+    }
+    return offset;
+}
+
+static int
+dissect_i_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
+        proto_tree *btl2cap_tree, psm_data_t *psm_data, uint16_t length,
+        int offset, config_data_t *config_data, btl2cap_data_t *l2cap_data)
+{
+    tvbuff_t         *next_tvb = NULL;
+    uint16_t          segment;
+    uint16_t          sdulen;
+    sdu_reassembly_t *mfp      = NULL;
+    uint16_t          psm      = (psm_data ? psm_data->psm : 0);
+
+    offset = dissect_i_frame_control_field(tvb, pinfo, btl2cap_tree, offset, config_data, &segment);
 
     /*Segmented frames with SAR = start have an extra SDU length header field*/
     if (segment == 0x01) {
@@ -2555,8 +2634,8 @@ dissect_i_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
             mfp->last_frame  = 0;
             mfp->tot_len     = sdulen;
             mfp->reassembled = (uint8_t *) wmem_alloc(wmem_file_scope(), sdulen);
-            tvb_memcpy(tvb, mfp->reassembled, offset, sdulen);
-            mfp->cur_off     = sdulen;
+            tvb_memcpy(tvb, mfp->reassembled, offset, length);
+            mfp->cur_off     = length;
             wmem_tree_insert32(config_data->start_fragments, pinfo->num, mfp);
         } else {
             mfp              = (sdu_reassembly_t *)wmem_tree_lookup32(config_data->start_fragments, pinfo->num);
@@ -2593,13 +2672,15 @@ dissect_i_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
             col_append_fstr(pinfo->cinfo, COL_INFO, "[Continuation to #%u] ", mfp->first_frame);
         }
     }
-    if (segment == 0x02 && mfp != NULL && mfp->last_frame == pinfo->num) {
+    if (segment == 0x02 && mfp != NULL && mfp->last_frame == pinfo->num && mfp->cur_off == mfp->tot_len) {
+        /* if mfp->cur_off != mfp->tot_len, there is missing data
+         * or other reassembly issues. */
         next_tvb = tvb_new_child_real_data(tvb, (uint8_t *)mfp->reassembled, mfp->tot_len, mfp->tot_len);
         add_new_data_source(pinfo, next_tvb, "Reassembled L2CAP");
     }
     /*pass up to higher layer if we have a complete packet*/
     if (segment == 0x00) {
-        next_tvb = tvb_new_subset_length_caplen(tvb, offset, tvb_captured_length_remaining(tvb, offset) - 2, length);
+        next_tvb = tvb_new_subset_length(tvb, offset, length);
     }
     if (next_tvb) {
         if (psm) {
@@ -2654,8 +2735,11 @@ dissect_i_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
             proto_tree_add_item(btl2cap_tree, hf_btl2cap_payload, next_tvb, 0, tvb_reported_length(next_tvb), ENC_NA);
         }
     }
-    offset += tvb_reported_length_remaining(tvb, offset) - 2;
-    proto_tree_add_item(btl2cap_tree, hf_btl2cap_fcs, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+    offset += length;
+    proto_tree_add_checksum(btl2cap_tree, tvb, offset, hf_btl2cap_fcs,
+        hf_btl2cap_fcs_status, &ei_btl2cap_fcs_bad, pinfo,
+        crc16_plain_tvb_offset(tvb, 0, offset), ENC_LITTLE_ENDIAN,
+        PROTO_CHECKSUM_VERIFY);
     offset +=  2;
     return offset;
 }
@@ -2664,13 +2748,29 @@ static int
 dissect_s_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree _U_, proto_tree *btl2cap_tree,
                 uint16_t psm _U_, uint16_t length _U_, int offset, config_data_t *config_data _U_)
 {
-    proto_item *ti_control;
-    proto_tree *ti_control_subtree;
-    uint16_t    control;
+    uint32_t    control;
+    uint8_t supervisory;
+    enum l2cap_ctl_field_format ctl_format = L2CAP_IFRAME_CONTROL_FIELD_STANDARD;
 
-    control = tvb_get_letohs(tvb, offset);
+    if (config_data) {
+        if (config_data->mode == L2CAP_ENHANCED_RETRANSMISSION_MODE) {
+            ctl_format = L2CAP_IFRAME_CONTROL_FIELD_ENHANCED;
+        } else if (config_data->mode == L2CAP_STREAMING_MODE) {
+            ctl_format = L2CAP_IFRAME_CONTROL_FIELD_ENHANCED;
+            if (config_data->maxwindowsize == 0) {
+                ctl_format = L2CAP_IFRAME_CONTROL_FIELD_EXTENDED;
+            }
+        }
+    }
 
-    switch ((control & 0x000C) >> 2) {
+    if (ctl_format == L2CAP_IFRAME_CONTROL_FIELD_EXTENDED) {
+        control = tvb_get_letohl(tvb, offset);
+        supervisory = (control & 0x000030000) >> 16;
+    } else {
+        control = tvb_get_letohs(tvb, offset);
+        supervisory = (control & 0x000C) >> 2;
+    }
+    switch (supervisory) {
     case 0:
         col_append_str(pinfo->cinfo, COL_INFO, "[S] Receiver Ready");
         break;
@@ -2682,22 +2782,46 @@ dissect_s_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree _U_, proto_t
         break;
     }
 
-    ti_control = proto_tree_add_none_format(btl2cap_tree, hf_btl2cap_control, tvb,
-        offset, 2, "Control: %s reqseq:%d r:%d",
-        val_to_str_const((control & 0x000C) >> 2, control_supervisory_vals, "unknown"),
-        (control & 0x3F00) >> 8,
-        (control & 0x0080) >> 7);
-    ti_control_subtree = proto_item_add_subtree(ti_control, ett_btl2cap_control);
+    if (ctl_format == L2CAP_IFRAME_CONTROL_FIELD_EXTENDED) {
+        static int * const fields[] = {
+            &hf_btl2cap_ext_control_poll,
+            &hf_btl2cap_ext_control_supervisory,
+            &hf_btl2cap_ext_control_reqseq,
+            &hf_btl2cap_ext_control_final,
+            &hf_btl2cap_ext_control_type,
+            NULL
+        };
+        proto_tree_add_bitmask(btl2cap_tree, tvb, offset, hf_btl2cap_ext_control_field, ett_btl2cap_control, fields, ENC_LITTLE_ENDIAN);
+        offset += 4;
+    } else {
+        if (ctl_format == L2CAP_IFRAME_CONTROL_FIELD_ENHANCED) {
+            static int * const fields[] = {
+                &hf_btl2cap_control_reqseq,
+                &hf_btl2cap_control_final,
+                &hf_btl2cap_control_poll,
+                &hf_btl2cap_control_supervisory,
+                &hf_btl2cap_control_type,
+                NULL
+            };
+            proto_tree_add_bitmask(btl2cap_tree, tvb, offset, hf_btl2cap_control_field, ett_btl2cap_control, fields, ENC_LITTLE_ENDIAN);
+        } else {
+            static int * const fields[] = {
+                &hf_btl2cap_control_reqseq,
+                &hf_btl2cap_control_retransmissiondisable,
+                &hf_btl2cap_control_supervisory,
+                &hf_btl2cap_control_type,
+                NULL
+            };
+            proto_tree_add_bitmask(btl2cap_tree, tvb, offset, hf_btl2cap_control_field, ett_btl2cap_control, fields, ENC_LITTLE_ENDIAN);
+        }
+        offset += 2;
+    }
 
-    proto_tree_add_item(ti_control_subtree, hf_btl2cap_control_reqseq, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-    proto_tree_add_item(ti_control_subtree, hf_btl2cap_control_retransmissiondisable, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-    proto_tree_add_item(ti_control_subtree, hf_btl2cap_control_supervisory, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-    proto_tree_add_item(ti_control_subtree, hf_btl2cap_control_type, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+    proto_tree_add_checksum(btl2cap_tree, tvb, offset, hf_btl2cap_fcs,
+        hf_btl2cap_fcs_status, &ei_btl2cap_fcs_bad, pinfo,
+        crc16_plain_tvb_offset(tvb, 0, offset), ENC_LITTLE_ENDIAN,
+        PROTO_CHECKSUM_VERIFY);
     offset += 2;
-
-    proto_tree_add_item(btl2cap_tree, hf_btl2cap_fcs, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-    offset += 2;
-
     return offset;
 }
 
@@ -2746,10 +2870,12 @@ dissect_btl2cap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     length  = tvb_get_letohs(tvb, offset);
     length_item = proto_tree_add_item(btl2cap_tree, hf_btl2cap_length, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-    if (tvb_captured_length_remaining(tvb, offset) < length) {
+    /* Note this is captured length - some code later around fragments,
+     * FCS would have to be changed if this were reported length. */
+    if (tvb_captured_length_remaining(tvb, offset + 4) < length) {
         expert_add_info(pinfo, length_item, &ei_btl2cap_length_bad);
-        /* Try to dissect as more as possible */
-        length = tvb_captured_length_remaining(tvb, offset) - 4;
+        /* Try to dissect as much as possible */
+        length = tvb_captured_length_remaining(tvb, offset + 4);
     }
 
     offset += 2;
@@ -2977,7 +3103,7 @@ dissect_btl2cap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
         /* 3.2 "For G-frames, the PDU length equals the payload size plus the
          * number of octets in the PSM."
-         * Substract the PSM length. (Yes, technically the PSM is "at least"
+         * Subtract the PSM length. (Yes, technically the PSM is "at least"
          * two octets in length, Little Endian where only the MSB (== Last)
          * has least significant bit 0, and that's used to detect the size.
          * We only use 2 octets everywhere in this dissector, though.)
@@ -3024,29 +3150,32 @@ dissect_btl2cap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
             if (control & 0x1) {
                 offset = dissect_s_frame(tvb, pinfo, tree, btl2cap_tree, 0 /* unused */, length, offset, NULL /* unused */);
             } else {
-                proto_item* ti_control;
-                proto_tree* ti_control_subtree;
-
-                ti_control = proto_tree_add_none_format(btl2cap_tree, hf_btl2cap_control, tvb,
-                    offset, 2, "Control: %s reqseq:%d r:%d txseq:%d",
-                    val_to_str_const((control & 0xC000) >> 14, control_sar_vals, "unknown"),
-                    (control & 0x3F00) >> 8,
-                    (control & 0x0080) >> 7,
-                    (control & 0x007E) >> 1);
-                ti_control_subtree = proto_item_add_subtree(ti_control, ett_btl2cap_control);
-                proto_tree_add_item(ti_control_subtree, hf_btl2cap_control_sar, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-                proto_tree_add_item(ti_control_subtree, hf_btl2cap_control_reqseq, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-                proto_tree_add_item(ti_control_subtree, hf_btl2cap_control_retransmissiondisable, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-                proto_tree_add_item(ti_control_subtree, hf_btl2cap_control_txseq, tvb, offset, 2, ENC_LITTLE_ENDIAN);
-                proto_tree_add_item(ti_control_subtree, hf_btl2cap_control_type, tvb, offset, 2, ENC_LITTLE_ENDIAN);
+                static int * const fields[] = {
+                    &hf_btl2cap_control_sar,
+                    &hf_btl2cap_control_reqseq,
+                    &hf_btl2cap_control_retransmissiondisable,
+                    &hf_btl2cap_control_txseq,
+                    &hf_btl2cap_control_type,
+                    NULL
+                };
+                if (length <= 4) {
+                    expert_add_info_format(pinfo, length_item, &ei_btl2cap_length_bad,
+                            "Control / FCS length too short: %u", length);
+                    THROW(ReportedBoundsError);
+                }
+                length -= 4; /*Control, FCS*/
+                proto_tree_add_bitmask(btl2cap_tree, tvb, offset, hf_btl2cap_control_field, ett_btl2cap_control, fields, ENC_LITTLE_ENDIAN);
                 offset += 2;
-                proto_tree_add_item(btl2cap_tree, hf_btl2cap_fcs, tvb, tvb_reported_length(tvb) - 2, 2, ENC_LITTLE_ENDIAN);
+                proto_tree_add_checksum(btl2cap_tree, tvb, offset + length, hf_btl2cap_fcs,
+                    hf_btl2cap_fcs_status, &ei_btl2cap_fcs_bad, pinfo,
+                    crc16_plain_tvb_offset(tvb, 0, offset), ENC_LITTLE_ENDIAN,
+                    PROTO_CHECKSUM_VERIFY);
 
-                next_tvb = tvb_new_subset_length_caplen(tvb, offset, tvb_captured_length_remaining(tvb, offset)-2, length);
+                next_tvb = tvb_new_subset_length(tvb, offset, length);
             }
         }
         else {
-            next_tvb = tvb_new_subset_length_caplen(tvb, offset, tvb_captured_length_remaining(tvb, offset), length);
+            next_tvb = tvb_new_subset_length(tvb, offset, length);
         }
         /* call next dissector */
         if (next_tvb && !dissector_try_uint_with_data(l2cap_cid_dissector_table, (uint32_t) cid,
@@ -3528,9 +3657,19 @@ proto_register_btl2cap(void)
             FT_UINT16, BASE_HEX, VALS(control_sar_vals), 0xC000,
             NULL, HFILL }
         },
+        { &hf_btl2cap_ext_control_sar,
+          { "Segmentation and reassembly",           "btl2cap.control_sar",
+            FT_UINT32, BASE_HEX, VALS(control_sar_vals), 0x00030000,
+            NULL, HFILL }
+        },
         { &hf_btl2cap_control_reqseq,
           { "ReqSeq",           "btl2cap.control_reqseq",
             FT_UINT16, BASE_DEC, NULL, 0x3F00,
+            "Request Sequence Number", HFILL }
+        },
+        { &hf_btl2cap_ext_control_reqseq,
+          { "ReqSeq",           "btl2cap.control_reqseq",
+            FT_UINT32, BASE_DEC, NULL, 0x0000FFFC,
             "Request Sequence Number", HFILL }
         },
         { &hf_btl2cap_control_txseq,
@@ -3538,14 +3677,44 @@ proto_register_btl2cap(void)
             FT_UINT16, BASE_DEC, NULL, 0x007E,
             "Transmitted Sequence Number", HFILL }
         },
+        { &hf_btl2cap_ext_control_txseq,
+          { "TxSeq",           "btl2cap.control_txseq",
+            FT_UINT32, BASE_DEC, NULL, 0xFFFC0000,
+            "Transmitted Sequence Number", HFILL }
+        },
         { &hf_btl2cap_control_retransmissiondisable,
           { "R",           "btl2cap.control_retransmissiondisable",
             FT_UINT16, BASE_HEX, NULL, 0x0080,
             "Retransmission Disable", HFILL }
         },
+        { &hf_btl2cap_control_poll,
+          { "P",           "btl2cap.control_poll",
+            FT_UINT16, BASE_HEX, NULL, 0x0010,
+            "P-bit", HFILL }
+        },
+        { &hf_btl2cap_ext_control_poll,
+          { "P",           "btl2cap.control_poll",
+            FT_UINT32, BASE_HEX, NULL, 0x00040000,
+            "P-bit", HFILL }
+        },
+        { &hf_btl2cap_control_final,
+          { "F",           "btl2cap.control_final",
+            FT_UINT16, BASE_HEX, NULL, 0x0080,
+            "F-bit", HFILL }
+        },
+        { &hf_btl2cap_ext_control_final,
+          { "F",           "btl2cap.control_final",
+            FT_UINT32, BASE_HEX, NULL, 0x00000002,
+            "F-bit", HFILL }
+        },
         { &hf_btl2cap_control_supervisory,
           { "S",           "btl2cap.control_supervisory",
             FT_UINT16, BASE_HEX, VALS(control_supervisory_vals), 0x000C,
+            "Supervisory Function", HFILL }
+        },
+        { &hf_btl2cap_ext_control_supervisory,
+          { "S",           "btl2cap.control_supervisory",
+            FT_UINT32, BASE_HEX, VALS(control_supervisory_vals), 0x00030000,
             "Supervisory Function", HFILL }
         },
         { &hf_btl2cap_control_type,
@@ -3553,15 +3722,30 @@ proto_register_btl2cap(void)
             FT_UINT16, BASE_HEX, VALS(control_type_vals), 0x0001,
             NULL, HFILL }
         },
-        { &hf_btl2cap_control,
+        { &hf_btl2cap_ext_control_type,
+          { "Frame Type",           "btl2cap.control_type",
+            FT_UINT32, BASE_HEX, VALS(control_type_vals), 0x00000001,
+            NULL, HFILL }
+        },
+        { &hf_btl2cap_control_field,
           { "Control field",           "btl2cap.control",
-            FT_NONE, BASE_NONE, NULL, 0x0,
+            FT_UINT16, BASE_HEX, NULL, 0x0,
+            NULL, HFILL }
+        },
+        { &hf_btl2cap_ext_control_field,
+          { "Control field",           "btl2cap.control",
+            FT_UINT32, BASE_HEX, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_btl2cap_fcs,
           { "FCS",           "btl2cap.fcs",
             FT_UINT16, BASE_HEX, NULL, 0,
             "Frame Check Sequence", HFILL }
+        },
+        { &hf_btl2cap_fcs_status,
+          { "FCS Status",    "btl2cap.fcs.status",
+            FT_UINT8, BASE_NONE, VALS(proto_checksum_vals), 0x0,
+            NULL, HFILL }
         },
         { &hf_btl2cap_sdulength,
           { "SDU Length",           "btl2cap.sdulength",
@@ -3717,6 +3901,7 @@ proto_register_btl2cap(void)
         { &ei_btl2cap_parameter_mismatch, { "btl2cap.parameter_mismatch", PI_PROTOCOL, PI_WARN, "Parameter mismatch", EXPFILL }},
         { &ei_btl2cap_sdulength_bad, { "btl2cap.sdulength.bad", PI_MALFORMED, PI_WARN, "SDU length bad", EXPFILL }},
         { &ei_btl2cap_length_bad, { "btl2cap.length.bad", PI_MALFORMED, PI_WARN, "Length too short", EXPFILL }},
+        { &ei_btl2cap_fcs_bad, { "btl2cap.fcs.bad", PI_CHECKSUM, PI_WARN, "Bad FCS", EXPFILL }},
         { &ei_btl2cap_unknown_command_code, { "btl2cap.unknown_command_code", PI_PROTOCOL, PI_WARN, "Unknown Command Code", EXPFILL }},
     };
 
@@ -3724,12 +3909,12 @@ proto_register_btl2cap(void)
     static build_valid_func btl2cap_cid_da_build_value[1] = {btl2cap_cid_value};
     static decode_as_value_t btl2cap_cid_da_values = {btl2cap_cid_prompt, 1, btl2cap_cid_da_build_value};
     static decode_as_t btl2cap_cid_da = {"btl2cap", "btl2cap.cid", 1, 0, &btl2cap_cid_da_values, NULL, NULL,
-                                 decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL};
+                                 decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL, NULL, NULL };
 
     static build_valid_func btl2cap_psm_da_build_value[1] = {btl2cap_psm_value};
     static decode_as_value_t btl2cap_psm_da_values = {btl2cap_psm_prompt, 1, btl2cap_psm_da_build_value};
     static decode_as_t btl2cap_psm_da = {"btl2cap", "btl2cap.psm", 1, 0, &btl2cap_psm_da_values, NULL, NULL,
-                                 decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL};
+                                 decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL, NULL, NULL };
 
     /* Register the protocol name and description */
     proto_btl2cap = proto_register_protocol("Bluetooth L2CAP Protocol", "BT L2CAP", "btl2cap");

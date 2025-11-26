@@ -747,7 +747,7 @@ static int ett_eoib;
 #define MELLANOX_SEGMENT_FLAG           0x001F
 
 /* Attributes
-* Additional Structures for individuala attribute decoding.
+* Additional Structures for individual attribute decoding.
 * Since they are not headers the naming convention is slightly modified
 * Convention: hf_infiniband_[attribute name]_[field]
 * This was not entirely necessary but I felt the previous convention
@@ -1604,7 +1604,7 @@ static const value_string DctOpCodeMap[] =
 #define AETH_SYNDROME_VALUE 0x1F
 
 
-/* Array of all availavle OpCodes to make matching a bit easier.
+/* Array of all available OpCodes to make matching a bit easier.
 * The OpCodes dictate the header sequence following in the packet.
 * These arrays tell the dissector which headers must be decoded for the given OpCode. */
 static uint32_t opCode_RDETH_DETH_ATOMICETH[] = {
@@ -1763,8 +1763,20 @@ static void table_destroy_notify(void *data) {
 static int
 dissect_rroce(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
 {
-    /* this is a RRoCE packet, so signal the IB dissector not to look for LRH/GRH */
+    /*
+     * this is a RRoCE packet so signal the IB dissector not to look for LRH/GRH
+     *
+     * We also make sure to reset pinfo->{ptype,srcport,destport} so
+     * that PT_IBQP is only set temporary, so that Follow UDP Stream
+     * still works.
+     */
+    port_type saved_ptype = pinfo->ptype;
+    uint32_t saved_srcport = pinfo->srcport;
+    uint32_t saved_destport = pinfo->destport;
     dissect_infiniband_common(tvb, pinfo, tree, IB_PACKET_STARTS_WITH_BTH);
+    pinfo->ptype = saved_ptype;
+    pinfo->srcport = saved_srcport;
+    pinfo->destport = saved_destport;
     return tvb_captured_length(tvb);
 }
 
@@ -1788,7 +1800,7 @@ dissect_infiniband(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* da
 
 /* Common Dissector for both InfiniBand and RoCE packets
  * IN:
- *       tvb - The tvbbuff of packet data
+ *       tvb - The tvbuf of packet data
  *       pinfo - The packet info structure with column information
  *       tree - The tree structure under which field nodes are to be added
  *       starts_with - regular IB packet starts with LRH, ROCE starts with GRH and RROCE starts with BTH,
@@ -2351,7 +2363,7 @@ dissect_infiniband_link(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, voi
 
 /* Description: Finds the header sequence that follows the Base Transport Header.
 * Somwhat inefficient (should be using a single key,value pair data structure)
-* But uses pure probablity to take a stab at better efficiency.
+* But uses pure probability to take a stab at better efficiency.
 * Searches largest header sequence groups first, and then finally resorts to single matches for unique header sequences
 * IN: OpCode: The OpCode from the Base Transport Header.
 * OUT: The Header Sequence enumeration.  See Declarations for #defines from (0-22) */
@@ -4226,7 +4238,7 @@ static void parse_APPLICATION_MANAGEMENT(proto_tree *parentTree, tvbuff_t *tvb, 
 /* Parse Reserved Management Packets.
 
 * This is an !ERROR CONDITION!
-* It means that the Management Class value used was defined as a reserved value for furture use.
+* It means that the Management Class value used was defined as a reserved value for future use.
 * This method is here since we will want to report this information directly to the UI without blowing up Wireshark.
 
 * IN: parentTree to add the dissection to
@@ -4605,7 +4617,7 @@ static bool parse_SUBA_Attribute(proto_tree *parentTree, packet_info* pinfo, tvb
 
 /* Parse ClassPortInfo Attribute Field
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins      */
 static int parse_ClassPortInfo(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -4669,7 +4681,7 @@ static int parse_ClassPortInfo(proto_tree* parentTree, tvbuff_t* tvb, int *offse
 
 /* Parse NoticeDataDetails Attribute Field
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins
 *       trapNumber - The Trap ID of the Trap Data being Dissected  */
 
@@ -4879,7 +4891,7 @@ static int parse_NoticeDataDetails(proto_tree* parentTree, tvbuff_t* tvb, int *o
 
 /* Parse NoticesAndTraps Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static void parse_NoticesAndTraps(proto_tree* parentTree, packet_info* pinfo, tvbuff_t* tvb, int *offset)
 {
@@ -4923,7 +4935,7 @@ static void parse_NoticesAndTraps(proto_tree* parentTree, packet_info* pinfo, tv
 
 /* Parse NodeDescription Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static void parse_NodeDescription(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -4939,7 +4951,7 @@ static void parse_NodeDescription(proto_tree* parentTree, tvbuff_t* tvb, int *of
 
 /* Parse NodeInfo Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static int parse_NodeInfo(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -4982,7 +4994,7 @@ static int parse_NodeInfo(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 
 /* Parse SwitchInfo Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static int parse_SwitchInfo(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5028,7 +5040,7 @@ static int parse_SwitchInfo(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 
 /* Parse GUIDInfo Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static int parse_GUIDInfo(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5053,7 +5065,7 @@ static int parse_GUIDInfo(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 
 /* Parse PortInfo Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static int parse_PortInfo(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5314,7 +5326,7 @@ static int parse_PortInfo(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 
 /* Parse P_KeyTable Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static void parse_P_KeyTable(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5344,7 +5356,7 @@ static void parse_P_KeyTable(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 
 /* Parse SLtoVLMappingTable Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static void parse_SLtoVLMappingTable(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5374,7 +5386,7 @@ static void parse_SLtoVLMappingTable(proto_tree* parentTree, tvbuff_t* tvb, int 
 
 /* Parse VLArbitrationTable Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static void parse_VLArbitrationTable(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5405,7 +5417,7 @@ static void parse_VLArbitrationTable(proto_tree* parentTree, tvbuff_t* tvb, int 
 
 /* Parse LinearForwardingTable Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static void parse_LinearForwardingTable(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5432,7 +5444,7 @@ static void parse_LinearForwardingTable(proto_tree* parentTree, tvbuff_t* tvb, i
 
 /* Parse RandomForwardingTable Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static void parse_RandomForwardingTable(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5467,7 +5479,7 @@ static void parse_RandomForwardingTable(proto_tree* parentTree, tvbuff_t* tvb, i
 
 /* Parse NoticesAndTraps Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static void parse_MulticastForwardingTable(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5495,7 +5507,7 @@ static void parse_MulticastForwardingTable(proto_tree* parentTree, tvbuff_t* tvb
 
 /* Parse SMInfo Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static int parse_SMInfo(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5524,7 +5536,7 @@ static int parse_SMInfo(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 
 /* Parse VendorDiag Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static int parse_VendorDiag(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5549,7 +5561,7 @@ static int parse_VendorDiag(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 
 /* Parse LedInfo Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static void parse_LedInfo(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5569,7 +5581,7 @@ static void parse_LedInfo(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 
 /* Parse LinkSpeedWidthPairsTable Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static int parse_LinkSpeedWidthPairsTable(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5755,7 +5767,7 @@ static void parse_RID(proto_tree* SA_header_tree, tvbuff_t* tvb, int *offset, MA
 
 /* Parse InformInfo Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static int parse_InformInfo(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5800,7 +5812,7 @@ static int parse_InformInfo(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 }
 /* Parse LinkRecord Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static int parse_LinkRecord(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5827,7 +5839,7 @@ static int parse_LinkRecord(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 }
 /* Parse ServiceRecord Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static int parse_ServiceRecord(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5870,7 +5882,7 @@ static int parse_ServiceRecord(proto_tree* parentTree, tvbuff_t* tvb, int *offse
 }
 /* Parse PathRecord Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static int parse_PathRecord(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5927,7 +5939,7 @@ static int parse_PathRecord(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 }
 /* Parse MCMemberRecord Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins   */
 static int parse_MCMemberRecord(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -5977,7 +5989,7 @@ static int parse_MCMemberRecord(proto_tree* parentTree, tvbuff_t* tvb, int *offs
 }
 /* Parse TraceRecord Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static int parse_TraceRecord(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -6019,7 +6031,7 @@ static int parse_TraceRecord(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 }
 /* Parse MultiPathRecord Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static int parse_MultiPathRecord(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -6095,7 +6107,7 @@ static int parse_MultiPathRecord(proto_tree* parentTree, tvbuff_t* tvb, int *off
 }
 /* Parse ServiceAssociationRecord Attribute
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins     */
 static int parse_ServiceAssociationRecord(proto_tree* parentTree, tvbuff_t* tvb, int *offset)
 {
@@ -6122,7 +6134,7 @@ static int parse_ServiceAssociationRecord(proto_tree* parentTree, tvbuff_t* tvb,
 
 /* Parse PortCounters MAD from the Performance management class.
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins
 *       pinfo - The packet info structure with column information  */
 static int parse_PERF_PortCounters(proto_tree* parentTree, tvbuff_t* tvb, packet_info *pinfo, int *offset)
@@ -6186,7 +6198,7 @@ static int parse_PERF_PortCounters(proto_tree* parentTree, tvbuff_t* tvb, packet
 
 /* Parse PortCountersExtended MAD from the Performance management class.
 * IN:   parentTree - The tree to add the dissection to
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins
 *       pinfo - The packet info structure with column information  */
 static int parse_PERF_PortCountersExtended(proto_tree* parentTree, tvbuff_t* tvb, packet_info *pinfo, int *offset)
@@ -6234,7 +6246,7 @@ static int parse_PERF_PortCountersExtended(proto_tree* parentTree, tvbuff_t* tvb
 /* dissect_general_info
 * Used to extract very few values from the packet in the case that full dissection is disabled by the user.
 * IN:
-*       tvb - The tvbbuff of packet data
+*       tvb - The tvbuf of packet data
 *       offset - The offset in TVB where the attribute begins
 *       pinfo - The packet info structure with column information
 *       starts_with - regular IB packet starts with LRH, ROCE starts with GRH and RROCE starts with BTH,

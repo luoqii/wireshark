@@ -114,6 +114,7 @@ public:
 
     CaptureFile *captureFile() { return &capture_file_; }
 
+    void setFunnelMenus(void);
     void removeAdditionalToolbar(QString toolbarName);
 
     void addInterfaceToolbar(const iface_toolbar *toolbar_entry);
@@ -202,7 +203,7 @@ private:
     void exportDissections(export_type_e export_type);
 
 #ifdef Q_OS_WIN
-    void fileAddExtension(QString &file_name, int file_type, wtap_compression_type compression_type);
+    void fileAddExtension(QString &file_name, int file_type, ws_compression_type compression_type);
 #endif // Q_OS_WIN
     bool testCaptureFileClose(QString before_what, FileCloseContext context = Default);
     void captureStop(bool discard = false);
@@ -327,6 +328,7 @@ private slots:
     void pushLiveCaptureInProgress();
     void popLiveCaptureInProgress();
     void stopCapture();
+    void aggregationViewChanged(bool enable) const;
 
     void loadWindowGeometry();
     void saveWindowGeometry();
@@ -409,7 +411,7 @@ private slots:
     void editPacketCommentFinished(PacketCommentDialog* pc_dialog, int result, unsigned nComment);
     void deleteAllPacketComments();
     void deleteAllPacketCommentsFinished(int result);
-    void injectSecrets();
+    void injectSecrets(const char* proto_name, const char* wiki_link);
     void discardAllSecrets();
     void discardAllSecretsFinished(int result);
     void showPreferencesDialog(QString module_name);

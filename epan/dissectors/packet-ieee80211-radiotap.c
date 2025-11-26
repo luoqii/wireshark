@@ -713,7 +713,7 @@ static int radiotap_fcs_handling = USE_FCS_BIT;
 #define IEEE80211_RADIOTAP_F_SHORTGI	0x80
 #define IEEE80211_RADIOTAP_XCHANNEL	18
 
-/* Official specifcation:
+/* Official specification:
  *
  * http://www.radiotap.org/
  *
@@ -1370,7 +1370,7 @@ dissect_radiotap_he_info(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree
 	uint8_t ltf_symbol_size = 0;
 
 	/*
-	 * This is set differetly for each packet, depending on
+	 * This is set differently for each packet, depending on
 	 * which values in data3 are known.  It thus will not
 	 * work if it's static.
 	 */
@@ -1658,7 +1658,7 @@ dissect_radiotap_he_mu_info(tvbuff_t *tvb, packet_info *pinfo _U_,
 	uint16_t flags2;
 
 	/*
-	 * This is set differetly for each packet, depending on
+	 * This is set differently for each packet, depending on
 	 * which values in flags1 are known.  It thus will not
 	 * work if it's static.
 	 */
@@ -4329,24 +4329,17 @@ dissect_radiotap(tvbuff_t * tvb, packet_info * pinfo, proto_tree * tree, void* u
 			if (iter.tlv_mode) {
 				proto_tree *unknown_tlv;
 
-				unknown_tlv = proto_tree_add_subtree(tree, tvb,
-						offset,
-						length + 4,
+				unknown_tlv = proto_tree_add_subtree(item_tree, tvb,
+						offset - 4,
+						iter.this_arg_size + 4,
 						ett_radiotap_unknown_tlv,
 						NULL, "Unknown TLV");
-				proto_tree_add_item(unknown_tlv,
-						hf_radiotap_tlv_type, tvb,
-						offset, 2, ENC_LITTLE_ENDIAN);
-				offset += 2;
-
-				proto_tree_add_item(unknown_tlv,
-						hf_radiotap_tlv_datalen, tvb,
-						offset, 2, ENC_LITTLE_ENDIAN);
-				offset += 2;
+				add_tlv_items(unknown_tlv, tvb, offset);
 
 				proto_tree_add_item(unknown_tlv,
 						hf_radiotap_unknown_tlv_data,
-						tvb, offset, length, ENC_NA);
+						tvb, offset, iter.this_arg_size,
+						ENC_NA);
 			} else {
 				proto_tree_add_item(item_tree,
 						hf_radiotap_unknown_tlv_data,

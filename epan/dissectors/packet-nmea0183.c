@@ -1346,7 +1346,7 @@ dissect_nmea0183_field_latitude(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
     ti = proto_tree_add_item(tree, hf_latitude, tvb, offset, end_of_field_offset - offset, ENC_ASCII);
     if (end_of_field_offset - offset == 0)
     {
-        proto_item_append_text(ti, "[empty]");
+        proto_item_append_text(ti, ": [empty]");
 
         end_of_field_offset += dissect_nmea0183_field_latlong_direction(tvb, pinfo, tree, end_of_field_offset + 1, hf_direction, NULL, NULL);
     }
@@ -1396,7 +1396,7 @@ dissect_nmea0183_field_longitude(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
     ti = proto_tree_add_item(tree, hf_longitude, tvb, offset, end_of_field_offset - offset, ENC_ASCII);
     if (end_of_field_offset - offset == 0)
     {
-        proto_item_append_text(ti, "[empty]");
+        proto_item_append_text(ti, ": [empty]");
 
         end_of_field_offset += dissect_nmea0183_field_latlong_direction(tvb, pinfo, tree, end_of_field_offset + 1, hf_direction, NULL, NULL);
     }
@@ -1881,6 +1881,7 @@ dissect_nmea0183(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data
     const uint8_t *talker_id = NULL;
     const uint8_t *sentence_id = NULL;
     const uint8_t *checksum = NULL;
+    uint8_t start_delimiter;
 
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "NMEA 0183");
     /* Clear the info column */
@@ -1890,7 +1891,8 @@ dissect_nmea0183(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data
     proto_tree *nmea0183_tree = proto_item_add_subtree(ti, ett_nmea0183);
 
     /* Start delimiter */
-    if (tvb_get_uint8(tvb, offset) != '$')
+    start_delimiter = tvb_get_uint8(tvb, offset);
+    if ((start_delimiter != '$') && (start_delimiter != '!'))
     {
         expert_add_info(pinfo, nmea0183_tree, &ei_nmea0183_invalid_first_character);
     }

@@ -9,7 +9,7 @@
 #ifndef __PCAP_MODULE_H__
 #define __PCAP_MODULE_H__
 
-#include <wiretap/wtap-int.h>
+#include <wiretap/wtap_module.h>
 
 #include "ws_symbol_export.h"
 #include "pcapng.h"
@@ -61,6 +61,7 @@ extern "C" {
 #define BLOCK_TYPE_SYSDIG_EVF_V2_LARGE    0x00000222 /* Sysdig Event Block with flags version 2 with large payload */
 #define BLOCK_TYPE_CB_COPY                0x00000BAD /* Custom Block which can be copied */
 #define BLOCK_TYPE_CB_NO_COPY             0x40000BAD /* Custom Block which should not be copied */
+#define BLOCK_TYPE_LEGACY_DPIB            0x80000001 /* Historically, Apple used this code for Darwin Process Info Block. */
 
 /* TODO: the following are not yet well defined in the draft spec,
  * and do not yet have block type values assigned to them:
@@ -278,7 +279,7 @@ typedef struct pcapng_custom_block_enterprise_handler_t
  * Register a handler for a pcapng custom block with an enterprise number.
  */
 WS_DLL_PUBLIC
-void register_pcapng_custom_block_enterprise_handler(unsigned enterprise_number, pcapng_custom_block_enterprise_handler_t* handler);
+void register_pcapng_custom_block_enterprise_handler(unsigned enterprise_number, pcapng_custom_block_enterprise_handler_t const * handler);
 
 /*
  * Helper routines for modules.

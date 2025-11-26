@@ -24,9 +24,9 @@
 #include <epan/to_str.h>
 #include <epan/sequence_analysis.h>
 #include <epan/tap.h>
+#include <epan/proto_data.h>
 #include <epan/expert.h>
 #include <epan/tfs.h>
-#include <wsutil/application_flavor.h>
 #include <wsutil/wsgcrypt.h>
 #include <wsutil/str_util.h>
 #include <wsutil/wslog.h>
@@ -45,6 +45,7 @@ void proto_reg_handoff_frame(void);
 static int proto_frame;
 static int proto_pkt_comment;
 static int proto_syscall;
+static int proto_darwin;
 
 static int hf_frame_arrival_time_local;
 static int hf_frame_arrival_time_utc;
@@ -117,6 +118,7 @@ static int frame_tap;
 static dissector_handle_t docsis_handle;
 static dissector_handle_t sysdig_handle;
 static dissector_handle_t systemd_journal_handle;
+static dissector_handle_t darwin_handle;
 
 /* Preferences */
 static bool show_file_off;
@@ -182,6 +184,7 @@ static dissector_table_t wtap_encap_dissector_table;
 static dissector_table_t wtap_fts_rec_dissector_table;
 static dissector_table_t block_pen_dissector_table;
 static dissector_table_t binary_option_pen_dissector_table;
+static dissector_table_t packet_block_option_dissector_table;
 
 /* The number of tree items required to add an exception to the tree */
 #define EXCEPTION_TREE_ITEMS 10
@@ -501,7 +504,9 @@ handle_packet_option(wtap_block_t block _U_, unsigned option_id,
 		break;
 
 	default:
-		/* Process these too? */
+		dissector_try_uint_with_data(packet_block_option_dissector_table,
+			option_id, cb_data->tvb,
+			cb_data->pinfo, cb_data->tree, false, optval);
 		break;
 	}
 
@@ -885,15 +890,15 @@ dissect_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void* 
 				proto_item_set_generated(item);
 			}
 
+			if (frame_rel_start_time(pinfo->epan, pinfo->fd, &rel_ts)) {
+				item = proto_tree_add_time(fh_tree, hf_frame_time_relative_cap, tvb,
+							   0, 0, &(rel_ts));
+				proto_item_set_generated(item);
+			}
+
 			if (pinfo->fd->ref_time) {
 				ti = proto_tree_add_item(fh_tree, hf_frame_time_reference, tvb, 0, 0, ENC_NA);
 				proto_item_set_generated(ti);
-			}
-
-			if (pinfo->rel_cap_ts_present) {
-				item = proto_tree_add_time(fh_tree, hf_frame_time_relative_cap, tvb,
-							   0, 0, &(pinfo->rel_cap_ts));
-				proto_item_set_generated(item);
 			}
 		}
 	}
@@ -975,6 +980,11 @@ dissect_frame(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, void* 
 		cb_data.data.optval = NULL;
 		wtap_block_foreach_option(fr_data->pkt_block,
 		    handle_packet_option, &cb_data);
+	}
+
+	/* If there is Darwin data, call the dissector */
+	if (p_get_proto_data(wmem_file_scope(), pinfo, proto_darwin, 0) != NULL) {
+		call_dissector(darwin_handle, tvb, pinfo, fh_tree);
 	}
 
 	if (do_frame_dissection) {
@@ -1596,8 +1606,8 @@ proto_register_frame(void)
 		arr[encap_count].strptr = NULL;
 	}
 
-	proto_frame = proto_register_protocol("Frame", "Frame", "frame");
-	if (application_flavor_is_wireshark()) {
+	proto_frame = proto_register_protocol("Frame", "Frame", "frame"); /* name, short name, abbreviation */
+	if (epan_supports_packets()) {
 		proto_pkt_comment = proto_register_protocol_in_name_only("Packet comments", "Pkt_Comment", "pkt_comment", proto_frame, FT_PROTOCOL);
 		proto_register_alias(proto_pkt_comment, "evt_comment");
 	} else {
@@ -1621,6 +1631,8 @@ proto_register_frame(void)
 	    "PcapNG custom block PEN", proto_frame, FT_UINT32, BASE_DEC);
 	binary_option_pen_dissector_table = register_dissector_table("pcapng_custom_binary_option",
 	    "PcapNG custom binary option PEN", proto_frame, FT_UINT32, BASE_DEC);
+	packet_block_option_dissector_table = register_dissector_table("pcapng_packet_block_option",
+	    "PcapNG packet block option", proto_frame, FT_UINT32, BASE_DEC);
 	register_capture_dissector_table("wtap_encap", "Wiretap encapsulation type");
 
 	/* You can't disable dissection of "Frame", as that would be
@@ -1663,6 +1675,9 @@ proto_reg_handoff_frame(void)
 	docsis_handle = find_dissector_add_dependency("docsis", proto_frame);
 	sysdig_handle = find_dissector_add_dependency("sysdig", proto_frame);
 	systemd_journal_handle = find_dissector_add_dependency("systemd_journal", proto_frame);
+	darwin_handle = find_dissector_add_dependency("darwin", proto_frame);
+
+	proto_darwin = proto_registrar_get_id_byname("darwin");
 }
 
 /*

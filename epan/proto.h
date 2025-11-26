@@ -15,9 +15,9 @@
     Creating a protocol tree is done in a two stage process:
     A static part at program startup, and a dynamic part when the dissection with the real packet data is done.<BR>
     The "static" information is provided by creating a hf_register_info hf[] array, and register it using the
-    proto_register_field_array() function. This is usually done at dissector registering.<BR>
+    proto_register_field_array() function. This is usually done when registering the dissector.<BR>
     The "dynamic" information is added to the protocol tree by calling one of the proto_tree_add_...() functions,
-    e.g. proto_tree_add_bytes().
+    e.g. proto_tree_add_bytes(). In most cases, you'll want to use proto_tree_add_item().
 */
 
 #ifndef __PROTO_H__
@@ -25,7 +25,7 @@
 
 #include "wsutil/nstime.h"
 #include "tvbuff.h"
-#include "value_string.h"
+#include <wsutil/value_string.h>
 #include "packet_info.h"
 #include "ftypes/ftypes.h"
 #include "register.h"
@@ -1101,6 +1101,9 @@ typedef struct {
 /** Register dissector plugin with the plugin system. */
 WS_DLL_PUBLIC void proto_register_plugin(const proto_plugin *plugin);
 
+/** Pre-initializes memory used by proto routines. Called very early at program startup */
+void proto_pre_init(void);
+
 /** Sets up memory used by proto routines. Called at program startup */
 void proto_init(GSList *register_all_plugin_protocols_list,
     GSList *register_all_plugin_handoffs_list, register_cb cb, void *client_data);
@@ -1319,6 +1322,27 @@ WS_DLL_PUBLIC proto_item *
 proto_tree_add_item_new(proto_tree *tree, header_field_info *hfinfo, tvbuff_t *tvb,
     const int start, int length, const unsigned encoding);
 
+/**
+ * @brief Append a decoded field to a protocol tree using a registered header-field index.
+ *
+ * This routine extracts `length` bytes starting at `start` from the given
+ * `tvb`, decodes them according to the header-field’s registered type/base
+ * and `encoding` flags, highlights the corresponding bytes in the packet
+ * bytes pane, and adds the resulting value and label into `tree`.
+ * The field’s data value will be available to display filters, statistics
+ * dialogs, and export engines.
+ *
+ * @param tree      The proto_tree to which the new item will be added.
+ * @param hfindex   The header-field index (as registered in hf_register_info)
+ *                  identifying the field name, type, and description.
+ * @param tvb       The tvbuff_t containing the packet data buffer.
+ * @param start     The byte offset in `tvb` where the field’s data begins.
+ * @param length    The number of bytes to read from `tvb` for this field.
+ * @param encoding  One or more ENC_* flags controlling byte‐order,
+ *                  string encoding, or special value handling.
+ * @return          A pointer to the newly created proto_item.  You may
+ *                  append additional text or set expert info on this item.
+ */
 WS_DLL_PUBLIC proto_item *
 proto_tree_add_item(proto_tree *tree, int hfindex, tvbuff_t *tvb,
     const int start, int length, const unsigned encoding);
@@ -1411,8 +1435,8 @@ proto_tree_add_item_ret_ipv4(proto_tree *tree, int hfindex, tvbuff_t *tvb,
  * @param hfindex the field
  * @param tvb the tv buffer
  * @param start the start index of data in tvb
- * @param length the length of data. calls REPORT_DISSECTOR_BUG if not equal to FT_IPv6_LEN
- * @param encoding encodings not yet supported. calls REPORT_DISSECTOR_BUG if not equal to 0
+ * @param length the length of data. Calls REPORT_DISSECTOR_BUG if not equal to FT_IPv6_LEN
+ * @param encoding encodings not yet supported. Calls REPORT_DISSECTOR_BUG if not equal to 0
  * @param retval where the address should be written, must not be null
  * @return the newly created item
  */
@@ -2681,7 +2705,7 @@ proto_add_deregistered_data (void *data);
  @prefix a prefix to select which fields to deregister
 */
 WS_DLL_PUBLIC void
-proto_deregister_all_fields_with_prefix(const int parent, const gchar *prefix);
+proto_deregister_all_fields_with_prefix(const int parent, const char *prefix);
 
 /** Add a memory slice to be freed when deregistered fields are freed.
  @param block_size the size of the block
@@ -2951,7 +2975,7 @@ proto_get_finfo_ptr_array because it has to search through the tree.
     g_ptr_array_free(<array>, true). */
 WS_DLL_PUBLIC GPtrArray* proto_find_first_finfo(proto_tree *tree, const int hfindex);
 
-/** Return GPtrArray* of field_info pointers containg all hfindexes that appear
+/** Return GPtrArray* of field_info pointers containing all hfindexes that appear
     in tree.
  @param tree tree of interest
  @return GPtrArry pointer
@@ -3554,9 +3578,12 @@ typedef enum
 
 WS_DLL_PUBLIC const value_string proto_checksum_vals[];
 
-/** Check if given string is a valid field name
- @param field_name the field name to check
- @return 0 if valid, else first illegal character */
+/**
+ * @brief Check if a given string is a valid protocol field name.
+ *
+ * @param field_name  The field name to validate.
+ * @return            0 if the name is valid; otherwise, returns the first illegal character.
+ */
 WS_DLL_PUBLIC unsigned char
 proto_check_field_name(const char *field_name);
 
@@ -3568,7 +3595,8 @@ WS_DLL_PUBLIC unsigned char
 proto_check_field_name_lower(const char *field_name);
 
 
-/** Set the column text for a custom column
+/**
+ @brief Set the column text for a custom column
  @param tree the tree to append this item to
  @param field_id the field ids used for custom column
  @param occurrence the occurrence of the field used for custom column
@@ -3583,11 +3611,14 @@ proto_custom_set(proto_tree* tree, GSList *field_id,
                              char *result,
                              char *expr, const int size );
 
-/** Construct a display filter string for a custom column
- @param edt epan dissecting
- @param field_id the field ids used for custom column
- @param occurrence the occurrence of the field used for custom column
- @return allocated display filter string.  Needs to be freed with g_free(...) */
+/**
+ * @brief Construct a display filter string for a custom column.
+ *
+ * @param edt         The epan_dissect context.
+ * @param field_id    The field IDs used for the custom column.
+ * @param occurrence  The occurrence of the field used for the custom column.
+ * @return            Allocated display filter string. Needs to be freed with g_free(...).
+ */
 char *
 proto_custom_get_filter(struct epan_dissect *edt, GSList *field_id, int occurrence);
 

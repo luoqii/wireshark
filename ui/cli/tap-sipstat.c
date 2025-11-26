@@ -21,7 +21,7 @@
 #include <epan/packet_info.h>
 #include <epan/tap.h>
 #include <epan/stat_tap_ui.h>
-#include <epan/value_string.h>
+#include <wsutil/value_string.h>
 #include <epan/dissectors/packet-sip.h>
 
 #include <wsutil/wslog.h>
@@ -67,7 +67,7 @@ static void
 sip_init_hash(sipstat_t *sp)
 {
 	int i;
-	value_string* response_codes = vs_get_external_value_string("sip_response_code_vals");
+	value_string* response_codes = get_external_value_string("sip_response_code_vals");
 
 	/* Create responses table */
 	sp->hash_responses = g_hash_table_new_full(g_int_hash, g_int_equal, g_free, g_free);
@@ -264,7 +264,7 @@ sipstat_packet(void *psp, packet_info *pinfo _U_, epan_dissect_t *edt _U_, const
 		{
 			/* First of this type. Create structure and initialise */
 			sc = g_new(sip_request_method_t, 1);
-			sc->response = g_strdup(value->request_method);
+			sc->response = g_strdup((const char*)value->request_method);
 			sc->packets = 1;
 			sc->sp = sp;
 			/* Insert it into request table */

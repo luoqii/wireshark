@@ -14,7 +14,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
  * To quote the author of the previous H323/H225/H245 dissector:
- *   "This is a complete replacement of the previous limitied dissector
+ *   "This is a complete replacement of the previous limited dissector
  * that Ronnie was crazy enough to write by hand. It was a lot of time
  * to hack it by hand, but it is incomplete and buggy and it is good when
  * it will go away."
@@ -3859,7 +3859,7 @@ dissect_h225_GenericIdentifier(tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *ac
   if (gefx) {
     ti = proto_tree_add_string(tree, hf_h225_debug_dissector_try_string, tvb, offset>>3, 0, gefx->key);
   proto_item_set_hidden(ti);
-    dissector_try_string_with_data(gef_name_dissector_table, gefx->key, tvb_new_subset_length_caplen(tvb, offset>>3, 0, 0), actx->pinfo, tree, false, actx);
+    dissector_try_string_with_data(gef_name_dissector_table, gefx->key, tvb_new_subset_length(tvb, offset>>3, 0), actx->pinfo, tree, false, actx);
   }
   actx->private_data = gefx;  /* subdissector could overwrite it */
   return offset;

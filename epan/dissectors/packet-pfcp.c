@@ -13,7 +13,7 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
- * Ref 3GPP TS 29.244 V18.9.0 (2025-03-14)
+ * Ref 3GPP TS 29.244 V19.3.0 (2025-09-28)
  */
 #include "config.h"
 
@@ -1257,12 +1257,6 @@ static int hf_pfcp_jnpr_l2tp_is_lns;
 static int hf_pfcp_jnpr_l2tp_ipv4;
 static int hf_pfcp_jnpr_l2tp_tunnel_index;
 
-static const value_string compute_limit_vals[] = {
-    { 0, "Off" },
-    { 1, "On" },
-    { 0, NULL }
-};
-
 static const value_string final_stats[] = {
     { 0, "Do not send final stats" },
     { 1, "Send final stats" },
@@ -1411,6 +1405,7 @@ static int hf_pfcp_nokia_serving_node_id_uuid;
 static int hf_pfcp_nokia_pcc_rule_name;
 static int hf_pfcp_nokia_calltrace_profile;
 static int hf_pfcp_nokia_custom_charging_group;
+static int hf_pfcp_nokia_lpt_present_b0;
 static int hf_pfcp_nokia_content_filtering_policy_id;
 static int hf_pfcp_nokia_dropped_volume_measurement;
 static int hf_pfcp_nokia_dropped_volume_measurement_b0_tovol;
@@ -1426,6 +1421,10 @@ static int hf_pfcp_nokia_drop_vol_meas_tonop;
 static int hf_pfcp_nokia_drop_vol_meas_ulnop;
 static int hf_pfcp_nokia_drop_vol_meas_dlnop;
 static int hf_pfcp_nokia_health_report_interval;
+static int hf_pfcp_nokia_ipv6_lla;
+static int hf_pfcp_nokia_periodic_shcv_duration;
+static int hf_pfcp_nokia_periodic_shcv_retry_count;
+static int hf_pfcp_nokia_periodic_shcv_timeout;
 
 
 static int ett_pfcp;
@@ -2064,7 +2063,52 @@ static const value_string pfcp_ie_type[] = {
     { 351, "N6 Routing Information"},                               /* Extendable / Clause 8.2.243 */
     { 352, "URI"},                                                  /* Variable Length / Clause 8.2.244 */
     { 353, "UE Level Measurements Configuration"},                  /* Extendable / Clause 8.2.245 */
-    //354 to 32767 Spare. For future use.
+    { 354, "N6 Delay Measurement Protocols"},                       /* 	Extendable / Clause 8.2.246	1 */
+    { 355, "N6 Delay Measurement Control Information"},             /* 	Extendable / Table 7.4.4.1.4-1	Not Applicable */
+    { 356, "N6 Delay Measurement Report (PFCP Node Report Request)"},       /* 	Extendable / Table 7.4.5.1.8-1	Not Applicable */
+    { 357, "N6 Delay Measurement Information"},                     /* 	Extendable / Clause 8.2.247	1 */
+    { 358, "Measurement Endpoint Address"},                         /* 	Extendable / Clause 8.2.248	1 */
+    { 359, "Operator Configurable UPF Capability"},                 /* 	Variable / Clause 8.2.249	Not Applicable */
+    { 360, "Packet Inspection functionality"},                      /* 	Extendable / Clause 8.2.250	1 */
+    { 361, "Header Handling Control Rule"},                         /* 	Extendable / Table 7.5.2.3-7	Not Applicable */
+    { 362, "Header Handling Reporting Control Info"},               /* 	Extendable / Table 7.5.2.3-8	Not Applicable */
+    { 363, "Header Handling Control information"},                  /* 	Extendable / Table  7.5.2.3-9	Not Applicable */
+    { 364, "Header Detection Reference"},                           /* 	Variable Length / Clause 8.2.251	Not Applicable */
+    { 365, "Header Detection Support Information"},                 /* 	Variable Length / Clause 8.2.252	Not Applicable */
+    { 366, "Reporting Endpoint ID"},                                /* 	Fixed / Clause 8.2.253	1 */
+    { 367, "Header Handling Control Reference"},                    /* 	Variable Length / Clause 8.2.254	Not Applicable */
+    { 368, "Header Handling Action"},                               /* 	Fixed Length / Clause 8.2.255	1 */
+    { 369, "Header Information"},                                   /* 	Variable Length / Clause 8.2.256	Not Applicable */
+    { 370, "Header Value"},                                         /* 	Variable Length / Clause 8.2.257	Not Applicable */
+    { 371, "Header Handling Condition"},                            /* 	Fixed / Clause 8.2.258	1 */
+    { 372, "Header Handling Control ID"},                           /* 	Fixed / Clause 8.2.259	1 */
+    { 373, "Header Handling Control Rule ID"},                      /* 	Fixed / Clause 8.2.260	1 */
+    { 374, "On-path N6 Connection Information"},                    /* 	Extendable / Clause 8.2.261	1 */
+    { 375, "Measurement Reporting Type"},                           /* 	Extendable / Clause 8.2.262	1 */
+    { 376, "N6 Delay Measurement Failure Information"},             /* 	Extendable / Clause 8.2.263	1 */
+    { 377, "N6 Delay Measurement Control Information ID"},          /* 	Fixed / Clause 8.2.264	2 */
+    { 378, "Protocol Specific Configuration Parameters"},           /* 	Extendable / Table 7.4.4.1.4-2	1 */
+    { 379, "Measurement Endpoint Port Number"},                     /* 	Fixed Length / Clause 8.2.265	2 */
+    { 380, "Header Handling Reporting Indication"},                 /* 	Extendable / Clause 8.2.266	1 */
+    { 381, "Can be used	"},                                         /* */
+    { 382, "SMF Change Reason"},                                    /* 	Extendable / Clause 8.2.267	1 */
+    { 383, "Extended Transport Level Marking"},                     /* 	Extendable / Table 7.5.2.3-10	Not Applicable */
+    { 384, "PDU Set Importance"},                                   /* 	Fixed / Clause 8.2.268	2 */
+    { 385, "MoQ Control Information"},                              /* 	Extendable / Clause 8.2.269	 */
+    { 386, "MoQ Information"},                                      /* 	Extendable / Table 7.3.5.1-6	Not Applicable */
+    { 387, "MoQ Relay IP Address"},                                 /* 	Extendable / Clause 8.2.270	1 */
+    { 388, "Media Related Information Transfer Info"},              /* 	Extendable / Clause 8.2.271	1 */
+    { 389, "Reporting Control Information"},                        /* 	Extendable / Clause 8.2.272	1 */
+    { 390, "Security Mode (STAMP)"},                                /* 	Fixed / Clause 8.2.273	1 */
+    { 391, "HMAC Key (STAMP)"},                                     /* 	Variable Length / Clause 8.2.274	Not Applicable */
+    { 392, "Security Mode (OWAMP or TWAMP)"},                       /* 	Fixed / Clause 8.2.275	4 */
+    { 393, "Key ID and Shared Secret (OWAMP or TWAMP)"},            /* 	Extendable / Clause 8.2.276	1 */
+    { 394, "Remaining Data Reporting Indication"},                  /* 	Extendable / Clause 8.2.277	1 */
+    { 395, "Expedited Transfer Indication"},                        /* 	Fixed / Clause 8.2.278	1 */
+    { 396, "Session Reflector Mode (STAMP)"},                       /* 	Fixed / Clause 8.2.279	1 */
+    { 397, "PFD Partial Failure Information"},                      /*  Extendable / Table 7.4.3.2-2	Not Applicable */
+    { 398, "Transport Level Marking Indications"},                  /* 	Fixed / Clause 8.2.280	1 */
+    //399 to 32767 Spare. For future use.
     //32768 to 65535 Vendor-specific IEs.
     {0, NULL}
 };
@@ -2073,7 +2117,7 @@ static value_string_ext pfcp_ie_type_ext = VALUE_STRING_EXT_INIT(pfcp_ie_type);
 
 /* PFCP Session funcs*/
 static unsigned
-pfcp_info_hash(gconstpointer key)
+pfcp_info_hash(const void *key)
 {
     const pfcp_info_t *k = (const pfcp_info_t *)key;
 
@@ -2082,7 +2126,7 @@ pfcp_info_hash(gconstpointer key)
 }
 
 static gboolean
-pfcp_info_equal(gconstpointer key1, gconstpointer key2)
+pfcp_info_equal(const void *key1, const void *key2)
 {
     const pfcp_info_t *a = (const pfcp_info_t *)key1;
     const pfcp_info_t *b = (const pfcp_info_t *)key2;
@@ -2232,7 +2276,7 @@ typedef struct pfcp_msg_hash_entry {
 } pfcp_msg_hash_t;
 
 static unsigned
-pfcp_sn_hash(gconstpointer k)
+pfcp_sn_hash(const void *k)
 {
     const pfcp_msg_hash_t *key = (const pfcp_msg_hash_t *)k;
 
@@ -2240,7 +2284,7 @@ pfcp_sn_hash(gconstpointer k)
 }
 
 static gboolean
-pfcp_sn_equal_matched(gconstpointer k1, gconstpointer k2)
+pfcp_sn_equal_matched(const void *k1, const void *k2)
 {
     const pfcp_msg_hash_t *key1 = (const pfcp_msg_hash_t *)k1;
     const pfcp_msg_hash_t *key2 = (const pfcp_msg_hash_t *)k2;
@@ -2267,7 +2311,7 @@ pfcp_sn_equal_matched(gconstpointer k1, gconstpointer k2)
 }
 
 static gboolean
-pfcp_sn_equal_unmatched(gconstpointer k1, gconstpointer k2)
+pfcp_sn_equal_unmatched(const void *k1, const void *k2)
 {
     const pfcp_msg_hash_t *key1 = (const pfcp_msg_hash_t *)k1;
     const pfcp_msg_hash_t *key2 = (const pfcp_msg_hash_t *)k2;
@@ -6158,7 +6202,7 @@ dissect_pfcp_qfi(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, proto_item
 }
 
 /*
- * 8.2.90   Querry URR Reference
+ * 8.2.90   Query URR Reference
  */
 static void
 dissect_pfcp_query_urr_reference(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, proto_item *item _U_, uint16_t length, uint8_t message_type _U_, pfcp_session_args_t *args _U_)
@@ -10645,6 +10689,12 @@ dissect_pfcp_update_srr(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, pro
     proto_item_append_text(item, ": SRR ID: %u", args->last_rule_ids.srr);
 }
 
+static void
+dissect_pfcp_ie_not_decoded(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, proto_item *item _U_, uint16_t length _U_, uint8_t message_type _U_, pfcp_session_args_t *args _U_)
+{
+    proto_tree_add_expert(tree, pinfo, &ei_pfcp_ie_data_not_decoded, tvb, 0, -1);
+}
+
 /* Array of functions to dissect IEs
 * (tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, proto_item *item, uint16_t length, uint8_t message_type, pfcp_session_args_t *args)
 */
@@ -11007,6 +11057,51 @@ static const pfcp_ie_t pfcp_ies[] = {
 /*    351 */    { dissect_pfcp_n6_routing_information },                        /* N6 Routing Information                           Extendable / Clause 8.2.243 */
 /*    352 */    { dissect_pfcp_uri },                                           /* URI                                              Variable Length / Clause 8.2.244 */
 /*    353 */    { dissect_pfcp_ue_level_measurements_configuration },           /* UE Level Measurements Configuration              Extendable / Clause 8.2.245 */
+/*    354 */    { dissect_pfcp_ie_not_decoded },                                /* N6 Delay Measurement Protocols                   Extendable / Clause 8.2.246	1 */
+/*    355 */    { dissect_pfcp_ie_not_decoded },                                /* N6 Delay Measurement Control Information         Extendable / Table 7.4.4.1.4-1	Not Applicable */
+/*    356 */    { dissect_pfcp_ie_not_decoded },                                /* N6 Delay Measurement Report (PFCP Node Report Request)   Extendable / Table 7.4.5.1.8-1	Not Applicable */
+/*    357 */    { dissect_pfcp_ie_not_decoded },                                /* N6 Delay Measurement Information                 Extendable / Clause 8.2.247	1 */
+/*    358 */    { dissect_pfcp_ie_not_decoded },                                /* Measurement Endpoint Address                     Extendable / Clause 8.2.248	1 */
+/*    359 */    { dissect_pfcp_ie_not_decoded },                                /* Operator Configurable UPF Capability             Variable / Clause 8.2.249	Not Applicable */
+/*    360 */    { dissect_pfcp_ie_not_decoded },                                /* Packet Inspection functionality                  Extendable / Clause 8.2.250	1 */
+/*    361 */    { dissect_pfcp_ie_not_decoded },                                /* Header Handling Control Rule                     Extendable / Table 7.5.2.3-7	Not Applicable */
+/*    362 */    { dissect_pfcp_ie_not_decoded },                                /* Header Handling Reporting Control Info           Extendable / Table 7.5.2.3-8	Not Applicable */
+/*    363 */    { dissect_pfcp_ie_not_decoded },                                /* Header Handling Control information              Extendable / Table  7.5.2.3-9	Not Applicable */
+/*    364 */    { dissect_pfcp_ie_not_decoded },                                /* Header Detection Reference                     	Variable Length / Clause 8.2.251	Not Applicable */
+/*    365 */    { dissect_pfcp_ie_not_decoded },                                /* Header Detection Support Information             Variable Length / Clause 8.2.252	Not Applicable */
+/*    366 */    { dissect_pfcp_ie_not_decoded },                                /* Reporting Endpoint ID                     	    Fixed / Clause 8.2.253	1 */
+/*    367 */    { dissect_pfcp_ie_not_decoded },                                /* Header Handling Control Reference                Variable Length / Clause 8.2.254	Not Applicable */
+/*    368 */    { dissect_pfcp_ie_not_decoded },                                /* Header Handling Action                     	    Fixed Length / Clause 8.2.255	1 */
+/*    369 */    { dissect_pfcp_ie_not_decoded },                                /* Header Information                     	        Variable Length / Clause 8.2.256	Not Applicable */
+/*    370 */    { dissect_pfcp_ie_not_decoded },                                /* Header Value                     	            Variable Length / Clause 8.2.257	Not Applicable */
+/*    371 */    { dissect_pfcp_ie_not_decoded },                                /* Header Handling Condition                     	Fixed / Clause 8.2.258	1 */
+/*    372 */    { dissect_pfcp_ie_not_decoded },                                /* Header Handling Control ID                     	Fixed / Clause 8.2.259	1 */
+/*    373 */    { dissect_pfcp_ie_not_decoded },                                /* Header Handling Control Rule ID                  Fixed / Clause 8.2.260	1 */
+/*    374 */    { dissect_pfcp_ie_not_decoded },                                /* On-path N6 Connection Information                Extendable / Clause 8.2.261	1 */
+/*    375 */    { dissect_pfcp_ie_not_decoded },                                /* Measurement Reporting Type                     	Extendable / Clause 8.2.262	1 */
+/*    376 */    { dissect_pfcp_ie_not_decoded },                                /* N6 Delay Measurement Failure Information         Extendable / Clause 8.2.263	1 */
+/*    377 */    { dissect_pfcp_ie_not_decoded },                                /* N6 Delay Measurement Control Information ID      Fixed / Clause 8.2.264	2 */
+/*    378 */    { dissect_pfcp_ie_not_decoded },                                /* Protocol Specific Configuration Parameters       Extendable / Table 7.4.4.1.4-2	1 */
+/*    379 */    { dissect_pfcp_ie_not_decoded },                                /* Measurement Endpoint Port Number                 Fixed Length / Clause 8.2.265	2 */
+/*    380 */    { dissect_pfcp_ie_not_decoded },                                /* Header Handling Reporting Indication             Extendable / Clause 8.2.266	1 */
+/*    381 */    { dissect_pfcp_ie_not_decoded },                                /* Can be used	                                    */
+/*    382 */    { dissect_pfcp_ie_not_decoded },                                /* SMF Change Reason                     	        Extendable / Clause 8.2.267	1 */
+/*    383 */    { dissect_pfcp_ie_not_decoded },                                /* Extended Transport Level Marking                 Extendable / Table 7.5.2.3-10	Not Applicable */
+/*    384 */    { dissect_pfcp_ie_not_decoded },                                /* PDU Set Importance                     	        Fixed / Clause 8.2.268	2 */
+/*    385 */    { dissect_pfcp_ie_not_decoded },                                /* MoQ Control Information                     	    Extendable / Clause 8.2.269	 */
+/*    386 */    { dissect_pfcp_ie_not_decoded },                                /* MoQ Information                     	            Extendable / Table 7.3.5.1-6	Not Applicable */
+/*    387 */    { dissect_pfcp_ie_not_decoded },                                /* MoQ Relay IP Address                     	    Extendable / Clause 8.2.270	1 */
+/*    388 */    { dissect_pfcp_ie_not_decoded },                                /* Media Related Information Transfer Info          Extendable / Clause 8.2.271	1 */
+/*    389 */    { dissect_pfcp_ie_not_decoded },                                /* Reporting Control Information                    Extendable / Clause 8.2.272	1 */
+/*    390 */    { dissect_pfcp_ie_not_decoded },                                /* Security Mode (STAMP)                     	    Fixed / Clause 8.2.273	1 */
+/*    391 */    { dissect_pfcp_ie_not_decoded },                                /* HMAC Key (STAMP)                     	        Variable Length / Clause 8.2.274	Not Applicable */
+/*    392 */    { dissect_pfcp_ie_not_decoded },                                /* Security Mode (OWAMP or TWAMP)                   Fixed / Clause 8.2.275	4 */
+/*    393 */    { dissect_pfcp_ie_not_decoded },                                /* Key ID and Shared Secret (OWAMP or TWAMP)        Extendable / Clause 8.2.276	1 */
+/*    394 */    { dissect_pfcp_ie_not_decoded },                                /* Remaining Data Reporting Indication              Extendable / Clause 8.2.277	1 */
+/*    395 */    { dissect_pfcp_ie_not_decoded },                                /* Expedited Transfer Indication                    Fixed / Clause 8.2.278	1 */
+/*    396 */    { dissect_pfcp_ie_not_decoded },                                /* Session Reflector Mode (STAMP)                   Fixed / Clause 8.2.279	1 */
+/*    397 */    { dissect_pfcp_ie_not_decoded },                                /* PFD Partial Failure Information                  Extendable / Table 7.4.3.2-2	Not Applicable */
+/*    398 */    { dissect_pfcp_ie_not_decoded },                                /* Transport Level Marking Indications              Fixed / Clause 8.2.280	1 */
 //354 to 32767 Spare. For future use.
 //32768 to 65535 Vendor-specific IEs.
     { NULL },                                                        /* End of List */
@@ -12556,7 +12651,7 @@ static pfcp_generic_ie_t pfcp_travelping_ies[] = {
 static int
 dissect_pfcp_jnpr_cp_id(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_)
 {
-    guint len = tvb_reported_length(tvb);
+    unsigned len = tvb_reported_length(tvb);
 
     proto_tree_add_item(tree, hf_pfcp_jnpr_cp_id_opaque_string, tvb, 0, len, ENC_ASCII);
 
@@ -12566,7 +12661,7 @@ dissect_pfcp_jnpr_cp_id(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree,
 static int
 dissect_pfcp_jnpr_filter_var(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_)
 {
-    guint offset = 0;
+    unsigned offset = 0;
     uint32_t filter_len;
 
     proto_tree_add_item_ret_uint(tree, hf_pfcp_jnpr_filter_length, tvb, offset, 2, ENC_BIG_ENDIAN, &filter_len);
@@ -12581,7 +12676,7 @@ dissect_pfcp_jnpr_filter_var(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *
 
 static int dissect_pfcp_jnpr_filter_service_object(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_)
 {
-    guint offset = 0;
+    unsigned offset = 0;
     uint32_t filter_data_len;
 
     proto_tree_add_item_ret_uint(tree, hf_pfcp_jnpr_filter_service_info_len, tvb, offset, 2, ENC_BIG_ENDIAN, &filter_data_len);
@@ -12596,7 +12691,7 @@ static int dissect_pfcp_jnpr_filter_service_object(tvbuff_t *tvb, packet_info *p
 
 static int dissect_pfcp_jnpr_sgrp_name(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_)
 {
-    guint sgrp_name_len = tvb_reported_length(tvb);
+    unsigned sgrp_name_len = tvb_reported_length(tvb);
 
     proto_tree_add_item(tree, hf_pfcp_jnpr_sgrp_name, tvb, 0, sgrp_name_len, ENC_ASCII);
 
@@ -12605,9 +12700,9 @@ static int dissect_pfcp_jnpr_sgrp_name(tvbuff_t *tvb, packet_info *pinfo _U_, pr
 
 static int dissect_pfcp_jnpr_logical_port_address_list(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_)
 {
-    guint data_len = tvb_reported_length(tvb);
+    unsigned data_len = tvb_reported_length(tvb);
 
-    for(guint offset = 0; offset + 4 <= data_len; offset += 4) {
+    for(unsigned offset = 0; offset + 4 <= data_len; offset += 4) {
         proto_tree_add_item(tree, hf_pfcp_jnpr_logical_port_address, tvb, offset, 4, ENC_BIG_ENDIAN);
     }
 
@@ -12629,13 +12724,13 @@ static int dissect_pfcp_jnpr_accounting_type_final(tvbuff_t *tvb, packet_info *p
 
 static int dissect_pfcp_jnpr_error_event(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_)
 {
-    guint data_len = tvb_reported_length(tvb);
+    unsigned data_len = tvb_reported_length(tvb);
 
     uint32_t error_event_id;
     proto_tree_add_item_ret_uint(tree, hf_pfcp_jnpr_error_event_id, tvb, 0, 4, ENC_BIG_ENDIAN, &error_event_id);
 
     if (data_len >= 6) {
-        guint32 error_event_len;
+        uint32_t error_event_len;
         proto_tree_add_item_ret_uint(tree, hf_pfcp_jnpr_error_event_len, tvb, 4, 2, ENC_BIG_ENDIAN, &error_event_len);
 
         if (error_event_len > 0 && data_len >= (6 + error_event_len)) {
@@ -12669,7 +12764,7 @@ static int dissect_pfcp_jnpr_dbng_inet_tcp_addr(tvbuff_t *tvb, packet_info *pinf
 
 static int dissect_pfcp_jnpr_cpri_port_info(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_)
 {
-    guint len = tvb_reported_length(tvb);
+    unsigned len = tvb_reported_length(tvb);
 
     if (len >= 2)  proto_tree_add_item(tree, hf_pfcp_jnpr_hi_prio_port,       tvb, 0,  2, ENC_BIG_ENDIAN);
     if (len >= 4)  proto_tree_add_item(tree, hf_pfcp_jnpr_med_hi_prio_port,   tvb, 2,  2, ENC_BIG_ENDIAN);
@@ -12684,9 +12779,9 @@ static int dissect_pfcp_jnpr_cpri_port_info(tvbuff_t *tvb, packet_info *pinfo _U
 
 static int dissect_pfcp_jnpr_cos_forwarding_class(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_)
 {
-    guint offset = 0;
+    unsigned offset = 0;
     uint32_t info_len;
-    guint len = tvb_reported_length(tvb);
+    unsigned len = tvb_reported_length(tvb);
 
     proto_tree_add_item_ret_uint(tree, hf_pfcp_jnpr_cos_fwd_len, tvb, offset, 2, ENC_BIG_ENDIAN, &info_len);
     offset += 2;
@@ -12729,7 +12824,7 @@ static int dissect_pfcp_jnpr_li_service_id(tvbuff_t *tvb, packet_info *pinfo _U_
 
 static int dissect_pfcp_jnpr_li_md_header(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_)
 {
-    guint length = tvb_reported_length(tvb);
+    unsigned length = tvb_reported_length(tvb);
 
     proto_tree_add_item(tree, hf_pfcp_jnpr_li_md_header, tvb, 0, length, ENC_NA);
 
@@ -13476,6 +13571,19 @@ static int dissect_pfcp_nokia_custom_charging_group(tvbuff_t *tvb, packet_info *
     return dissect_pfcp_string_ie(tvb, pinfo, tree, hf_pfcp_nokia_custom_charging_group);
 }
 
+static int dissect_pfcp_nokia_lpt_present(tvbuff_t *tvb _U_, packet_info *pinfo _U_, proto_tree *tree, void *data _U_)
+{
+    static int * const flags[] = {
+        &hf_pfcp_spare_b7_b1,
+        &hf_pfcp_nokia_lpt_present_b0,
+        NULL
+    };
+
+    proto_tree_add_bitmask_list(tree, tvb, 0, 1, flags, ENC_BIG_ENDIAN);
+
+    return 1;
+}
+
 static int dissect_pfcp_nokia_content_filtering_policy_id(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_)
 {
     uint32_t id;
@@ -13552,6 +13660,30 @@ dissect_pfcp_nokia_health_report_interval(tvbuff_t *tvb, packet_info *pinfo _U_,
     return 4;
 }
 
+static int dissect_pfcp_nokia_ipv6_lla(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_)
+{
+    ws_in6_addr lla = {0};
+
+    lla.bytes[0] = 0xfe;
+    lla.bytes[1] = 0x80;
+    for (unsigned i = 0; i < 8; i++) {
+        lla.bytes[8 + i] = tvb_get_uint8(tvb, i);
+    }
+
+    proto_tree_add_ipv6(tree, hf_pfcp_nokia_ipv6_lla, tvb, 0, 8, &lla);
+
+    return 8;
+}
+
+static int dissect_pfcp_nokia_periodic_shcv(tvbuff_t *tvb, packet_info *pinfo _U_, proto_tree *tree, void *data _U_)
+{
+    proto_tree_add_item(tree, hf_pfcp_nokia_periodic_shcv_duration, tvb, 0, 3, ENC_BIG_ENDIAN);
+    proto_tree_add_item(tree, hf_pfcp_nokia_periodic_shcv_retry_count, tvb, 3, 1, ENC_BIG_ENDIAN);
+    proto_tree_add_item(tree, hf_pfcp_nokia_periodic_shcv_timeout, tvb, 4, 1, ENC_BIG_ENDIAN);
+
+    return 5;
+}
+
 static pfcp_generic_ie_t pfcp_nokia_ies[] = {
     {VENDOR_NOKIA, 32774, "UP Aggregate Route",                dissect_pfcp_grouped_ie_wrapper, -1},
     {VENDOR_NOKIA, 32775, "SAP Template",                      dissect_pfcp_nokia_sap_template, -1},
@@ -13600,9 +13732,13 @@ static pfcp_generic_ie_t pfcp_nokia_ies[] = {
     {VENDOR_NOKIA, 32836, "PCC Rule Name",                     dissect_pfcp_nokia_pcc_rule_name, -1},
     {VENDOR_NOKIA, 32837, "Calltrace Profile",                 dissect_pfcp_nokia_calltrace_profile, -1},
     {VENDOR_NOKIA, 32838, "Custom Charging Group",             dissect_pfcp_nokia_custom_charging_group, -1},
+    {VENDOR_NOKIA, 32839, "LPT Present",                       dissect_pfcp_nokia_lpt_present, -1},
     {VENDOR_NOKIA, 32840, "Content Filtering Policy Id",       dissect_pfcp_nokia_content_filtering_policy_id, -1},
     {VENDOR_NOKIA, 32841, "Dropped Volume Measurement",        dissect_pfcp_nokia_dropped_volume_measurement, -1},
     {VENDOR_NOKIA, 32842, "Health Report Interval",            dissect_pfcp_nokia_health_report_interval, -1},
+    {VENDOR_NOKIA, 32852, "IPv6 LLA",                          dissect_pfcp_nokia_ipv6_lla, -1},
+    {VENDOR_NOKIA, 32853, "SHCV",                              dissect_pfcp_grouped_ie_wrapper, -1},
+    {VENDOR_NOKIA, 32854, "Periodic SHCV",                     dissect_pfcp_nokia_periodic_shcv, -1},
 };
 
 static void
@@ -18576,7 +18712,7 @@ proto_register_pfcp(void)
 
         { &hf_pfcp_jnpr_compute_limit_exceeded,
         { "Compute Limit Exceeded", "pfcp.jnpr.compute_limit_exceeded",
-            FT_UINT8, BASE_DEC, VALS(compute_limit_vals),
+            FT_BOOLEAN, 8, TFS(&tfs_on_off),
             0x01, NULL, HFILL }
         },
 
@@ -19418,6 +19554,11 @@ proto_register_pfcp(void)
             FT_STRING, BASE_NONE, NULL, 0,
             NULL, HFILL }
         },
+        { &hf_pfcp_nokia_lpt_present_b0,
+        { "Logical Port Present", "pfcp.nokia.lpt_present.b0",
+            FT_BOOLEAN, 8, NULL, 0x01,
+            NULL, HFILL }
+        },
         { &hf_pfcp_nokia_content_filtering_policy_id,
           { "Content Filtering Policy Id", "pfcp.nokia.content_filtering_policy_id",
             FT_UINT32, BASE_DEC, NULL, 0,
@@ -19491,6 +19632,26 @@ proto_register_pfcp(void)
         { &hf_pfcp_nokia_health_report_interval,
         { "Health Report Interval", "pfcp.nokia.health_report_interval",
             FT_UINT32, BASE_DEC, NULL, 0,
+            NULL, HFILL }
+        },
+        { &hf_pfcp_nokia_ipv6_lla,
+        { "IPv6 LLA", "pfcp.nokia.ipv6_lla",
+            FT_IPv6, BASE_NONE, NULL, 0,
+            "IPv6 link-local address", HFILL }
+        },
+        { &hf_pfcp_nokia_periodic_shcv_duration,
+        { "Duration", "pfcp.nokia.periodic_shcv_duration",
+            FT_UINT24, BASE_DEC, NULL, 0,
+            NULL, HFILL }
+        },
+        { &hf_pfcp_nokia_periodic_shcv_retry_count,
+        { "Retry Count", "pfcp.nokia.periodic_shcv_retry_count",
+            FT_UINT8, BASE_DEC, NULL, 0,
+            NULL, HFILL }
+        },
+        { &hf_pfcp_nokia_periodic_shcv_timeout,
+        { "Timeout", "pfcp.nokia.periodic_shcv_timeout",
+            FT_UINT8, BASE_DEC, NULL, 0,
             NULL, HFILL }
         },
     };

@@ -27,9 +27,6 @@
 #ifdef ENABLE_APPLICATION_BUNDLE
 #include <mach-o/dyld.h>
 #endif
-#ifdef __linux__
-#include <sys/utsname.h>
-#endif
 #ifdef __FreeBSD__
 #include <sys/types.h>
 #include <sys/sysctl.h>
@@ -40,7 +37,6 @@
 #include <pwd.h>
 #endif /* _WIN32 */
 
-#include <wsutil/application_flavor.h>
 #include <wsutil/file_util.h>
 #include <wsutil/privileges.h>
 #include <wsutil/report_message.h>
@@ -247,7 +243,7 @@ test_for_regular_file(const char *path)
  *
  *    Contains loadable bundles that extend the basic features of your
  *    application. You use this directory to include code modules that
- *    must be loaded into your applicationbs process space in order to
+ *    must be loaded into your application's process space in order to
  *    be used. You would not use this directory to store standalone
  *    executables.
  *
@@ -279,17 +275,6 @@ static char *appbundle_dir;
  * with special privileges.
  */
 static bool running_in_build_directory_flag;
-
-static char *configuration_environment_variable(const char *suffix) {
-    switch (get_application_flavor()) {
-    case APPLICATION_FLAVOR_WIRESHARK:
-        return g_strdup_printf("WIRESHARK_%s", suffix);
-    case APPLICATION_FLAVOR_STRATOSHARK:
-        return g_strdup_printf("STRATOSHARK_%s", suffix);
-    default:
-        ws_assert_not_reached();
-    }
-}
 
 #ifndef _WIN32
 /*
@@ -335,7 +320,7 @@ static char *configuration_environment_variable(const char *suffix) {
  * So, on platforms where we know of a mechanism to get that path
  * (where getting that path doesn't involve argv[0], which is not
  * guaranteed to reflect the path to the binary), this routine
- * attempsts to use that platform's mechanism.  On other platforms,
+ * attempts to use that platform's mechanism.  On other platforms,
  * it just returns NULL.
  *
  * This is not guaranteed to return an absolute path; if it doesn't,
@@ -385,24 +370,11 @@ get_current_executable_path(void)
      * of the dynamic linker, and this will get a better answer on
      * those versions.
      *
-     * It only works on Linux 2.2 or later, so we just give up on
-     * earlier versions.
-     *
      * XXX - are there OS versions that support "exe" but not "self"?
      */
-    struct utsname name;
     static char executable_path[PATH_MAX + 1];
     ssize_t r;
 
-    if (uname(&name) == -1)
-        return NULL;
-    if (strncmp(name.release, "1.", 2) == 0)
-        return NULL; /* Linux 1.x */
-    if (strcmp(name.release, "2.0") == 0 ||
-        strncmp(name.release, "2.0.", 4) == 0 ||
-        strcmp(name.release, "2.1") == 0 ||
-        strncmp(name.release, "2.1.", 4) == 0)
-        return NULL; /* Linux 2.0.x or 2.1.x */
     if ((r = readlink("/proc/self/exe", executable_path, PATH_MAX)) == -1)
         return NULL;
     executable_path[r] = '\0';
@@ -496,7 +468,7 @@ get_current_executable_path(void)
 
 /* Extcap executables are in their own subdirectory. This trims that off and
  * reduces progfile_dir to the common program file directory. */
-static void trim_progfile_dir(void)
+static void trim_progfile_dir(const char* app_flavor_lower _U_)
 {
     char *progfile_last_dir = find_last_pathname_separator(progfile_dir);
 
@@ -505,7 +477,7 @@ static void trim_progfile_dir(void)
      * Check the flavor of our extcap subdirectory.
      * XXX - Do we only need to do this on Windows, or on other platforms too?
      */
-    if (progfile_last_dir && strncmp(progfile_last_dir + 1, application_flavor_name_lower(), strlen(application_flavor_name_lower())) == 0) {
+    if (progfile_last_dir && strncmp(progfile_last_dir + 1, app_flavor_lower, strlen(app_flavor_lower)) == 0) {
         char* flavor_last_dir = find_last_pathname_separator(progfile_dir);
         char flavor_sep = *flavor_last_dir;
         *flavor_last_dir = '\0';
@@ -580,13 +552,13 @@ get_executable_path(const char *program_name)
  */
 #ifdef _WIN32
 static char *
-configuration_init_w32(const char* arg0 _U_)
+configuration_init_w32(const char* app_flavor, const char* arg0 _U_)
 {
     TCHAR prog_pathname_w[_MAX_PATH+2];
     char *prog_pathname;
     DWORD error;
     TCHAR *msg_w;
-    unsigned char *msg;
+    char *msg;
     size_t msglen;
 
     /*
@@ -606,7 +578,7 @@ configuration_init_w32(const char* arg0 _U_)
         progfile_dir = g_path_get_dirname(prog_pathname);
         if (progfile_dir != NULL) {
             /* We succeeded. */
-            trim_progfile_dir();
+            trim_progfile_dir(app_flavor);
             /* Now try to figure out if we're running in a build directory. */
             char *wsutil_lib = g_build_filename(progfile_dir, "wsutil.lib", (char *)NULL);
             if (file_exists(wsutil_lib)) {
@@ -671,7 +643,7 @@ configuration_init_w32(const char* arg0 _U_)
 #else /* !_WIN32 */
 
 static char *
-configuration_init_posix(const char* arg0)
+configuration_init_posix(const char* app_flavor, const char* arg0)
 {
     const char *execname;
     char *prog_pathname;
@@ -696,11 +668,13 @@ configuration_init_posix(const char* arg0)
      * set, causes us to look for plugins and the like in the build
      * directory.)
      */
-    char *run_from_envar = configuration_environment_variable("RUN_FROM_BUILD_DIRECTORY");
+    char* upper_app_flavor = g_ascii_strup(app_flavor, -1);
+    char *run_from_envar = g_strdup_printf("%s_RUN_FROM_BUILD_DIRECTORY", upper_app_flavor);
     if (g_getenv(run_from_envar) != NULL && !started_with_special_privs()) {
         running_in_build_directory_flag = true;
     }
     g_free(run_from_envar);
+    g_free(upper_app_flavor);
 
     execname = get_current_executable_path();
     if (execname == NULL) {
@@ -740,8 +714,8 @@ configuration_init_posix(const char* arg0)
             return ws_strdup_printf("pathconf failed: %s\n",
                 g_strerror(errno));
         }
-        curdir = (char *)g_malloc(path_max);
-        if (getcwd(curdir, path_max) == NULL) {
+        curdir = (char *)g_malloc((size_t)path_max);
+        if (getcwd(curdir, (size_t)path_max) == NULL) {
             /*
              * It failed - give up, and just stick
              * with DATA_DIR.
@@ -767,7 +741,7 @@ configuration_init_posix(const char* arg0)
                 path_end = strchr(path_start, ':');
                 if (path_end == NULL)
                     path_end = path_start + strlen(path_start);
-                path_component_len = path_end - path_start;
+                path_component_len = (size_t)(path_end - path_start);
                 path_len = path_component_len + 1
                     + strlen(execname) + 1;
                 path = (char *)g_malloc(path_len);
@@ -894,7 +868,7 @@ configuration_init_posix(const char* arg0)
          * OK, we have the path we want.
          */
         progfile_dir = prog_pathname;
-        trim_progfile_dir();
+        trim_progfile_dir(app_flavor);
     } else {
         /*
          * This "shouldn't happen"; we apparently
@@ -927,12 +901,12 @@ configuration_init_posix(const char* arg0)
 #endif /* ?_WIN32 */
 
 char *
-configuration_init(const char* arg0)
+configuration_init(const char* arg0, const char* app_flavor_lower)
 {
 #ifdef _WIN32
-    return configuration_init_w32(arg0);
+    return configuration_init_w32(app_flavor_lower, arg0);
 #else
-    return configuration_init_posix(arg0);
+    return configuration_init_posix(app_flavor_lower, arg0);
 #endif
 }
 
@@ -1008,12 +982,13 @@ get_current_working_dir(void)
  * example).
  */
 const char *
-get_datafile_dir(void)
+get_datafile_dir(const char* app_env_var_prefix)
 {
     if (datafile_dir != NULL)
         return datafile_dir;
 
-    char *data_dir_envar = configuration_environment_variable("DATA_DIR");
+    char *data_dir_envar = g_strdup_printf("%s_DATA_DIR", app_env_var_prefix);
+    char* app_lower = g_ascii_strdown(app_env_var_prefix, -1);
     if (g_getenv(data_dir_envar) && !started_with_special_privs()) {
         /*
          * The user specified a different directory for data files
@@ -1028,7 +1003,7 @@ get_datafile_dir(void)
     if (running_in_build_directory_flag) {
         datafile_dir = g_strdup(install_prefix);
     } else {
-        datafile_dir = g_build_filename(install_prefix, DATA_DIR, application_flavor_name_lower(), (char *)NULL);
+        datafile_dir = g_build_filename(install_prefix, DATA_DIR, app_lower, (char *)NULL);
     }
 #elif defined(_WIN32)
     /*
@@ -1067,7 +1042,7 @@ get_datafile_dir(void)
      */
     else if (appbundle_dir != NULL) {
         datafile_dir = ws_strdup_printf("%s/Contents/Resources/share/%s",
-                                        appbundle_dir, application_flavor_name_lower());
+                                        appbundle_dir, app_lower);
     }
 #endif
     else if (running_in_build_directory_flag && progfile_dir != NULL) {
@@ -1086,18 +1061,19 @@ get_datafile_dir(void)
         datafile_dir = g_strdup(progfile_dir);
     } else {
         if (g_path_is_absolute(DATA_DIR)) {
-            datafile_dir = g_build_filename(DATA_DIR, application_flavor_name_lower(), (char *)NULL);
+            datafile_dir = g_build_filename(DATA_DIR, app_lower, (char *)NULL);
         } else {
-            datafile_dir = g_build_filename(install_prefix, DATA_DIR, application_flavor_name_lower(), (char *)NULL);
+            datafile_dir = g_build_filename(install_prefix, DATA_DIR, app_lower, (char *)NULL);
         }
     }
 #endif
+    g_free(app_lower);
     g_free(data_dir_envar);
     return datafile_dir;
 }
 
 const char *
-get_doc_dir(void)
+get_doc_dir(const char* app_env_var_prefix _U_)
 {
     if (doc_dir != NULL)
         return doc_dir;
@@ -1132,7 +1108,7 @@ get_doc_dir(void)
      * it; we don't need to call started_with_special_privs().)
      */
     else if (appbundle_dir != NULL) {
-        doc_dir = g_strdup(get_datafile_dir());
+        doc_dir = g_strdup(get_datafile_dir(app_env_var_prefix));
     }
 #endif
     else if (running_in_build_directory_flag && progfile_dir != NULL) {
@@ -1181,9 +1157,10 @@ static char *plugin_pers_dir_with_version;
 static char *extcap_pers_dir;
 
 static void
-init_plugin_dir(void)
+init_plugin_dir(const char* app_env_var_prefix)
 {
-    char *plugin_dir_envar = configuration_environment_variable("PLUGIN_DIR");
+    char* plugin_dir_envar = g_strdup_printf("%s_PLUGIN_DIR", app_env_var_prefix);
+    char* app_lower = g_ascii_strdown(app_env_var_prefix, -1);
     if (g_getenv(plugin_dir_envar) && !started_with_special_privs()) {
         /*
          * The user specified a different directory for plugins
@@ -1221,7 +1198,7 @@ init_plugin_dir(void)
      */
     else if (appbundle_dir != NULL) {
         plugin_dir = g_build_filename(appbundle_dir, "Contents/PlugIns",
-                                      application_flavor_name_lower(), (char *)NULL);
+                                      app_lower, (char *)NULL);
     }
 #endif // ENABLE_APPLICATION_BUNDLE
     else if (running_in_build_directory_flag) {
@@ -1241,18 +1218,21 @@ init_plugin_dir(void)
     }
 #endif // HAVE_MSYSTEM / _WIN32
 #endif /* defined(HAVE_PLUGINS) || defined(HAVE_LUA) */
+    g_free(app_lower);
     g_free(plugin_dir_envar);
 }
 
 static void
-init_plugin_pers_dir(void)
+init_plugin_pers_dir(const char* app_env_var_prefix _U_)
 {
 #if defined(HAVE_PLUGINS) || defined(HAVE_LUA)
 #ifdef _WIN32
-    plugin_pers_dir = get_persconffile_path(PLUGINS_DIR_NAME, false);
+    plugin_pers_dir = get_persconffile_path(PLUGINS_DIR_NAME, false, app_env_var_prefix);
 #else
+    char* app_lower = g_ascii_strdown(app_env_var_prefix, -1);
     plugin_pers_dir = g_build_filename(g_get_home_dir(), ".local/lib",
-                                       application_flavor_name_lower(), PLUGINS_DIR_NAME, (char *)NULL);
+                                       app_lower, PLUGINS_DIR_NAME, (char *)NULL);
+    g_free(app_lower);
 #endif
 #endif /* defined(HAVE_PLUGINS) || defined(HAVE_LUA) */
 }
@@ -1261,18 +1241,18 @@ init_plugin_pers_dir(void)
  * Get the directory in which the plugins are stored.
  */
 const char *
-get_plugins_dir(void)
+get_plugins_dir(const char* app_env_var_prefix)
 {
     if (!plugin_dir)
-        init_plugin_dir();
+        init_plugin_dir(app_env_var_prefix);
     return plugin_dir;
 }
 
 const char *
-get_plugins_dir_with_version(void)
+get_plugins_dir_with_version(const char* app_env_var_prefix)
 {
     if (!plugin_dir)
-        init_plugin_dir();
+        init_plugin_dir(app_env_var_prefix);
     if (plugin_dir && !plugin_dir_with_version)
         plugin_dir_with_version = g_build_filename(plugin_dir, PLUGIN_PATH_ID, (char *)NULL);
     return plugin_dir_with_version;
@@ -1280,18 +1260,18 @@ get_plugins_dir_with_version(void)
 
 /* Get the personal plugin dir */
 const char *
-get_plugins_pers_dir(void)
+get_plugins_pers_dir(const char* app_env_var_prefix)
 {
     if (!plugin_pers_dir)
-        init_plugin_pers_dir();
+        init_plugin_pers_dir(app_env_var_prefix);
     return plugin_pers_dir;
 }
 
 const char *
-get_plugins_pers_dir_with_version(void)
+get_plugins_pers_dir_with_version(const char* app_env_var_prefix)
 {
     if (!plugin_pers_dir)
-        init_plugin_pers_dir();
+        init_plugin_pers_dir(app_env_var_prefix);
     if (plugin_pers_dir && !plugin_pers_dir_with_version)
         plugin_pers_dir_with_version = g_build_filename(plugin_pers_dir, PLUGIN_PATH_ID, (char *)NULL);
     return plugin_pers_dir_with_version;
@@ -1318,9 +1298,10 @@ get_plugins_pers_dir_with_version(void)
 static char *extcap_dir;
 
 static void
-init_extcap_dir(void)
+init_extcap_dir(const char* app_env_var_prefix, const char* dir_extcap _U_)
 {
-    char *extcap_dir_envar = configuration_environment_variable("EXTCAP_DIR");
+    char *extcap_dir_envar = g_strdup_printf("%s_EXTCAP_DIR", app_env_var_prefix);
+    char* app_lower = g_ascii_strdown(app_env_var_prefix, -1);
     if (g_getenv(extcap_dir_envar) && !started_with_special_privs()) {
         /*
          * The user specified a different directory for extcap hooks
@@ -1343,7 +1324,7 @@ init_extcap_dir(void)
          */
     else if (running_in_build_directory_flag) {
         extcap_dir = g_build_filename(get_progfile_dir(), EXTCAP_DIR_NAME,
-            application_flavor_name_lower(), (char *)NULL);
+            app_lower, (char *)NULL);
     } else {
         extcap_dir = g_build_filename(get_progfile_dir(), EXTCAP_DIR_NAME,
             (char *)NULL);
@@ -1371,28 +1352,29 @@ init_extcap_dir(void)
          * we're running is (that's the build directory).
          */
         extcap_dir = g_build_filename(get_progfile_dir(), EXTCAP_DIR_NAME,
-            application_flavor_name_lower(), (char *)NULL);
+            app_lower, (char *)NULL);
     }
     else {
-        if (g_path_is_absolute(EXTCAP_DIR)) {
-            extcap_dir = g_strdup(get_application_flavor() == APPLICATION_FLAVOR_WIRESHARK ? EXTCAP_DIR : STRATOSHARK_EXTCAP_DIR);
-        } else {
-            extcap_dir = g_build_filename(install_prefix,
-                get_application_flavor() == APPLICATION_FLAVOR_WIRESHARK ? EXTCAP_DIR : STRATOSHARK_EXTCAP_DIR, (char *)NULL);
-        }
+        if (g_path_is_absolute(EXTCAP_DIR))
+            extcap_dir = g_strdup(dir_extcap);
+        else
+            extcap_dir = g_build_filename(install_prefix, dir_extcap, (char*)NULL);
     }
 #endif // HAVE_MSYSTEM / _WIN32
+    g_free(app_lower);
     g_free(extcap_dir_envar);
 }
 
 static void
-init_extcap_pers_dir(void)
+init_extcap_pers_dir(const char* app_env_var_prefix)
 {
 #ifdef _WIN32
-    extcap_pers_dir = get_persconffile_path(EXTCAP_DIR_NAME, false);
+    extcap_pers_dir = get_persconffile_path(EXTCAP_DIR_NAME, false, app_env_var_prefix);
 #else
+    char* app_lower = g_ascii_strdown(app_env_var_prefix, -1);
     extcap_pers_dir = g_build_filename(g_get_home_dir(), ".local/lib",
-        application_flavor_name_lower(), EXTCAP_DIR_NAME, (char *)NULL);
+        app_lower, EXTCAP_DIR_NAME, (char *)NULL);
+    g_free(app_lower);
 #endif
 }
 
@@ -1401,19 +1383,19 @@ init_extcap_pers_dir(void)
  *
  */
 const char *
-get_extcap_dir(void)
+get_extcap_dir(const char* app_env_var_prefix, const char* dir_extcap)
 {
     if (!extcap_dir)
-        init_extcap_dir();
+        init_extcap_dir(app_env_var_prefix, dir_extcap);
     return extcap_dir;
 }
 
 /* Get the personal plugin dir */
 const char *
-get_extcap_pers_dir(void)
+get_extcap_pers_dir(const char* app_env_var_prefix)
 {
     if (!extcap_pers_dir)
-        init_extcap_pers_dir();
+        init_extcap_pers_dir(app_env_var_prefix);
     return extcap_pers_dir;
 }
 
@@ -1434,10 +1416,10 @@ running_in_build_directory(void)
  * configuration and data file directory.
  */
 const char *
-get_systemfile_dir(void)
+get_systemfile_dir(const char* app_env_var_prefix _U_)
 {
 #ifdef _WIN32
-    return get_datafile_dir();
+    return get_datafile_dir(app_env_var_prefix);
 #else
     return "/etc";
 #endif
@@ -1474,11 +1456,11 @@ is_default_profile(void)
 }
 
 bool
-has_global_profiles(void)
+has_global_profiles(const char* app_env_var_prefix)
 {
     WS_DIR *dir;
     WS_DIRENT *file;
-    char *global_dir = get_global_profiles_dir();
+    char *global_dir = get_global_profiles_dir(app_env_var_prefix);
     char *filename;
     bool has_global = false;
 
@@ -1539,7 +1521,7 @@ profile_register_persconffile(const char *filename)
  * such as plugins in the form of shared loadable images?
  */
 static const char *
-get_persconffile_dir_no_profile(void)
+get_persconffile_dir_no_profile(const char* app_env_var_prefix)
 {
     const char *env;
 
@@ -1550,9 +1532,13 @@ get_persconffile_dir_no_profile(void)
     /*
      * See if the user has selected an alternate environment.
      */
-    char *config_dir_envar = configuration_environment_variable("CONFIG_DIR");
+    char* config_dir_envar = g_strdup_printf("%s_CONFIG_DIR", app_env_var_prefix);
     env = g_getenv(config_dir_envar);
     g_free(config_dir_envar);
+    char* app_lower = g_ascii_strdown(app_env_var_prefix, -1);
+    char* app_proper = g_strdup(app_lower);
+    app_proper[0] = g_ascii_toupper(app_proper[0]);
+
 #ifdef _WIN32
     if (env == NULL) {
         /*
@@ -1567,7 +1553,7 @@ get_persconffile_dir_no_profile(void)
 #endif
     if (env != NULL) {
         persconffile_dir = g_strdup(env);
-        return persconffile_dir;
+        goto return_dir;
     }
 
 #ifdef _WIN32
@@ -1584,8 +1570,8 @@ get_persconffile_dir_no_profile(void)
         /*
          * Concatenate %APPDATA% with "\Wireshark" or "\Stratoshark".
          */
-        persconffile_dir = g_build_filename(env, application_flavor_name_proper(), NULL);
-        return persconffile_dir;
+        persconffile_dir = g_build_filename(env, app_proper, NULL);
+        goto return_dir;
     }
 
     /*
@@ -1593,15 +1579,15 @@ get_persconffile_dir_no_profile(void)
      */
     env = g_getenv("USERPROFILE");
     if (env != NULL) {
-        persconffile_dir = g_build_filename(env, "Application Data", application_flavor_name_proper(), NULL);
-        return persconffile_dir;
+        persconffile_dir = g_build_filename(env, "Application Data", app_proper, NULL);
+        goto return_dir;
     }
 
     /*
      * Give up and use "C:".
      */
-    persconffile_dir = g_build_filename("C:", application_flavor_name_proper(), NULL);
-    return persconffile_dir;
+    persconffile_dir = g_build_filename("C:", app_proper, NULL);
+    goto return_dir;
 #else
     char *xdg_path, *path;
     struct passwd *pwd;
@@ -1610,11 +1596,10 @@ get_persconffile_dir_no_profile(void)
     /*
      * Check if XDG_CONFIG_HOME/wireshark exists and is a directory.
      */
-    xdg_path = g_build_filename(g_get_user_config_dir(),
-                                application_flavor_name_lower(), NULL);
+    xdg_path = g_build_filename(g_get_user_config_dir(), app_lower, NULL);
     if (g_file_test(xdg_path, G_FILE_TEST_IS_DIR)) {
         persconffile_dir = xdg_path;
-        return persconffile_dir;
+        goto return_dir;
     }
 
     /*
@@ -1642,13 +1627,13 @@ get_persconffile_dir_no_profile(void)
             homedir = "/tmp";
         }
     }
-    char *dotted_app = g_strdup_printf(".%s", application_flavor_name_lower());
+    char *dotted_app = g_strdup_printf(".%s", app_lower);
     path = g_build_filename(homedir, dotted_app, NULL);
     g_free(dotted_app);
     if (g_file_test(path, G_FILE_TEST_IS_DIR)) {
         g_free(xdg_path);
         persconffile_dir = path;
-        return persconffile_dir;
+        goto return_dir;
     }
 
     /*
@@ -1657,8 +1642,12 @@ get_persconffile_dir_no_profile(void)
      */
     g_free(path);
     persconffile_dir = xdg_path;
-    return persconffile_dir;
 #endif
+return_dir:
+    //Clean up before exiting
+    g_free(app_lower);
+    g_free(app_proper);
+    return persconffile_dir;
 }
 
 void
@@ -1669,14 +1658,14 @@ set_persconffile_dir(const char *p)
 }
 
 char *
-get_profiles_dir(void)
+get_profiles_dir(const char* app_env_var_prefix)
 {
-    return ws_strdup_printf ("%s%s%s", get_persconffile_dir_no_profile (),
+    return ws_strdup_printf ("%s%s%s", get_persconffile_dir_no_profile (app_env_var_prefix),
                     G_DIR_SEPARATOR_S, PROFILES_DIR);
 }
 
 int
-create_profiles_dir(char **pf_dir_path_return)
+create_profiles_dir(const char* app_env_var_prefix, char **pf_dir_path_return)
 {
     char *pf_dir_path;
     ws_statb64 s_buf;
@@ -1684,7 +1673,7 @@ create_profiles_dir(char **pf_dir_path_return)
     /*
      * Create the "Default" personal configuration files directory, if necessary.
      */
-    if (create_persconffile_profile (NULL, pf_dir_path_return) == -1) {
+    if (create_persconffile_profile(app_env_var_prefix, NULL, pf_dir_path_return) == -1) {
         return -1;
     }
 
@@ -1692,7 +1681,7 @@ create_profiles_dir(char **pf_dir_path_return)
      * Check if profiles directory exists.
      * If not then create it.
      */
-    pf_dir_path = get_profiles_dir ();
+    pf_dir_path = get_profiles_dir(app_env_var_prefix);
     if (ws_stat64(pf_dir_path, &s_buf) != 0) {
         if (errno != ENOENT) {
             /* Some other problem; give up now. */
@@ -1715,32 +1704,32 @@ create_profiles_dir(char **pf_dir_path_return)
 }
 
 char *
-get_global_profiles_dir(void)
+get_global_profiles_dir(const char* app_env_var_prefix)
 {
-    return ws_strdup_printf ("%s%s%s", get_datafile_dir(),
+    return ws_strdup_printf ("%s%s%s", get_datafile_dir(app_env_var_prefix),
                                G_DIR_SEPARATOR_S, PROFILES_DIR);
 }
 
 static char *
-get_persconffile_dir(const char *profilename)
+get_persconffile_dir(const char* app_env_var_prefix, const char *profilename)
 {
     char *persconffile_profile_dir = NULL, *profile_dir;
 
     if (profilename && strlen(profilename) > 0 &&
         strcmp(profilename, DEFAULT_PROFILE) != 0) {
-      profile_dir = get_profiles_dir();
+      profile_dir = get_profiles_dir(app_env_var_prefix);
       persconffile_profile_dir = ws_strdup_printf ("%s%s%s", profile_dir,
                               G_DIR_SEPARATOR_S, profilename);
       g_free(profile_dir);
     } else {
-      persconffile_profile_dir = g_strdup (get_persconffile_dir_no_profile ());
+      persconffile_profile_dir = g_strdup (get_persconffile_dir_no_profile(app_env_var_prefix));
     }
 
     return persconffile_profile_dir;
 }
 
 char *
-get_profile_dir(const char *profilename, bool is_global)
+get_profile_dir(const char* app_env_var_prefix, const char *profilename, bool is_global)
 {
     char *profile_dir;
 
@@ -1748,25 +1737,25 @@ get_profile_dir(const char *profilename, bool is_global)
         if (profilename && strlen(profilename) > 0 &&
             strcmp(profilename, DEFAULT_PROFILE) != 0)
         {
-            char *global_path = get_global_profiles_dir();
+            char *global_path = get_global_profiles_dir(app_env_var_prefix);
             profile_dir = g_build_filename(global_path, profilename, NULL);
             g_free(global_path);
         } else {
-            profile_dir = g_strdup(get_datafile_dir());
+            profile_dir = g_strdup(get_datafile_dir(app_env_var_prefix));
         }
     } else {
         /*
          * If we didn't supply a profile name, i.e. if profilename is
          * null, get_persconffile_dir() returns the default profile.
          */
-        profile_dir = get_persconffile_dir(profilename);
+        profile_dir = get_persconffile_dir(app_env_var_prefix, profilename);
     }
 
     return profile_dir;
 }
 
 bool
-profile_exists(const char *profilename, bool global)
+profile_exists(const char* app_env_var_prefix, const char *profilename, bool global)
 {
     char *path = NULL;
     bool exists;
@@ -1778,7 +1767,7 @@ profile_exists(const char *profilename, bool global)
     if (global && !profilename)
         return false;
 
-    path = get_profile_dir(profilename, global);
+    path = get_profile_dir(app_env_var_prefix, profilename, global);
     exists = (test_for_directory(path) == EISDIR) ? true : false;
 
     g_free(path);
@@ -1862,9 +1851,9 @@ copy_directory(const char *from_dir, const char *to_dir, char **pf_filename_retu
 }
 
 static int
-reset_default_profile(char **pf_dir_path_return)
+reset_default_profile(const char* app_env_var_prefix, char **pf_dir_path_return)
 {
-    char *profile_dir = get_persconffile_dir(NULL);
+    char *profile_dir = get_persconffile_dir(app_env_var_prefix, NULL);
     char *filename, *del_file;
     GList *files, *file;
     int ret = 0;
@@ -1894,13 +1883,13 @@ reset_default_profile(char **pf_dir_path_return)
 }
 
 int
-delete_persconffile_profile(const char *profilename, char **pf_dir_path_return)
+delete_persconffile_profile(const char* app_env_var_prefix, const char *profilename, char **pf_dir_path_return)
 {
     if (strcmp(profilename, DEFAULT_PROFILE) == 0) {
-        return reset_default_profile(pf_dir_path_return);
+        return reset_default_profile(app_env_var_prefix, pf_dir_path_return);
     }
 
-    char *profile_dir = get_persconffile_dir(profilename);
+    char *profile_dir = get_persconffile_dir(app_env_var_prefix, profilename);
     int ret = 0;
 
     if (test_for_directory (profile_dir) == EISDIR) {
@@ -1912,11 +1901,11 @@ delete_persconffile_profile(const char *profilename, char **pf_dir_path_return)
 }
 
 int
-rename_persconffile_profile(const char *fromname, const char *toname,
+rename_persconffile_profile(const char* app_env_var_prefix, const char *fromname, const char *toname,
                 char **pf_from_dir_path_return, char **pf_to_dir_path_return)
 {
-    char *from_dir = get_persconffile_dir(fromname);
-    char *to_dir = get_persconffile_dir(toname);
+    char *from_dir = get_persconffile_dir(app_env_var_prefix, fromname);
+    char *to_dir = get_persconffile_dir(app_env_var_prefix, toname);
     int ret = 0;
 
     ret = ws_rename (from_dir, to_dir);
@@ -1940,7 +1929,7 @@ rename_persconffile_profile(const char *fromname, const char *toname,
  * return 0.
  */
 int
-create_persconffile_profile(const char *profilename, char **pf_dir_path_return)
+create_persconffile_profile(const char* app_env_var_prefix, const char *profilename, char **pf_dir_path_return)
 {
     char *pf_dir_path;
 #ifdef _WIN32
@@ -1955,12 +1944,12 @@ create_persconffile_profile(const char *profilename, char **pf_dir_path_return)
         /*
          * Create the personal profiles directory, if necessary.
          */
-        if (create_profiles_dir(pf_dir_path_return) == -1) {
+        if (create_profiles_dir(app_env_var_prefix, pf_dir_path_return) == -1) {
             return -1;
         }
     }
 
-    pf_dir_path = get_persconffile_dir(profilename);
+    pf_dir_path = get_persconffile_dir(app_env_var_prefix, profilename);
     if (ws_stat64(pf_dir_path, &s_buf) != 0) {
         if (errno != ENOENT) {
             /* Some other problem; give up now. */
@@ -2037,24 +2026,24 @@ allowed_profile_filenames(void)
 }
 
 int
-create_persconffile_dir(char **pf_dir_path_return)
+create_persconffile_dir(const char* app_env_var_prefix, char **pf_dir_path_return)
 {
-    return create_persconffile_profile(persconfprofile, pf_dir_path_return);
+    return create_persconffile_profile(app_env_var_prefix, persconfprofile, pf_dir_path_return);
 }
 
 int
-copy_persconffile_profile(const char *toname, const char *fromname, bool from_global,
+copy_persconffile_profile(const char* app_env_var_prefix, const char *toname, const char *fromname, bool from_global,
               char **pf_filename_return, char **pf_to_dir_path_return, char **pf_from_dir_path_return)
 {
     int ret = 0;
     char *from_dir;
-    char *to_dir = get_persconffile_dir(toname);
+    char *to_dir = get_persconffile_dir(app_env_var_prefix, toname);
     char *from_file, *to_file;
     const char *filename;
     GHashTableIter files;
     void * file;
 
-    from_dir = get_profile_dir(fromname, from_global);
+    from_dir = get_profile_dir(app_env_var_prefix, fromname, from_global);
 
     if (!profile_files || do_store_persconffiles) {
         /* Either the profile_files hashtable does not exist yet
@@ -2097,12 +2086,11 @@ copy_persconffile_profile(const char *toname, const char *fromname, bool from_gl
 /*
  * Get the (default) directory in which personal data is stored.
  *
- * On Win32, this is the "My Documents" folder in the personal profile.
+ * On Win32, this is the "Documents" folder in the personal profile.
  * On UNIX this is simply the current directory, unless that's "/",
  * which it will be, for example, when Wireshark is run from the
  * Finder in macOS, in which case we use the user's home directory.
  */
-/* XXX - should this and the get_home_dir() be merged? */
 extern const char *
 get_persdatafile_dir(void)
 {
@@ -2111,18 +2099,14 @@ get_persdatafile_dir(void)
         return persdatafile_dir;
 
 #ifdef _WIN32
-    TCHAR tszPath[MAX_PATH];
+    PWSTR pszPath = NULL;
+    persdatafile_dir = "";
 
-    /*
-     * Hint: SHGetFolderPath is not available on MSVC 6 - without
-     * Platform SDK
-     */
-    if (SHGetSpecialFolderPath(NULL, tszPath, CSIDL_PERSONAL, false)) {
-        persdatafile_dir = g_utf16_to_utf8(tszPath, -1, NULL, NULL, NULL);
-        return persdatafile_dir;
-    } else {
-        return "";
+    if (SHGetKnownFolderPath(&FOLDERID_Documents, 0, NULL, &pszPath) == S_OK) {
+        persdatafile_dir = g_utf16_to_utf8(pszPath, -1, NULL, NULL, NULL);
     }
+    CoTaskMemFree(pszPath);
+    return persdatafile_dir;
 #else
     /*
      * Get the current directory.
@@ -2167,7 +2151,7 @@ set_persdatafile_dir(const char *p)
  * caller is done with it.
  */
 char *
-get_persconffile_path(const char *filename, bool from_profile)
+get_persconffile_path(const char *filename, bool from_profile, const char* app_env_var_prefix)
 {
     char *path, *dir = NULL;
 
@@ -2175,9 +2159,9 @@ get_persconffile_path(const char *filename, bool from_profile)
         /* Store filenames so we know which filenames belongs to a configuration profile */
         profile_register_persconffile(filename);
 
-        dir = get_persconffile_dir(persconfprofile);
+        dir = get_persconffile_dir(app_env_var_prefix, persconfprofile);
     } else {
-        dir = get_persconffile_dir(NULL);
+        dir = get_persconffile_dir(app_env_var_prefix, NULL);
     }
     path = g_build_filename(dir, filename, NULL);
 
@@ -2193,7 +2177,7 @@ get_persconffile_path(const char *filename, bool from_profile)
  * caller is done with it.
  */
 char *
-get_datafile_path(const char *filename)
+get_datafile_path(const char *filename, const char* app_env_var_prefix)
 {
     if (running_in_build_directory_flag && !strcmp(filename, "hosts")) {
         /* We're running in the build directory and the requested file is a
@@ -2203,7 +2187,7 @@ get_datafile_path(const char *filename)
          */
         return g_build_filename(get_progfile_dir(), filename, (char *)NULL);
     } else {
-        return g_build_filename(get_datafile_dir(), filename, (char *)NULL);
+        return g_build_filename(get_datafile_dir(app_env_var_prefix), filename, (char *)NULL);
     }
 }
 
@@ -2215,7 +2199,7 @@ get_datafile_path(const char *filename)
  * caller is done with it.
  */
 char *
-get_docfile_path(const char *filename)
+get_docfile_path(const char *filename, const char* app_env_var_prefix)
 {
     if (running_in_build_directory_flag) {
         /* We're running in the build directory and the requested file is a
@@ -2225,7 +2209,7 @@ get_docfile_path(const char *filename)
          */
         return g_build_filename(get_progfile_dir(), filename, (char *)NULL);
     } else {
-        return g_build_filename(get_doc_dir(), filename, (char *)NULL);
+        return g_build_filename(get_doc_dir(app_env_var_prefix), filename, (char *)NULL);
     }
 }
 
@@ -2607,7 +2591,7 @@ write_file_binary_mode(const char *filename, const void *content, size_t content
             ws_close(fd);
             return false;
         }
-        bytes_left -= bytes_written;
+        bytes_left -= (size_t)bytes_written;
         ptr += bytes_written;
     }
 
@@ -2653,7 +2637,7 @@ copy_file_binary_mode(const char *from_filename, const char *to_filename)
 #define FS_READ_SIZE 65536
     pd = (uint8_t *)g_malloc(FS_READ_SIZE);
     while ((nread = ws_read(from_fd, pd, FS_READ_SIZE)) > 0) {
-        nwritten = ws_write(to_fd, pd, nread);
+        nwritten = ws_write(to_fd, pd, (size_t)nread);
         if (nwritten < nread) {
             if (nwritten < 0)
                 err = errno;
@@ -2688,7 +2672,7 @@ done:
 }
 
 char *
-data_file_url(const char *filename)
+data_file_url(const char *filename, const char* app_env_var_prefix)
 {
     char *file_path;
     char *uri;
@@ -2697,7 +2681,7 @@ data_file_url(const char *filename)
     if(g_path_is_absolute(filename)) {
         file_path = g_strdup(filename);
     } else {
-        file_path = ws_strdup_printf("%s/%s", get_datafile_dir(), filename);
+        file_path = ws_strdup_printf("%s/%s", get_datafile_dir(app_env_var_prefix), filename);
     }
 
     /* XXX - check, if the file is really existing, otherwise display a simple_dialog about the problem */
@@ -2709,7 +2693,7 @@ data_file_url(const char *filename)
 }
 
 char *
-doc_file_url(const char *filename)
+doc_file_url(const char *filename, const char* app_env_var_prefix)
 {
     char *file_path;
     char *uri;
@@ -2718,7 +2702,7 @@ doc_file_url(const char *filename)
     if(g_path_is_absolute(filename)) {
         file_path = g_strdup(filename);
     } else {
-        file_path = ws_strdup_printf("%s/%s", get_doc_dir(), filename);
+        file_path = ws_strdup_printf("%s/%s", get_doc_dir(app_env_var_prefix), filename);
     }
 
     /* XXX - check, if the file is really existing, otherwise display a simple_dialog about the problem */

@@ -45,7 +45,6 @@
 #include <epan/tap.h>
 #include <epan/srt_table.h>
 #include <epan/exported_pdu.h>
-#include <epan/sctpppids.h>
 #include <epan/show_exception.h>
 #include <epan/to_str.h>
 #include <epan/strutil.h>
@@ -67,6 +66,7 @@
 #include "packet-e212.h"
 #include "packet-e164.h"
 #include "packet-eap.h"
+#include "packet-sctp.h"
 
 void proto_register_diameter(void);
 void proto_reg_handoff_diameter(void);
@@ -172,9 +172,9 @@ typedef struct _address_avp_t {
 } address_avp_t;
 
 typedef enum {
-	REASEMBLE_NEVER = 0,
-	REASEMBLE_AT_END,
-	REASEMBLE_BY_LENGTH
+	REASSEMBLE_NEVER = 0,
+	REASSEMBLE_AT_END,
+	REASSEMBLE_BY_LENGTH
 } avp_reassemble_mode_t;
 
 typedef struct _proto_avp_t {
@@ -916,7 +916,7 @@ dissect_diameter_avp(diam_ctx_t *c, tvbuff_t *tvb, int offset, diam_sub_dis_t *d
 
 	if (vendor->vs_avps_ext == NULL) {
 		wmem_array_sort(vendor->vs_avps, compare_avps);
-		vendor->vs_avps_ext = value_string_ext_new(VND_AVP_VS(vendor),
+		vendor->vs_avps_ext = value_string_ext_new(wmem_epan_scope(), VND_AVP_VS(vendor),
 							   VND_AVP_VS_LEN(vendor)+1,
 							   wmem_strdup_printf(wmem_epan_scope(), "diameter_vendor_%s",
 									   enterprises_lookup(vendorid, "Unknown")));
@@ -2014,7 +2014,7 @@ build_proto_avp(avp_constructor_data_t* constructor_data)
 
 	t->name = (char *)constructor_data->data;
 	t->handle = NULL;
-	t->reassemble_mode = REASEMBLE_NEVER;
+	t->reassemble_mode = REASSEMBLE_NEVER;
 
 	g_ptr_array_add(constructor_data->ett_array, ettp);
 
@@ -2052,7 +2052,7 @@ build_simple_avp(avp_constructor_data_t* constructor_data)
 		while (constructor_data->vs[i].strptr) {
 		  i++;
 		}
-		vs_ext = value_string_ext_new(constructor_data->vs, i+1, wmem_strconcat(wmem_epan_scope(), constructor_data->name, "_vals_ext", NULL));
+		vs_ext = value_string_ext_new(wmem_epan_scope(), constructor_data->vs, i+1, wmem_strconcat(wmem_epan_scope(), constructor_data->name, "_vals_ext", NULL));
 		base = (field_display_e)(base|BASE_EXT_STRING);
 	}
 
@@ -2921,7 +2921,7 @@ ddictionary_load(wmem_array_t* hf_array, GPtrArray* ett_array)
 	}
 
 	/* load the dictionary */
-	dir = wmem_strdup_printf(NULL, "%s" G_DIR_SEPARATOR_S "diameter", get_datafile_dir());
+	dir = wmem_strdup_printf(NULL, "%s" G_DIR_SEPARATOR_S "diameter", get_datafile_dir(epan_get_environment_prefix()));
 	bool success = ddictionary_process_file(dir, "./dictionary.xml", &all_data);
 	wmem_free(NULL, dir);
 
@@ -2944,7 +2944,7 @@ ddictionary_load(wmem_array_t* hf_array, GPtrArray* ett_array)
 
 		/* TODO: Remove duplicates */
 
-		dictionary.applications = value_string_ext_new((value_string*)wmem_array_get_raw(arr),
+		dictionary.applications = value_string_ext_new(wmem_epan_scope(), (value_string*)wmem_array_get_raw(arr),
 			wmem_array_get_count(arr),
 			wmem_strdup(wmem_epan_scope(), "applications_vals_ext"));
 	}

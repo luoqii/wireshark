@@ -109,7 +109,7 @@ QString Mtp3SummaryDialog::summaryToHtml()
         << table_row_end;
 
     QString format_str = wtap_file_type_subtype_description(summary.file_type);
-    const char *compression_type_description = wtap_compression_type_description(summary.compression_type);
+    const char *compression_type_description = ws_compression_type_description(summary.compression_type);
     if (compression_type_description != NULL) {
         format_str += QStringLiteral(" (%1)").arg(compression_type_description);
     }
@@ -218,7 +218,7 @@ QString Mtp3SummaryDialog::summaryToHtml()
         }
 
         out << table_row_begin
-            << table_data_tmpl.arg(val_to_str_const((unsigned)ws_si_code, vs_get_external_value_string("mtp3_service_indicator_code_short_vals"), "Unknown"))
+            << table_data_tmpl.arg(val_to_str_const((unsigned)ws_si_code, get_external_value_string("mtp3_service_indicator_code_short_vals"), "Unknown"))
             << table_data_tmpl.arg(si_msus)
             << table_data_tmpl.arg(msus_s_str)
             << table_data_tmpl.arg(si_bytes)
@@ -377,8 +377,6 @@ register_tap_listener_qt_mtp3_summary(void)
     {
         simple_dialog(ESD_TYPE_ERROR, ESD_BTN_OK, "%s", err_p->str);
         g_string_free(err_p, TRUE);
-
-        exit(1);
     }
 }
 

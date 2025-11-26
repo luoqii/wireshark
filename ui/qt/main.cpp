@@ -17,6 +17,7 @@
 #include <tchar.h>
 #include <wchar.h>
 #include <shellapi.h>
+#include <shobjidl.h>
 #include <wsutil/console_win32.h>
 #endif
 
@@ -29,12 +30,14 @@
 #include <wsutil/privileges.h>
 #include <wsutil/socket.h>
 #include <wsutil/wslog.h>
+#include <wsutil/application_flavor.h>
 #ifdef HAVE_PLUGINS
 #include <wsutil/plugins.h>
 #endif
 #include <wsutil/please_report_bug.h>
 #include <wsutil/unicode-utils.h>
 #include <wsutil/version_info.h>
+#include <wsutil/application_flavor.h>
 
 #include <epan/addr_resolv.h>
 #include <epan/ex-opt.h>
@@ -71,6 +74,7 @@
 #include "ui/dissect_opts.h"
 #include "ui/commandline.h"
 #include "ui/capture_ui_utils.h"
+#include "ui/capture_globals.h"
 #include "ui/preference_utils.h"
 #include "ui/software_update.h"
 #include "ui/taps.h"
@@ -180,7 +184,7 @@ static void
 wireshark_cmdarg_err(const char *fmt, va_list ap)
 {
 #ifdef _WIN32
-    create_console();
+    create_console("Wireshark Debug Console");
 #endif
     fprintf(stderr, "wireshark: ");
     vfprintf(stderr, fmt, ap);
@@ -196,7 +200,7 @@ static void
 wireshark_cmdarg_err_cont(const char *fmt, va_list ap)
 {
 #ifdef _WIN32
-    create_console();
+    create_console("Wireshark Debug Console");
 #endif
     vfprintf(stderr, fmt, ap);
     fprintf(stderr, "\n");
@@ -448,12 +452,12 @@ capture_opts_get_interface_list(int *err, char **err_str)
     if (mainApp) {
         GList *if_list = mainApp->getInterfaceList();
         if (if_list == NULL) {
-            if_list = capture_interface_list(err, err_str, main_window_update);
+            if_list = capture_interface_list(global_capture_opts.app_name, err, err_str, main_window_update);
             mainApp->setInterfaceList(if_list);
         }
         return if_list;
     }
-    return capture_interface_list(err, err_str, main_window_update);
+    return capture_interface_list(global_capture_opts.app_name, err, err_str, main_window_update);
 }
 #endif
 
@@ -482,8 +486,15 @@ int main(int argc, char *qt_argv[])
 #ifdef HAVE_LIBPCAP
     int                  caps_queries = 0;
 #endif
+    const struct file_extension_info* file_extensions;
+    unsigned num_extensions;
+    epan_app_data_t app_data;
+
     /* Start time in microseconds */
     uint64_t start_time = g_get_monotonic_time();
+
+    /* Future proof by zeroing out all data */
+    memset(&app_data, 0, sizeof(app_data));
 
     /* Set the program name. */
     g_set_prgname("wireshark");
@@ -523,7 +534,7 @@ int main(int argc, char *qt_argv[])
     cmdarg_err_init(wireshark_cmdarg_err, wireshark_cmdarg_err_cont);
 
     /* Initialize log handler early so we can have proper logging during startup. */
-    ws_log_init(vcmdarg_err);
+    ws_log_init(vcmdarg_err, "Wireshark Debug Console");
     /* For backward compatibility with GLib logging and Wireshark 3.4. */
     ws_log_console_writer_set_use_stdout(true);
 
@@ -531,6 +542,9 @@ int main(int argc, char *qt_argv[])
 
 #ifdef _WIN32
     restore_pipes();
+    // This lets us set our taskbar icon with setWindowIcon. (Is the version needed?)
+    // https://stackoverflow.com/a/1552105
+    SetCurrentProcessExplicitAppUserModelID(L"org.Wireshark.Wireshark." VERSION);
 #endif
 
 #ifdef DEBUG_STARTUP_TIME
@@ -592,7 +606,7 @@ int main(int argc, char *qt_argv[])
      * Attempt to get the pathname of the directory containing the
      * executable file.
      */
-    /* configuration_init_error = */ configuration_init(argv[0]);
+    /* configuration_init_error = */ configuration_init(argv[0], "wireshark");
     /* ws_log(NULL, LOG_LEVEL_DEBUG, "progfile_dir: %s", get_progfile_dir()); */
 
 #ifdef _WIN32
@@ -603,13 +617,13 @@ int main(int argc, char *qt_argv[])
 #endif /* _WIN32 */
 
     /* Get the compile-time version information string */
-    ws_init_version_info("Wireshark", gather_wireshark_qt_compiled_info,
+    ws_init_version_info("Wireshark", application_flavor_name_proper(), get_ws_vcs_version_info, gather_wireshark_qt_compiled_info,
                          gather_wireshark_runtime_info);
 
     init_report_alert_box("Wireshark");
 
     /* Create the user profiles directory */
-    if (create_profiles_dir(&rf_path) == -1) {
+    if (create_profiles_dir(application_configuration_environment_prefix(), &rf_path) == -1) {
         simple_dialog(ESD_TYPE_WARN, ESD_BTN_OK,
                       "Could not create profiles directory\n\"%s\": %s.",
                       rf_path, g_strerror(errno));
@@ -672,10 +686,6 @@ int main(int argc, char *qt_argv[])
     // Default value is 400ms = "quickly typing" when searching in Preferences->Protocols
     // 1000ms allows a more "hunt/peck" typing speed. 2000ms tested - too long.
     QApplication::setKeyboardInputInterval(1000);
-
-    /* initialize the funnel mini-api */
-    // xxx qtshark
-    //initialize_funnel_ops();
 
     Dot11DecryptInitContext(&dot11decrypt_ctx);
 
@@ -742,7 +752,7 @@ int main(int argc, char *qt_argv[])
 #ifdef HAVE_LIBPCAP
     /* Set the initial values in the capture options. This might be overwritten
        by preference settings and then again by the command line parameters. */
-    capture_opts_init(&global_capture_opts, capture_opts_get_interface_list);
+    capture_opts_init(&global_capture_opts, application_flavor_name_lower(), capture_opts_get_interface_list);
 #endif
 
     /*
@@ -750,7 +760,8 @@ int main(int argc, char *qt_argv[])
      * dissection-time handlers for file-type-dependent blocks can
      * register using the file type/subtype value for the file type.
      */
-    wtap_init(true);
+    application_file_extensions(&file_extensions, &num_extensions);
+    wtap_init(true, application_configuration_environment_prefix(), file_extensions, num_extensions);
 
     splash_update(RA_DISSECTORS, NULL, NULL);
 #ifdef DEBUG_STARTUP_TIME
@@ -760,7 +771,12 @@ int main(int argc, char *qt_argv[])
        "-G" flag, as the "-G" flag dumps information registered by the
        dissectors, and we must do it before we read the preferences, in
        case any dissectors register preferences. */
-    if (!epan_init(splash_update, NULL, true)) {
+    app_data.env_var_prefix = application_configuration_environment_prefix();
+    app_data.col_fmt = application_columns();
+    app_data.num_cols = application_num_columns();
+    app_data.tap_reg_listeners = tap_reg_listener;
+    app_data.supports_packets = application_flavor_is_wireshark();
+    if (!epan_init(splash_update, NULL, true, &app_data)) {
         SimpleDialog::displayQueuedMessages(main_w);
         ret_val = WS_EXIT_INIT_FAILED;
         goto clean_exit;
@@ -772,7 +788,7 @@ int main(int argc, char *qt_argv[])
 #endif
 
     /* Register all audio codecs. */
-    codecs_init();
+    codecs_init(application_configuration_environment_prefix());
 
     // Read the dynamic part of the recent file. This determines whether or
     // not the recent list appears in the main window so the earlier we can
@@ -789,10 +805,6 @@ int main(int argc, char *qt_argv[])
 #ifdef DEBUG_STARTUP_TIME
     ws_log(LOG_DOMAIN_MAIN, LOG_LEVEL_INFO, "Register all tap listeners, elapsed time %" PRIu64 " us \n", g_get_monotonic_time() - start_time);
 #endif
-    /* Register all tap listeners; we do this before we parse the arguments,
-       as the "-z" argument can specify a registered tap. */
-
-    register_all_tap_listeners(tap_reg_listener);
 
     conversation_table_set_gui_info(init_conversation_table);
     endpoint_table_set_gui_info(init_endpoint_table);
@@ -800,8 +812,13 @@ int main(int argc, char *qt_argv[])
     rtd_table_iterate_tables(register_response_time_delay_tables, NULL);
     stat_tap_iterate_tables(register_simple_stat_tables, NULL);
 
+    /* initialize the funnel mini-api */
+    main_w->setFunnelMenus();
+
     if (ex_opt_count("read_format") > 0) {
-        in_file_type = open_info_name_to_type(ex_opt_get_next("read_format"));
+        char *name = ex_opt_get_next("read_format");
+        in_file_type = open_info_name_to_type(name);
+        g_free(name);
     }
 
     splash_update(RA_PREFERENCES, NULL, NULL);
@@ -839,7 +856,7 @@ int main(int argc, char *qt_argv[])
      * applied last to take precedence (at least until the user saves
      * preferences, or switches profiles.)
      */
-    prefs_to_capture_opts();
+    prefs_to_capture_opts(&global_capture_opts);
 
     /* Now get our remaining args */
 
@@ -856,7 +873,7 @@ int main(int argc, char *qt_argv[])
      * to do it if we don't need to.
      */
 
-    commandline_other_options(argc, argv, true);
+    commandline_other_options(&global_capture_opts, argc, argv, true);
 
     /* Convert some command-line parameters to QStrings */
     cf_name = QString(commandline_get_cf_name());
@@ -889,7 +906,7 @@ int main(int argc, char *qt_argv[])
         unsigned i;
 
 #ifdef _WIN32
-        create_console();
+        create_console("Wireshark Debug Console");
 #endif /* _WIN32 */
         /* Get the list of link-layer types for the capture devices. */
         ret_val = EXIT_SUCCESS;
@@ -914,7 +931,7 @@ int main(int argc, char *qt_argv[])
             if_cap_queries = g_list_prepend(if_cap_queries, if_cap_query);
         }
         if_cap_queries = g_list_reverse(if_cap_queries);
-        capability_hash = capture_get_if_list_capabilities(if_cap_queries, &err_str, &err_str_secondary, NULL);
+        capability_hash = capture_get_if_list_capabilities(global_capture_opts.app_name, if_cap_queries, &err_str, &err_str_secondary, NULL);
         g_list_free_full(if_cap_queries, g_free);
         for (i = 0; i < global_capture_opts.ifaces->len; i++) {
             interface_options *interface_opts;
@@ -1000,7 +1017,7 @@ int main(int argc, char *qt_argv[])
     /* For update of WindowTitle (When use gui.window_title preference) */
     main_w->setMainWindowTitle();
 
-    if (!color_filters_init(&err_msg, color_filter_add_cb)) {
+    if (!color_filters_init(&err_msg, color_filter_add_cb, application_configuration_environment_prefix())) {
         simple_dialog(ESD_TYPE_ERROR, ESD_BTN_OK, "%s", err_msg);
         g_free(err_msg);
     }
@@ -1013,7 +1030,7 @@ int main(int argc, char *qt_argv[])
      * rather than showing the user the welcome page, so we don't call
      * processEvents() here.
      */
-    wsApp->allSystemsGo();
+    wsApp->allSystemsGo(application_flavor_name_proper(), VERSION);
     ws_info("Wireshark is up and ready to go, elapsed time %.3fs", (float) (g_get_monotonic_time() - start_time) / 1000000);
     SimpleDialog::displayQueuedMessages(main_w);
 

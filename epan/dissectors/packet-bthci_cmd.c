@@ -1209,7 +1209,7 @@ static expert_field ei_command_undecoded;
 static expert_field ei_command_unknown_command;
 static expert_field ei_command_parameter_unexpected;
 
-static dissector_table_t vendor_dissector_table;
+static dissector_table_t hci_vendor_payload_table;
 static dissector_table_t hci_vendor_table;
 
 /* Zigbee Direct specific definitions. */
@@ -1579,9 +1579,6 @@ static dissector_handle_t btmesh_beacon_handle;
 static dissector_table_t  bluetooth_eir_ad_manufacturer_company_id;
 static dissector_table_t  bluetooth_eir_ad_tds_organization_id;
 static dissector_table_t  bluetooth_eir_ad_service_uuid;
-
-bool bthci_vendor_android = false;
-const uint16_t bthci_vendor_manufacturer_android = 0x00e0; // Google LLC
 
 wmem_tree_t *bthci_cmds;
 
@@ -6787,6 +6784,14 @@ dissect_bthci_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
             break;
     }
 
+    /* These *should* be P2P_DIR_SENT, and the vendor dissectors expect
+     * pinfo->p2p_dir to be set to that to dissect correctly. Not all
+     * link-layer and file types may set the direction correctly. Should
+     * we add an expert info if not? Note we set the addresses assuming
+     * the direction. Should we set pinfo->p2p_dir before calling the
+     * vendor dissectors?
+     */
+
     set_address(&pinfo->src,     AT_STRINGZ,  5, "host");
     set_address(&pinfo->dst,     AT_STRINGZ, 11, "controller");
     set_address(&pinfo->net_src, AT_STRINGZ,  5, "host");
@@ -6877,7 +6882,7 @@ dissect_bthci_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
     if (ogf == HCI_OGF_VENDOR_SPECIFIC) {
         col_append_fstr(pinfo->cinfo, COL_INFO, "Vendor Command 0x%04X (opcode 0x%04X)", ocf, opcode);
 
-        if (!dissector_try_payload_with_data(vendor_dissector_table, tvb, pinfo, tree, true, bluetooth_data)) {
+        if (!dissector_try_payload_with_data(hci_vendor_payload_table, tvb, pinfo, tree, true, bluetooth_data)) {
             if (bluetooth_data) {
                 hci_vendor_data_t  *hci_vendor_data;
 
@@ -6892,11 +6897,7 @@ dissect_bthci_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
                 if (hci_vendor_data) {
                     int sub_offset = 0;
 
-                    if (bthci_vendor_android) {
-                      sub_offset = dissector_try_uint_with_data(hci_vendor_table, bthci_vendor_manufacturer_android, tvb, pinfo, tree, true, bluetooth_data);
-                    } else {
-                      sub_offset = dissector_try_uint_with_data(hci_vendor_table, hci_vendor_data->manufacturer, tvb, pinfo, tree, true, bluetooth_data);
-                    }
+                    sub_offset = dissector_try_uint_with_data(hci_vendor_table, hci_vendor_data->manufacturer, tvb, pinfo, tree, true, bluetooth_data);
 
                     if (sub_offset > 0 && sub_offset < tvb_captured_length_remaining(tvb, offset))
                         proto_tree_add_expert(bthci_cmd_tree, pinfo, &ei_command_parameter_unexpected, tvb, offset + sub_offset, tvb_captured_length_remaining(tvb, sub_offset + offset));
@@ -6904,7 +6905,9 @@ dissect_bthci_cmd(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
             }
         }
 
-        proto_tree_add_item(bthci_cmd_tree, hf_bthci_cmd_parameter, tvb, offset, tvb_captured_length_remaining(tvb, offset), ENC_NA);
+        if (param_length > 0) {
+            proto_tree_add_item(bthci_cmd_tree, hf_bthci_cmd_parameter, tvb, offset, param_length, ENC_NA);
+        }
     } else {
         col_append_str(pinfo->cinfo, COL_INFO, val_to_str_ext(pinfo->pool, opcode, &bthci_cmd_opcode_vals_ext, "Unknown 0x%04x"));
 
@@ -8808,7 +8811,7 @@ proto_register_bthci_cmd(void)
         },
         { &hf_bthci_cmd_parameter,
           { "Parameter", "bthci_cmd.parameter",
-            FT_NONE, BASE_NONE, NULL, 0x0,
+            FT_BYTES, BASE_NONE, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_response_in_frame,
@@ -11107,13 +11110,48 @@ proto_register_bthci_cmd(void)
     prefs_register_static_text_preference(module, "hci_cmd.version",
             "Bluetooth HCI version: 4.0 (Core)",
             "Version of protocol supported by this dissector.");
-    prefs_register_bool_preference(module, "bthci_vendor_android",
-        "Android HCI Vendor Commands/Events",
-        "Whether HCI Vendor Commands/Events should be dissected as Android specific",
-        &bthci_vendor_android);
 
-    vendor_dissector_table = register_decode_as_next_proto(proto_bthci_cmd, "bthci_cmd.vendor",
-                                                           "BT HCI Command Vendor", bthci_cmd_vendor_prompt);
+    /* There are two tables that contain the same HCI vendor dissectors.
+     * The first table is a "Decode As Next Proto" table that is used to
+     * choose one dissector to use for all Vendor-Specific Commands and
+     * Events. The second table is registered by the unique 16-bit
+     * company identifier, and is used when the manufacturer of the local
+     * Controller is known from a Read Local Version Information command.
+     * The first table's setting by Decode As takes precedence.
+     *
+     * "HCI Command packets can only be sent to the Bluetooth controller,
+     * HCI Event packets can only be sent from the Bluetooth controller..."
+     * [Bluetooth Core Specification Vol 4, Part A, 2 Protocol, et passim]
+     *
+     * The vendor dissectors therefore examine pinfo->p2p_dir and dissect
+     * the tvbuff as a HCI Command packet [Bluetooth Spec Vol 4, Part E,
+     * 5.4.1] in the case of P2P_DIR_SENT and as a HCI Event packet
+     * [Ibid., 5.4.4] in the case of P2P_DIR_RECV. They are called whenever
+     * a vendor-specific Command Opcode or Event Code is encountered; that
+     * includes when a vendor-specific Command Opcode is found in a Command
+     * Complete or Command Status event. The entire HCI Event packet is sent
+     * to the vendor dissector, which must read the Event Code to handle
+     * the Vendor-Specific, Command Complete, and Command Status events
+     * differently. That means that the opcodes, events, and lengths can
+     * be added to the tree multiple times, once by the generic dissector
+     * and once by the vendor dissector.
+     *
+     * We might want to have separate tables so that dissectors don't have
+     * handle more cases, which could mean 4 tables (2 CMD tables, one payload
+     * and one manuf, 2 EVT tables) or could mean 8 tables (2 CMD tables, and
+     * 6 EVT tables, 2 each for the 3 event codes that can be Vendor-Specific).
+     * We also instead might want to use register_dissector_with_data to make
+     * it easier to avoid adding multiple items for the same bytes to the tree.
+     */
+    /* XXX - This table is also used by proto_bthci_evt, but because it's
+     * registered to this protocol, it doesn't get shown at top by the
+     * Decode As dialog for proto_bthci_evt. Perhaps it should be
+     * registered in packet-bluetooth.c, since that protocol is generally
+     * present when dissecting either Commands or Events?
+     */
+
+    hci_vendor_payload_table = register_decode_as_next_proto(proto_bthci_cmd, "bthci_cmd.vendor",
+                                                           "BT HCI Vendor", bthci_cmd_vendor_prompt);
 
     register_external_value_string("bthci_cmd_scan_enable_values", bthci_cmd_scan_enable_values);
     register_external_value_string("bthci_cmd_encrypt_mode_vals", bthci_cmd_encrypt_mode_vals);
@@ -11186,9 +11224,9 @@ static void *bluetooth_eir_ad_tds_organization_id_value(packet_info *pinfo)
 
 /* Helper function to dissect Zigbee Direct advertisement data. */
 static void
-dissect_zigbee_direct_adv_data(proto_tree *tree, tvbuff_t *tvb, const gint start, gint length)
+dissect_zigbee_direct_adv_data(proto_tree *tree, tvbuff_t *tvb, const int start, int length)
 {
-    guint offset = start;
+    unsigned offset = start;
 
     static int * const zd_adv_data[] = {
         &hf_btcommon_eir_ad_zd_ext_zd_version,
@@ -11290,7 +11328,7 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
                     proto_item_append_text(sub_item, " (%s)", val_to_str_ext_const(uuid.bt_uuid, &bluetooth_uuid_vals_ext, "Unknown"));
                 } else {
                     sub_item = proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_custom_uuid_32, tvb, offset, 4, ENC_LITTLE_ENDIAN);
-                    proto_item_append_text(sub_item, " (%s)", print_bluetooth_uuid(pinfo->pool, &uuid));
+                    proto_item_append_text(sub_item, " (%s)", print_bluetooth_uuid(&uuid));
                 }
 
                 offset += 4;
@@ -11309,7 +11347,7 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
                 }
                 else {
                     sub_item = proto_tree_add_bytes_format_value(entry_tree, hf_btcommon_eir_ad_custom_uuid_128, tvb, offset, 16, uuid.data, "%s", print_numeric_bluetooth_uuid(pinfo->pool, &uuid));
-                    proto_item_append_text(sub_item, " (%s)", print_bluetooth_uuid(pinfo->pool, &uuid));
+                    proto_item_append_text(sub_item, " (%s)", print_bluetooth_uuid(&uuid));
                 }
 
                 offset += 16;
@@ -11456,7 +11494,7 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
                 }
                 else {
                     sub_item = proto_tree_add_item(entry_tree, hf_btcommon_eir_ad_custom_uuid_32, tvb, offset, 4, ENC_LITTLE_ENDIAN);
-                    proto_item_append_text(sub_item, " (%s)", print_bluetooth_uuid(pinfo->pool, &uuid));
+                    proto_item_append_text(sub_item, " (%s)", print_bluetooth_uuid(&uuid));
                 }
             }
             offset += 4;
@@ -11476,7 +11514,7 @@ dissect_eir_ad_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, bluetoo
                 }
                 else {
                     sub_item = proto_tree_add_bytes_format_value(entry_tree, hf_btcommon_eir_ad_custom_uuid_128, tvb, offset, 16, uuid.data, "%s", print_numeric_bluetooth_uuid(pinfo->pool, &uuid));
-                    proto_item_append_text(sub_item, " (%s)", print_bluetooth_uuid(pinfo->pool, &uuid));
+                    proto_item_append_text(sub_item, " (%s)", print_bluetooth_uuid(&uuid));
                 }
             }
             offset += 16;
@@ -13206,12 +13244,12 @@ proto_register_btcommon(void)
     static build_valid_func bluetooth_eir_ad_manufacturer_company_id_da_build_value[1] = {bluetooth_eir_ad_manufacturer_company_id_value};
     static decode_as_value_t bluetooth_eir_ad_manufacturer_company_id_da_values = {bluetooth_eir_ad_manufacturer_company_id_prompt, 1, bluetooth_eir_ad_manufacturer_company_id_da_build_value};
     static decode_as_t bluetooth_eir_ad_manufacturer_company_id_da = {"btcommon.eir_ad", "btcommon.eir_ad.manufacturer_company_id", 1, 0, &bluetooth_eir_ad_manufacturer_company_id_da_values, NULL, NULL,
-                                 decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL};
+                                 decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL, NULL, NULL };
 
     static build_valid_func bluetooth_eir_ad_tds_organization_id_da_build_value[1] = {bluetooth_eir_ad_tds_organization_id_value};
     static decode_as_value_t bluetooth_eir_ad_tds_organization_id_da_values = {bluetooth_eir_ad_tds_organization_id_prompt, 1, bluetooth_eir_ad_tds_organization_id_da_build_value};
     static decode_as_t bluetooth_eir_ad_tds_organization_id_da = {"btcommon.eir_ad", "btcommon.eir_ad.tds_organization_id", 1, 0, &bluetooth_eir_ad_tds_organization_id_da_values, NULL, NULL,
-                                 decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL};
+                                 decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL, NULL, NULL };
 
     proto_btcommon = proto_register_protocol("Bluetooth Common", "BT Common", "btcommon");
 

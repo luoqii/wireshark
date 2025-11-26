@@ -17,7 +17,7 @@
 
 #include "epan/packet.h"
 #include <epan/tap.h>
-#include "epan/value_string.h"
+#include <wsutil/value_string.h>
 #include "epan/asn1.h"
 #include "epan/dissectors/packet-camel.h"
 #include "epan/dissectors/packet-tcap.h"
@@ -96,7 +96,7 @@ static void camelsrt_draw(void *phs)
   double criteria[NB_CRITERIA] = { 5.0, 10.0, 75.0, 90.0, 95.0, 99.0, 99.90 };
   double delay_criteria[NB_CRITERIA];
   char* tmp_str;
-  value_string* type_naming = vs_get_external_value_string("camelSRTtype_naming");
+  value_string* type_naming = get_external_value_string("camelSRTtype_naming");
 
   printf("\n");
   printf("Camel Service Response Time (SRT) Statistics:\n");
@@ -235,15 +235,6 @@ static bool camelsrt_init(const char *opt_arg, void *userdata _U_)
     g_string_free(error_string, TRUE);
     return false;
   }
-
-  /*
-   * If we are using tshark, we have to display the stats, even if the stats are not persistent
-   * As the frame are proceeded in the chronological order, we do not need persistent stats
-   * Whereas, with wireshark, it is not possible to have the correct display, if the stats are
-   * not saved along the analyze
-   */
-  gtcap_StatSRT = true;
-  gcamel_StatSRT = true;
 
   return true;
 }

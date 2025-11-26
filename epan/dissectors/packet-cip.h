@@ -65,8 +65,8 @@
 #define SC_CM_FWD_OPEN              0x54
 #define SC_CM_GET_CONN_DATA         0x56
 #define SC_CM_SEARCH_CONN_DATA      0x57
-#define SC_CM_LARGE_FWD_OPEN        0x5B
 #define SC_CM_GET_CONN_OWNER        0x5A
+#define SC_CM_LARGE_FWD_OPEN        0x5B
 #define SC_CM_CONCURRENT_FWD_OPEN   0x5C
 #define SC_CM_CONCURRENT_FWD_CLOSE  0x5E
 
@@ -424,6 +424,11 @@ typedef struct cip_simple_request_info {
    uint32_t iConnPoint;
 
    bool hasSimpleData;
+   bool hasSymbolData;
+
+   bool hasEkey;
+   uint16_t deviceType;
+   uint16_t productCode;
 } cip_simple_request_info_t;
 
 enum cip_datatype {
@@ -677,6 +682,7 @@ extern const value_string cip_con_time_mult_vals[];
 extern const value_string cip_class_names_vals[];
 extern const value_string cip_port_number_vals[];
 extern const value_string cip_id_state_vals[];
+extern const value_string cip_con_fw_vals[];
 extern value_string_ext cip_gs_vals_ext;
 extern value_string_ext cip_cm_ext_st_vals_ext;
 extern value_string_ext cip_vendor_vals_ext;

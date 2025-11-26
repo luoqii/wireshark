@@ -21,7 +21,7 @@
  *                     - Lukas Emersberger <lukas.emersberger[AT]br-automation.com>
  *                     - Josef Baumgartner <josef.baumgartner[AT]br-automation.com>
  *                     - Roland Knall <roland.knall[AT]br-automation.com>
- *                       - Extended to be similair in handling as to B&R plugin
+ *                       - Extended to be similar in handling as to B&R plugin
  *                       - Multiple SOD Read/Write dissection
  *                       - Include AInv message type
  *                       - Straighten text formatting
@@ -2781,7 +2781,7 @@ dissect_epl_payload(proto_tree *epl_tree, tvbuff_t *tvb, packet_info *pinfo, int
 		expert_add_info(pinfo, item, &ei_real_length_differs );
 	}
 
-	/* To satisfy heurstic dissectors, we need to pass then the whole PDO payload as-is,
+	/* To satisfy heuristic dissectors, we need to pass then the whole PDO payload as-is,
 	 * so we check whether we were called from dissect_epl_pdo and skip trying heuristic
 	 * dissectors for the PDO's components
 	 */
@@ -3109,7 +3109,7 @@ dissect_epl_asnd(proto_tree *epl_tree, tvbuff_t *tvb, packet_info *pinfo, int of
 {
 	uint8_t svid;
 	uint8_t flags, flags2;
-	int size, reported_len;
+	int size;
 	tvbuff_t *next_tvb;
 	proto_item *item;
 	proto_tree *subtree;
@@ -3163,9 +3163,8 @@ dissect_epl_asnd(proto_tree *epl_tree, tvbuff_t *tvb, packet_info *pinfo, int of
 			break;
 		default:
 			size = tvb_captured_length_remaining(tvb, offset);
-			reported_len = tvb_reported_length_remaining(tvb, offset);
 
-			next_tvb = tvb_new_subset_length_caplen(tvb, offset, size, reported_len);
+			next_tvb = tvb_new_subset_remaining(tvb, offset);
 			/* Manufacturer specific entries for ASND services */
 			if (svid >= 0xA0 && svid < 0xFF && dissector_try_uint(epl_asnd_dissector_table,
 				svid, next_tvb, pinfo, ( epl_tree ? epl_tree->parent : NULL ))) {

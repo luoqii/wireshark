@@ -11,19 +11,22 @@
 
 #include <errno.h>
 #include <string.h>
+#include <wsutil/array.h>
 #include <wsutil/unicode-utils.h>
 #include <wsutil/pint.h>
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include "file_wrappers.h"
 #include "atm.h"
 #include "pcap-encap.h"
 
 
 /*
- * Microsoft's Network Monitor file format is supported, at least under
- * Ethernet and token-ring. If you have capture files of other datalink
- * types, please send them to Guy.
-*/
+ * Microsoft's Network Monitor file format is supported, at least for
+ * Ethernet, Token Ring, FDDI, and ATM captures. If any Network Monitor
+ * capture files cannot be read by Wireshark, please submit an issue
+ * on the Wireshark issues list at
+ * https://gitlab.com/wireshark/wireshark/-/issues/
+ */
 
 /* The file at
  *
@@ -361,7 +364,7 @@ utf_16_to_utf_8(const uint8_t *in, uint32_t length)
 			if (IS_TRAIL_SURROGATE(uchar2)) {
 				/* Trail surrogate. */
 				uchar = SURROGATE_VALUE(lead_surrogate, uchar2);
-				out += g_unichar_to_utf8(uchar, out);
+				out += g_unichar_to_utf8(uchar, (char*)out);
 			} else {
 				/*
 				 * Not a trail surrogate.
@@ -384,7 +387,7 @@ utf_16_to_utf_8(const uint8_t *in, uint32_t length)
 				/*
 				 * Non-surrogate; just count it.
 				 */
-				out += g_unichar_to_utf8(uchar2, out);
+				out += g_unichar_to_utf8(uchar2, (char*)out);
 			}
 		}
 	}
@@ -563,6 +566,12 @@ wtap_open_return_val netmon_open(wtap *wth, int *err, char **err_info)
 	 * in it as the offsets of the frames.
 	 */
 	frame_table_length = pletohu32(&hdr.frametablelength);
+	if (frame_table_length > file_size || frame_table_offset > file_size - frame_table_length) {
+		*err = WTAP_ERR_BAD_FILE;
+		*err_info = ws_strdup_printf("netmon: frame table is %u bytes at offset %u, which does not fit into a file of size %" PRIu64,
+		    frame_table_length, frame_table_offset, file_size);
+		return WTAP_OPEN_ERROR;
+	}
 	frame_table_size = frame_table_length / (uint32_t)sizeof (uint32_t);
 	if ((frame_table_size * sizeof (uint32_t)) != frame_table_length) {
 		*err = WTAP_ERR_BAD_FILE;
@@ -593,9 +602,6 @@ wtap_open_return_val netmon_open(wtap *wth, int *err, char **err_info)
 		*err = WTAP_ERR_BAD_FILE;
 		*err_info = ws_strdup_printf("netmon: frame table length is %u, which is larger than we support",
 		    frame_table_length);
-		return WTAP_OPEN_ERROR;
-	}
-	if (file_seek(wth->fh, frame_table_offset, SEEK_SET, err) == -1) {
 		return WTAP_OPEN_ERROR;
 	}
 
@@ -656,17 +662,9 @@ wtap_open_return_val netmon_open(wtap *wth, int *err, char **err_info)
 		}
 	}
 
-	/*
-	 * Return back to the frame table offset
-	 */
 	if (file_seek(wth->fh, frame_table_offset, SEEK_SET, err) == -1) {
 		return WTAP_OPEN_ERROR;
 	}
-
-	/*
-	 * Sanity check the process info table information before we bother to allocate
-	 * large chunks of memory for the frame table
-	 */
 
 	frame_table = (uint32_t *)g_try_malloc(frame_table_length);
 	if (frame_table_length != 0 && frame_table == NULL) {
@@ -1011,7 +1009,7 @@ netmon_set_pseudo_header_info(wtap_rec *rec)
 
 	case WTAP_ENCAP_IEEE_802_11_NETMON:
 		/*
-		 * The 802.11 metadata at the beginnning of the frame data
+		 * The 802.11 metadata at the beginning of the frame data
 		 * is processed by a dissector, which fills in a pseudo-
 		 * header and passes it to the 802.11 radio dissector,
 		 * just as is done with other 802.11 radio metadata headers

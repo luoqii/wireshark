@@ -272,6 +272,16 @@ struct _wslua_field_info {
     bool expired;
 };
 
+/*
+ * _func_saver stores function refs so that Lua won't garbage collect them prematurely.
+ * It is only used by tcp_dissect_pdus right now.
+ */
+struct _wslua_func_saver {
+    lua_State* state;
+    int get_len_ref;
+    int dissect_ref;
+};
+
 typedef void (*tap_extractor_t)(lua_State*,const void*);
 
 struct _wslua_tap {
@@ -773,6 +783,8 @@ extern tvbuff_t* lua_tvb;
 extern bool lua_initialized;
 extern int lua_dissectors_table_ref;
 extern int lua_heur_dissectors_table_ref;
+extern const char* lua_app_env_var_prefix;
+extern GPtrArray* lua_outstanding_FuncSavers;
 
 WSLUA_DECLARE_CLASSES()
 WSLUA_DECLARE_FUNCTIONS()
@@ -854,7 +866,7 @@ extern void clear_outstanding_FieldInfo(void);
 
 extern void wslua_print_stack(char* s, lua_State* L);
 
-extern void wslua_init(register_cb cb, void *client_data);
+extern void wslua_init(register_cb cb, void *client_data, const char* app_env_var_prefix);
 extern void wslua_early_cleanup(void);
 extern void wslua_cleanup(void);
 

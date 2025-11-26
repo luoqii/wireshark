@@ -310,7 +310,7 @@ static void opcua_load_keylog_file(const char *filename)
 }
 
 /**
- * Checks the padding of a symetric signed message.
+ * Checks the padding of a symmetric signed message.
  * A message always contains a padding_len byte, which tells us the length of
  * the padding. All following padding bytes contain the same value. This makes it
  * possible the padding from the end of the message.
@@ -319,7 +319,7 @@ static void opcua_load_keylog_file(const char *filename)
  * - 01 01
  * - 02 02 02
  * @param padding Pointer to last padding byte.
- * @return padding length on success, -1 if the paddding is invalid.
+ * @return padding length on success, -1 if the padding is invalid.
  */
 static int verify_padding(const uint8_t *padding)
 {
@@ -609,7 +609,7 @@ static int dissect_opcua_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
             if (mode == UA_MessageMode_MaybeEncrypted) {
                 /* try to parse ServiceId */
                 iServiceId = getServiceNodeId(tvb, offset + 8); /* skip 4 byte SeqNo and 4 byte RequestId */
-                const char *szServiceName = val_to_str(pinfo->pool, (uint32_t)iServiceId, g_requesttypes, "not found");
+                const char *szServiceName = val_to_str_const((uint32_t)iServiceId, g_requesttypes, "not found");
                 if (strcmp(szServiceName, "not found") == 0) {
                     mode = UA_MessageMode_SignAndEncrypt;
                 } else {

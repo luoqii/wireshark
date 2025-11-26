@@ -11062,17 +11062,17 @@ proto_register_cigi(void)
         { &hf_cigi4_acceleration_control_acceleration_roll,
             { "Roll Angular Acceleration (deg/s^2)", "cigi.acceleration_control.acceleration_roll",
                 FT_FLOAT, BASE_NONE, NULL, 0x0,
-                "Specifies the angle of rotation of the articulated part submodel about its X axis after yaw and pitch have been applied.", HFILL }
+                "Specifies the acceleration of rotation of the articulated part submodel about its rool axis.", HFILL }
         },
         { &hf_cigi4_acceleration_control_acceleration_pitch,
-            { "Terminal Velocity (deg/s)", "cigi.acceleration_control.acceleration_pitch",
+            { "Pitch Angular Acceleration (deg/s^2)", "cigi.acceleration_control.acceleration_pitch",
                 FT_FLOAT, BASE_NONE, NULL, 0x0,
-                "Specifies the angle of rotation of the articulated part submodel about its Y axis after yaw and pitch have been applied", HFILL }
+                "Specifies the acceleration of rotation of the articulated part submodel about its pitch axis", HFILL }
         },
         { &hf_cigi4_acceleration_control_acceleration_yaw,
-            { "Terminal Velocity (deg/s)", "cigi.acceleration_control.acceleration_yaw",
+            { "Yaw Angular Acceleration (deg/s^2)", "cigi.acceleration_control.acceleration_yaw",
                 FT_FLOAT, BASE_NONE, NULL, 0x0,
-                "Specifies the angle of rotation of the articulated part submodel about its Z axis after yaw and pitch have been applied", HFILL }
+                "Specifies the acceleration of rotation of the articulated part submodel about its yaw axis", HFILL }
         },
 
         /* CIGI2 Special Effect Definition */
@@ -15711,7 +15711,7 @@ proto_reg_handoff_cigi(void)
     if( !inited ) {
         dissector_add_for_decode_as_with_preference("udp.port", cigi_handle);
         dissector_add_for_decode_as_with_preference("tcp.port", cigi_handle);
-        heur_dissector_add("udp", dissect_cigi_heur, "CIGI over UDP", "cigi_udp", proto_cigi, HEURISTIC_ENABLE);
+        heur_dissector_add("udp", dissect_cigi_heur, "CIGI over UDP", "cigi_udp", proto_cigi, HEURISTIC_DISABLE);
 
         // CIGI 3 packet ID types (some with fields added in 3.2 or 3.3).
         dissector_add_uint("cigi3.packet_id", CIGI3_PACKET_ID_IG_CONTROL,

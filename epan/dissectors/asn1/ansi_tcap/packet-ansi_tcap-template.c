@@ -381,7 +381,7 @@ static const value_string ansi_tcap_national_parameter_generic_name_type_of_name
  { 1, "Calling name" },
  { 2, "Original called name" },
  { 3, "Redirected name" },
- { 4, "Redirected name" },
+ { 4, "Connected name" },
  { 5, "Spare" },
  { 6, "Spare" },
  { 7, "Spare" },
@@ -604,7 +604,7 @@ static int parameter_type(proto_tree *tree, tvbuff_t *tvb, int offset_parameter_
   uint32_t parameter, parameter_length;
 
   /* A general parameter decoding looks like: Identifier -> Length -> Value
-   There is another case statment to account for the 'F' bit */
+   There is another case statement to account for the 'F' bit */
   if ((param_value & 0x0F) == 0x0F)
   {
       ti = proto_tree_add_item_ret_uint(tree, hf_ansi_tcap_parameter, tvb, offset_parameter_type, 2, ENC_BIG_ENDIAN, &parameter);
@@ -1159,7 +1159,7 @@ dissect_ansi_tcap(tvbuff_t *tvb, packet_info *pinfo, proto_tree *parent_tree, vo
                 ansi_tcap_private.context=p_tcap_context;
 
                 /* If the current message is TCAP only,
-                 * save the Application contexte name for the next messages
+                 * save the Application context name for the next messages
                  */
                 if ( p_tcap_context && cur_oid && !p_tcap_context->oid_present ) {
                         /* Save the application context and the sub dissector */
@@ -1556,7 +1556,7 @@ proto_register_ansi_tcap(void)
         { &hf_ansi_tcap_parameter_look_ahead_for_busy_location_field,
           { "Location",
             "ansi_tcap.look_ahead_for_busy_location",
-            FT_UINT8, BASE_HEX, VALS(ansi_tcap_national_parameter_look_ahead_for_busy_location_field), 0x03,
+            FT_UINT8, BASE_HEX, VALS(ansi_tcap_national_parameter_look_ahead_for_busy_location_field), 0x0f,
             NULL, HFILL }
         },
         { &hf_ansi_tcap_parameter_acg_control_cause_indicator,

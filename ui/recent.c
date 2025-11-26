@@ -21,7 +21,7 @@
 #include <epan/prefs.h>
 #include <epan/prefs-int.h>
 #include <epan/column.h>
-#include <epan/value_string.h>
+#include <wsutil/value_string.h>
 
 #ifdef HAVE_PCAP_REMOTE
 #include "ui/capture_opts.h"
@@ -45,6 +45,7 @@
 #define RECENT_KEY_STATUSBAR_SHOW               "gui.statusbar_show"
 #define RECENT_KEY_PACKET_LIST_COLORIZE         "gui.packet_list_colorize"
 #define RECENT_KEY_CAPTURE_AUTO_SCROLL          "capture.auto_scroll"
+#define RECENT_KEY_AGGREGATION_VIEW             "capture.aggregation_view"
 #define RECENT_GUI_TIME_FORMAT                  "gui.time_format"
 #define RECENT_GUI_TIME_PRECISION               "gui.time_precision"
 #define RECENT_GUI_SECONDS_FORMAT               "gui.seconds_format"
@@ -101,6 +102,7 @@ recent_settings_t recent;
 
 static const value_string ts_type_values[] = {
     { TS_RELATIVE,             "RELATIVE"           },
+    { TS_RELATIVE_CAP,         "RELATIVE_CAP"       },
     { TS_ABSOLUTE,             "ABSOLUTE"           },
     { TS_ABSOLUTE_WITH_YMD,    "ABSOLUTE_WITH_YMD"  },
     { TS_ABSOLUTE_WITH_YDOY,   "ABSOLUTE_WITH_YDOY" },
@@ -856,7 +858,7 @@ write_recent(void)
 
     /* Create the directory that holds personal configuration files, if
        necessary.  */
-    if (create_persconffile_dir(&pf_dir_path) == -1) {
+    if (create_persconffile_dir(application_configuration_environment_prefix(), &pf_dir_path) == -1) {
         simple_dialog(ESD_TYPE_ERROR, ESD_BTN_OK,
                 "Can't create directory\n\"%s\"\nfor recent file: %s.", pf_dir_path,
                 g_strerror(errno));
@@ -864,7 +866,7 @@ write_recent(void)
         return false;
     }
 
-    rf_path = get_persconffile_path(RECENT_COMMON_FILE_NAME, false);
+    rf_path = get_persconffile_path(RECENT_COMMON_FILE_NAME, false, application_configuration_environment_prefix());
     if ((rf = ws_fopen(rf_path, "w")) == NULL) {
         simple_dialog(ESD_TYPE_ERROR, ESD_BTN_OK,
                 "Can't open recent file\n\"%s\": %s.", rf_path,
@@ -1001,7 +1003,7 @@ write_profile_recent(void)
 
     /* Create the directory that holds personal configuration files, if
        necessary.  */
-    if (create_persconffile_dir(&pf_dir_path) == -1) {
+    if (create_persconffile_dir(application_configuration_environment_prefix(), &pf_dir_path) == -1) {
         simple_dialog(ESD_TYPE_ERROR, ESD_BTN_OK,
                 "Can't create directory\n\"%s\"\nfor recent file: %s.", pf_dir_path,
                 g_strerror(errno));
@@ -1009,7 +1011,7 @@ write_profile_recent(void)
         return false;
     }
 
-    rf_path = get_persconffile_path(RECENT_FILE_NAME, true);
+    rf_path = get_persconffile_path(RECENT_FILE_NAME, true, application_configuration_environment_prefix());
     if ((rf = ws_fopen(rf_path, "w")) == NULL) {
         simple_dialog(ESD_TYPE_ERROR, ESD_BTN_OK,
                 "Can't open recent file\n\"%s\": %s.", rf_path,
@@ -1066,6 +1068,10 @@ write_profile_recent(void)
     write_recent_boolean(rf, "Auto scroll packet list when capturing",
             RECENT_KEY_CAPTURE_AUTO_SCROLL,
             recent.capture_auto_scroll);
+
+    write_recent_boolean(rf, "use as aggragation view",
+        RECENT_KEY_AGGREGATION_VIEW,
+        recent.aggregation_view);
 
     write_recent_enum(rf, "Timestamp display format",
             RECENT_GUI_TIME_FORMAT, ts_type_values,
@@ -1294,7 +1300,7 @@ read_set_recent_common_pair_static(char *key, const char *value,
         g_free(recent.gui_geometry_main);
         recent.gui_geometry_main = g_strdup(value);
     } else if (strcmp(key, RECENT_LAST_USED_PROFILE) == 0) {
-        if ((strcmp(value, DEFAULT_PROFILE) != 0) && profile_exists (value, false)) {
+        if ((strcmp(value, DEFAULT_PROFILE) != 0) && profile_exists(application_configuration_environment_prefix(), value, false)) {
             set_profile_name (value);
         }
     } else if (strcmp(key, RECENT_PROFILE_SWITCH_CHECK_COUNT) == 0) {
@@ -1370,6 +1376,8 @@ read_set_recent_pair_static(char *key, const char *value,
         parse_recent_boolean(value, &recent.packet_list_colorize);
     } else if (strcmp(key, RECENT_KEY_CAPTURE_AUTO_SCROLL) == 0) {
         parse_recent_boolean(value, &recent.capture_auto_scroll);
+    } else if (strcmp(key, RECENT_KEY_AGGREGATION_VIEW) == 0) {
+        parse_recent_boolean(value, &recent.aggregation_view);
     } else if (strcmp(key, RECENT_GUI_TIME_FORMAT) == 0) {
         recent.gui_time_format = (ts_type)str_to_val(value, ts_type_values,
             application_flavor_is_wireshark() ? TS_RELATIVE : TS_ABSOLUTE);
@@ -1625,7 +1633,7 @@ recent_read_static(char **rf_path_return, int *rf_errno_return)
     recent.gui_fileopen_remembered_dir = NULL;
 
     /* Construct the pathname of the user's recent common file. */
-    rf_path = get_persconffile_path(RECENT_COMMON_FILE_NAME, false);
+    rf_path = get_persconffile_path(RECENT_COMMON_FILE_NAME, false, application_configuration_environment_prefix());
 
     /* Read the user's recent common file, if it exists. */
     *rf_path_return = NULL;
@@ -1723,7 +1731,7 @@ recent_read_profile_static(char **rf_path_return, int *rf_errno_return)
     }
 
     /* Construct the pathname of the user's profile recent file. */
-    rf_path = get_persconffile_path(RECENT_FILE_NAME, true);
+    rf_path = get_persconffile_path(RECENT_FILE_NAME, true, application_configuration_environment_prefix());
 
     /* Read the user's recent file, if it exists. */
     *rf_path_return = NULL;
@@ -1740,7 +1748,7 @@ recent_read_profile_static(char **rf_path_return, int *rf_errno_return)
          *  know what's supposed to happen at this point.
          *  ToDo: Determine if the "recent common file" should be read at this point
          */
-        rf_common_path = get_persconffile_path(RECENT_COMMON_FILE_NAME, false);
+        rf_common_path = get_persconffile_path(RECENT_COMMON_FILE_NAME, false, application_configuration_environment_prefix());
         if (!file_exists(rf_common_path)) {
             /* Read older common settings from recent file */
             rf = ws_fopen(rf_path, "r");
@@ -1771,11 +1779,11 @@ recent_read_dynamic(char **rf_path_return, int *rf_errno_return)
 
 
     /* Construct the pathname of the user's recent common file. */
-    rf_path = get_persconffile_path(RECENT_COMMON_FILE_NAME, false);
+    rf_path = get_persconffile_path(RECENT_COMMON_FILE_NAME, false, application_configuration_environment_prefix());
     if (!file_exists (rf_path)) {
         /* Recent common file does not exist, read from default recent */
         g_free (rf_path);
-        rf_path = get_persconffile_path(RECENT_FILE_NAME, false);
+        rf_path = get_persconffile_path(RECENT_FILE_NAME, false, application_configuration_environment_prefix());
     }
 
     /* Read the user's recent file, if it exists. */

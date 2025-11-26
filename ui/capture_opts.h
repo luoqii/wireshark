@@ -49,6 +49,7 @@ extern "C" {
 #define LONGOPT_COMPRESS_TYPE     LONGOPT_BASE_CAPTURE+3
 #define LONGOPT_CAPTURE_TMPDIR    LONGOPT_BASE_CAPTURE+4
 #define LONGOPT_UPDATE_INTERVAL   LONGOPT_BASE_CAPTURE+5
+#define LONGOPT_NO_OPTIMIZE       LONGOPT_BASE_CAPTURE+6
 
 /*
  * Options for capturing common to all capturing programs.
@@ -79,6 +80,7 @@ extern "C" {
     {"snapshot-length",       ws_required_argument, NULL, 's'}, \
     {"linktype",              ws_required_argument, NULL, 'y'}, \
     {"list-time-stamp-types", ws_no_argument,       NULL, LONGOPT_LIST_TSTAMP_TYPES}, \
+    {"no-optimize",           ws_no_argument,       NULL, LONGOPT_NO_OPTIMIZE}, \
     {"time-stamp-type",       ws_required_argument, NULL, LONGOPT_SET_TSTAMP_TYPE}, \
     {"compress-type",         ws_required_argument, NULL, LONGOPT_COMPRESS_TYPE}, \
     {"temp-dir",              ws_required_argument, NULL, LONGOPT_CAPTURE_TMPDIR},\
@@ -152,6 +154,7 @@ typedef struct interface_tag {
     char           *addresses;
     int             no_addresses;
     char           *cfilter;
+    int             optimize;             /* whether the capture filter above is optimized when compiled */
     GList          *links;
     int             active_dlt;
     bool            pmode;
@@ -184,8 +187,9 @@ typedef struct interface_options_tag {
     char             *descr;                /* a more user-friendly description of the interface; may be NULL if none */
     char             *hardware;             /* description of the hardware */
     char             *display_name;         /* the name displayed in the console and title bar */
-    char             *ifname;               /* if not null, name to use instead of the interface naem in IDBs */
+    char             *ifname;               /* if not null, name to use instead of the interface name in IDBs */
     char             *cfilter;
+    int               optimize;             /* whether the capture filter above is optimized when compiled */
     bool              has_snaplen;
     int               snaplen;
     int               linktype;
@@ -242,6 +246,7 @@ typedef struct capture_options_tag {
                                                    when it was fetched, if any */
     char              *ifaces_err_info;       /**< error string for that error */
     unsigned           num_selected;
+    const char        *app_name;              /**< Application name that will be passed to dumpcap */
 
     /*
      * Options to be applied to all interfaces.
@@ -331,7 +336,7 @@ typedef struct capture_options_tag {
  * to waste time doing that if we don't have to.)
  */
 extern void
-capture_opts_init(capture_options *capture_opts, GList *(*get_iface_list)(int *, char **));
+capture_opts_init(capture_options *capture_opts, const char* app_name, GList *(*get_iface_list)(int *, char **));
 
 /* clean internal structures */
 extern void
@@ -339,7 +344,7 @@ capture_opts_cleanup(capture_options *capture_opts);
 
 /* set a command line option value */
 extern int
-capture_opts_add_opt(capture_options *capture_opts, int opt, const char *ws_optarg);
+capture_opts_add_opt(const char* app_env_var_prefix, capture_options *capture_opts, int opt, const char *ws_optarg);
 
 /* log content of capture_opts */
 extern void

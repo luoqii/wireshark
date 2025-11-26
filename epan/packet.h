@@ -803,7 +803,7 @@ WS_DLL_PUBLIC void register_cleanup_routine(void (*func)(void));
 WS_DLL_PUBLIC void register_shutdown_routine(void (*func)(void));
 
 /* Initialize all data structures used for dissection. */
-void init_dissection(void);
+void init_dissection(const char* app_env_var_prefix);
 
 /* Free data structures allocated for dissection. */
 void cleanup_dissection(void);
@@ -845,7 +845,7 @@ struct data_source;
  * set to DS_MEDIA_TYPE_APPLICATION_OCTET_STREAM.
  * @param pinfo Packet info.
  * @param tvb The tvbuff to associate with the data source.
- * @param name A display-freindly name of the data source.
+ * @param name A display-friendly name of the data source.
  * @return An opaque pointer to the data source.
  */
 WS_DLL_PUBLIC struct data_source* add_new_data_source(packet_info *pinfo, tvbuff_t *tvb,
@@ -910,9 +910,17 @@ extern void free_data_sources(packet_info *pinfo);
 
 /* Mark another frame as depended upon by the current frame.
  *
- * This information is used to ensure that the depended-upon frame is saved
- * if the user does a File->Save-As of only the Displayed packets and the
- * current frame passed the display filter.
+ * This information is used to ensure that when the current frame is exported
+ * or saved that the depended upon frames necessary for correct dissection are
+ * also exported (along with the frames that those depend upon, in infinite
+ * descent.) The fragment handling functions in reassemble.c mark any frame
+ * used to reassemble the current frame as depended upon; dissectors can also
+ * mark frames themselves.
+ *
+ * In Wireshark, the "Include depended upon packets" checkbox in the Export
+ * Specified Packets dialog (enabled by default) controls whether depended
+ * upon frames of selected frames are also exported. TShark also saves
+ * any depended upon frames when saving filtered packets to a file.
  */
 WS_DLL_PUBLIC void mark_frame_as_depended_upon(frame_data *fd, uint32_t frame_num);
 

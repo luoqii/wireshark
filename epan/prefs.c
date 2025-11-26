@@ -23,7 +23,6 @@
 #include <glib.h>
 
 #include <stdio.h>
-#include <wsutil/application_flavor.h>
 #include <wsutil/filesystem.h>
 #include <epan/addr_resolv.h>
 #include <epan/oids.h>
@@ -45,6 +44,7 @@
 #include <epan/uat-int.h>
 
 #include "epan/filter_expressions.h"
+#include "epan/aggregation_fields.h"
 
 #include "epan/wmem_scopes.h"
 #include <epan/stats_tree.h>
@@ -68,7 +68,7 @@ static void prefs_register_modules(void);
 static module_t *prefs_find_module_alias(const char *name);
 static prefs_set_pref_e set_pref(char*, const char*, void *, bool);
 static void free_col_info(GList *);
-static void pre_init_prefs(void);
+static void prefs_set_global_defaults(const char** col_fmt, int num_cols);
 static bool prefs_is_column_visible(const char *cols_hidden, int col);
 static bool prefs_is_column_fmt_visible(const char *cols_hidden, fmt_data *cfmt);
 static unsigned prefs_module_list_foreach(wmem_tree_t *module_list, module_cb callback,
@@ -78,7 +78,6 @@ static int find_val_for_string(const char *needle, const enum_val_t *haystack, i
 #define PF_NAME         "preferences"
 #define OLD_GPF_NAME    "wireshark.conf" /* old name for global preferences file */
 
-static bool prefs_initialized;
 static char *gpf_path;
 static char *cols_hidden_list;
 static char *cols_hidden_fmt_list;
@@ -320,12 +319,15 @@ static wmem_tree_t *prefs_module_aliases;
 
 /** Sets up memory used by proto routines. Called at program startup */
 void
-prefs_init(void)
+prefs_init(const char** col_fmt, int num_cols)
 {
     memset(&prefs, 0, sizeof(prefs));
     prefs_modules = wmem_tree_new(wmem_epan_scope());
     prefs_top_level_modules = wmem_tree_new(wmem_epan_scope());
     prefs_module_aliases = wmem_tree_new(wmem_epan_scope());
+
+    prefs_set_global_defaults(col_fmt, num_cols);
+    prefs_register_modules();
 }
 
 /*
@@ -624,25 +626,12 @@ prefs_register_module_alias(const char *name, module_t *module)
 /*
  * Register that a protocol has preferences.
  */
-module_t *protocols_module;
+static module_t *protocols_module;
 
 module_t *
 prefs_register_protocol(int id, void (*apply_cb)(void))
 {
-    protocol_t *protocol;
-
-    /*
-     * Have we yet created the "Protocols" subtree?
-     */
-    if (protocols_module == NULL) {
-        /*
-         * No.  Register Protocols subtree as well as any preferences
-         * for non-dissector modules.
-         */
-        pre_init_prefs();
-        prefs_register_modules();
-    }
-    protocol = find_protocol_by_id(id);
+    protocol_t *protocol = find_protocol_by_id(id);
     if (protocol == NULL)
         ws_error("Protocol preferences being registered with an invalid protocol ID");
     return prefs_register_module(protocols_module,
@@ -669,20 +658,6 @@ prefs_register_protocol_subtree(const char *subtree, int id, void (*apply_cb)(vo
     module_t   *subtree_module;
     module_t   *new_module;
     char       *sep = NULL, *ptr = NULL, *orig = NULL;
-
-    /*
-     * Have we yet created the "Protocols" subtree?
-     * XXX - can we just do this by registering Protocols/{subtree}?
-     * If not, why not?
-     */
-    if (protocols_module == NULL) {
-        /*
-         * No.  Register Protocols subtree as well as any preferences
-         * for non-dissector modules.
-         */
-        pre_init_prefs();
-        prefs_register_modules();
-    }
 
     subtree_module = protocols_module;
 
@@ -732,20 +707,7 @@ module_t *
 prefs_register_protocol_obsolete(int id)
 {
     module_t *module;
-    protocol_t *protocol;
-
-    /*
-     * Have we yet created the "Protocols" subtree?
-     */
-    if (protocols_module == NULL) {
-        /*
-         * No.  Register Protocols subtree as well as any preferences
-         * for non-dissector modules.
-         */
-        pre_init_prefs();
-        prefs_register_modules();
-    }
-    protocol = find_protocol_by_id(id);
+    protocol_t *protocol = find_protocol_by_id(id);
     if (protocol == NULL)
         ws_error("Protocol being registered with an invalid protocol ID");
     module = prefs_register_module(protocols_module,
@@ -772,18 +734,6 @@ module_t *
 prefs_register_stat(const char *name, const char *title,
                     const char *description, void (*apply_cb)(void))
 {
-    /*
-     * Have we yet created the "Statistics" subtree?
-     */
-    if (stats_module == NULL) {
-        /*
-         * No.  Register Statistics subtree as well as any preferences
-         * for non-dissector modules.
-         */
-        pre_init_prefs();
-        prefs_register_modules();
-    }
-
     return prefs_register_module(stats_module, name, title, description, NULL,
                                  apply_cb, true);
 }
@@ -804,18 +754,6 @@ module_t *
 prefs_register_codec(const char *name, const char *title,
                      const char *description, void (*apply_cb)(void))
 {
-    /*
-     * Have we yet created the "Codecs" subtree?
-     */
-    if (codecs_module == NULL) {
-        /*
-         * No.  Register Codecs subtree as well as any preferences
-         * for non-dissector modules.
-         */
-        pre_init_prefs();
-        prefs_register_modules();
-    }
-
     return prefs_register_module(codecs_module, name, title, description, NULL,
                                  apply_cb, true);
 }
@@ -2065,9 +2003,13 @@ prefs_is_preference_obsolete(pref_t *pref)
 void
 prefs_set_preference_effect_fields(module_t *module, const char *name)
 {
-    pref_t * pref = prefs_find_preference(module, name);
+    prefs_set_preference_effect(module, name, PREF_EFFECT_FIELDS);
+}
+
+void prefs_set_preference_effect(module_t* module, const char* name, unsigned flags) {
+    pref_t* pref = prefs_find_preference(module, name);
     if (pref) {
-        prefs_set_effect_flags(pref, prefs_get_effect_flags(pref) | PREF_EFFECT_FIELDS);
+        prefs_set_effect_flags(pref, prefs_get_effect_flags(pref) | flags);
     }
 }
 
@@ -2260,9 +2202,12 @@ pref_unstash(pref_t *pref, void *unstash_data_p)
             *pref->varp.colorp = pref->stashed_val.color;
         }
         break;
-
-    case PREF_STATIC_TEXT:
     case PREF_UAT:
+        if (pref->varp.uat && pref->varp.uat->changed) {
+            unstash_data->module->prefs_changed_flags |= prefs_get_effect_flags(pref);
+        }
+        break;
+    case PREF_STATIC_TEXT:
     case PREF_CUSTOM:
         break;
 
@@ -3402,7 +3347,7 @@ prefs_register_modules(void)
     prefs_register_enum_preference(gui_module, "fileopen.style",
                        "Where to start the File Open dialog box",
                        "Where to start the File Open dialog box",
-                       &prefs.gui_fileopen_style, gui_fileopen_style, false);
+                       (int*)&prefs.gui_fileopen_style, gui_fileopen_style, false);
 
     prefs_register_uint_preference(gui_module, "recent_files_count.max",
                                    "The max. number of items in the open recent files list",
@@ -3628,7 +3573,7 @@ prefs_register_modules(void)
     prefs_register_enum_preference(gui_layout_module, "packet_dialog_layout",
                                    "Packet Dialog layout",
                                    "Packet Dialog layout",
-                                   (unsigned*)(void*)(&prefs.gui_packet_dialog_layout), gui_packet_dialog_layout, false);
+                                   (int*)(&prefs.gui_packet_dialog_layout), gui_packet_dialog_layout, false);
 
     prefs_register_enum_preference(gui_module, "packet_list_elide_mode",
                        "Elide mode",
@@ -3793,7 +3738,7 @@ prefs_register_modules(void)
      * preference "string compare list" in set_pref()
      */
     capture_module = prefs_register_module(NULL, "capture", "Capture",
-        "Capture preferences", NULL, NULL, false);
+        "Capture preferences", NULL, apply_aggregation_prefs, false);
     /* Capture preferences don't affect dissection */
     prefs_set_module_effect_flags(capture_module, PREF_EFFECT_CAPTURE);
 
@@ -3851,6 +3796,9 @@ prefs_register_modules(void)
                                    10,
                                    &prefs.capture_update_interval);
 
+    prefs_register_bool_preference(capture_module, "enable_aggregation_view", "Enable aggregation view",
+        "Enable Aggregation View for real-time capturing", &prefs.enable_aggregation);
+
     prefs_register_bool_preference(capture_module, "no_interface_load", "Don't load interfaces on startup",
         "Don't automatically load capture interfaces on startup", &prefs.capture_no_interface_load);
 
@@ -3873,6 +3821,7 @@ prefs_register_modules(void)
     custom_cbs.to_str_cb = capture_column_to_str_cb;
     prefs_register_list_custom_preference(capture_module, "columns", "Capture options dialog column list",
         "List of columns to be displayed", &custom_cbs, capture_column_init_cb, &prefs.capture_columns);
+    aggregation_field_register_uat(capture_module);
 
     /* Name Resolution */
     nameres_module = prefs_register_module(NULL, "nameres", "Name Resolution",
@@ -4254,31 +4203,6 @@ print.file: /a/very/long/path/
  *
  */
 
-/* Initialize non-dissector preferences to wired-in default values Called
- * at program startup and any time the profile changes. (The dissector
- * preferences are assumed to be set to those values by the dissectors.)
- * They may be overridden by the global preferences file or the user's
- * preferences file.
- */
-static void
-init_prefs(void)
-{
-    if (prefs_initialized)
-        return;
-
-    uat_load_all();
-
-    /*
-     * Ensure the "global" preferences have been initialized so the
-     * preference API has the proper default values to work from
-     */
-    pre_init_prefs();
-
-    prefs_register_modules();
-
-    prefs_initialized = true;
-}
-
 /*
  * Initialize non-dissector preferences used by the "register preference" API
  * to default values so the default values can be used when registered.
@@ -4287,37 +4211,11 @@ init_prefs(void)
  * be g_mallocated.
  */
 static void
-pre_init_prefs(void)
+prefs_set_global_defaults(const char** col_fmt, int num_cols)
 {
     int         i;
     char        *col_name;
     fmt_data    *cfmt;
-    static const char *col_fmt_packets[] = {
-        "No.",      "%m", "Time",        "%t",
-        "Source",   "%s", "Destination", "%d",
-        "Protocol", "%p", "Length",      "%L",
-        "Info",     "%i" };
-    static const char **col_fmt = col_fmt_packets;
-    int num_cols = 7;
-
-    if (application_flavor_is_stratoshark()) {
-        static const char *col_fmt_logs[] = {
-            "No.",              "%m",
-            "Time",             "%t",
-            "Event name",       "%Cus:sysdig.event_name:0:R",
-            "Dir",              "%Cus:evt.dir:0:R",
-            "Proc Name",        "%Cus:proc.name:0:R",
-            "PID",              "%Cus:proc.pid:0:R",
-            "TID",              "%Cus:thread.tid:0:R",
-            "FD",               "%Cus:fd.num:0:R",
-            "FD Name",          "%Cus:fd.name:0:R",
-            "Container Name",   "%Cus:container.name:0:R",
-            "Arguments",        "%Cus:evt.args:0:R",
-            "Info",             "%i"
-            };
-        col_fmt = col_fmt_logs;
-        num_cols = 12;
-    }
 
     prefs.restore_filter_after_following_stream = false;
     prefs.gui_toolbar_main_style = TB_STYLE_ICONS;
@@ -4484,6 +4382,7 @@ pre_init_prefs(void)
     prefs.capture_update_interval       = DEFAULT_UPDATE_INTERVAL;
     prefs.capture_no_extcap             = false;
     prefs.capture_show_info             = false;
+    prefs.enable_aggregation            = false;
 
     if (!prefs.capture_columns) {
         /* First time through */
@@ -4627,9 +4526,8 @@ reset_module_prefs(const void *key _U_, void *value, void *data _U_)
 
 /* Reset preferences */
 void
-prefs_reset(void)
+prefs_reset(const char* app_env_var_prefix, const char** col_fmt, int num_cols)
 {
-    prefs_initialized = false;
     g_free(prefs.saved_at_version);
     prefs.saved_at_version = NULL;
 
@@ -4644,9 +4542,14 @@ prefs_reset(void)
     oids_cleanup();
 
     /*
+     * Reload all UAT preferences.
+     */
+    uat_load_all(app_env_var_prefix);
+
+    /*
      * Reset the non-dissector preferences.
      */
-    init_prefs();
+    prefs_set_global_defaults(col_fmt, num_cols);
 
     /*
      * Reset the non-UAT dissector preferences.
@@ -4683,7 +4586,7 @@ read_registry(void)
 #endif
 
 void
-prefs_read_module(const char *module)
+prefs_read_module(const char *module, const char* app_env_var_prefix)
 {
     int         err;
     char        *pf_path;
@@ -4696,14 +4599,14 @@ prefs_read_module(const char *module)
 
     /* Construct the pathname of the user's preferences file for the module. */
     char *pf_name = wmem_strdup_printf(NULL, "%s.cfg", module);
-    pf_path = get_persconffile_path(pf_name, true);
+    pf_path = get_persconffile_path(pf_name, true, app_env_var_prefix);
     wmem_free(NULL, pf_name);
 
     /* Read the user's module preferences file, if it exists and is not a dir. */
     if (!test_for_regular_file(pf_path) || ((pf = ws_fopen(pf_path, "r")) == NULL)) {
         g_free(pf_path);
         /* Fall back to the user's generic preferences file. */
-        pf_path = get_persconffile_path(PF_NAME, true);
+        pf_path = get_persconffile_path(PF_NAME, true, app_env_var_prefix);
         pf = ws_fopen(pf_path, "r");
     }
 
@@ -4736,7 +4639,7 @@ prefs_read_module(const char *module)
    If we got an error (other than "it doesn't exist") we report it through
    the UI. */
 e_prefs *
-read_prefs(void)
+read_prefs(const char* app_env_var_prefix)
 {
     int         err;
     char        *pf_path;
@@ -4744,8 +4647,6 @@ read_prefs(void)
 
     /* clean up libsmi structures before reading prefs */
     oids_cleanup();
-
-    init_prefs();
 
 #ifdef _WIN32
     read_registry();
@@ -4760,13 +4661,13 @@ read_prefs(void)
          * We don't have the path; try the new path first, and, if that
          * file doesn't exist, try the old path.
          */
-        gpf_path = get_datafile_path(PF_NAME);
+        gpf_path = get_datafile_path(PF_NAME, app_env_var_prefix);
         if ((pf = ws_fopen(gpf_path, "r")) == NULL && errno == ENOENT) {
             /*
              * It doesn't exist by the new name; try the old name.
              */
             g_free(gpf_path);
-            gpf_path = get_datafile_path(OLD_GPF_NAME);
+            gpf_path = get_datafile_path(OLD_GPF_NAME, app_env_var_prefix);
             pf = ws_fopen(gpf_path, "r");
         }
     } else {
@@ -4809,7 +4710,7 @@ read_prefs(void)
     }
 
     /* Construct the pathname of the user's preferences file. */
-    pf_path = get_persconffile_path(PF_NAME, true);
+    pf_path = get_persconffile_path(PF_NAME, true, app_env_var_prefix);
 
     /* Read the user's preferences file, if it exists. */
     if ((pf = ws_fopen(pf_path, "r")) != NULL) {
@@ -4841,7 +4742,7 @@ read_prefs(void)
     }
 
     /* load SMI modules if needed */
-    oids_init();
+    oids_init(app_env_var_prefix);
 
     return &prefs;
 }
@@ -6418,7 +6319,7 @@ set_pref(char *pref_name, const char *value, void *private_data,
         {
             /* This is for backwards compatibility in case any of the preferences
                that shared the "Decode As" preference name and used to be PREF_RANGE
-               are now applied directly to the Decode As funtionality */
+               are now applied directly to the Decode As functionality */
             range_t *newrange;
             dissector_table_t sub_dissectors;
             dissector_handle_t handle;
@@ -7164,14 +7065,11 @@ write_registry(void)
    If we got an error, stuff a pointer to the path of the preferences file
    into "*pf_path_return", and return the errno. */
 int
-write_prefs(char **pf_path_return)
+write_prefs(const char* app_env_var_prefix, char **pf_path_return)
 {
     char        *pf_path;
     FILE        *pf;
     write_gui_pref_arg_t write_gui_pref_info;
-
-    /* Needed for "-G defaultprefs" */
-    init_prefs();
 
 #ifdef _WIN32
     write_registry();
@@ -7184,7 +7082,7 @@ write_prefs(char **pf_path_return)
      */
 
     if (pf_path_return != NULL) {
-        pf_path = get_persconffile_path(PF_NAME, true);
+        pf_path = get_persconffile_path(PF_NAME, true, app_env_var_prefix);
         if ((pf = ws_fopen(pf_path, "w")) == NULL) {
             *pf_path_return = pf_path;
             return errno;
@@ -7202,7 +7100,7 @@ write_prefs(char **pf_path_return)
         if (prefs.filter_expressions_old) {
             char *err = NULL;
             prefs.filter_expressions_old = false;
-            if (!uat_save(uat_get_table_by_name("Display expressions"), &err)) {
+            if (!uat_save(uat_get_table_by_name("Display expressions"), app_env_var_prefix, &err)) {
                 ws_warning("Unable to save Display expressions: %s", err);
                 g_free(err);
             }
@@ -7210,7 +7108,7 @@ write_prefs(char **pf_path_return)
 
         module_t *extcap_module = prefs_find_module("extcap");
         if (extcap_module && !prefs.capture_no_extcap) {
-            char *ext_path = get_persconffile_path("extcap.cfg", true);
+            char *ext_path = get_persconffile_path("extcap.cfg", true, app_env_var_prefix);
             FILE *extf;
             if ((extf = ws_fopen(ext_path, "w")) == NULL) {
                 if (errno != EISDIR) {

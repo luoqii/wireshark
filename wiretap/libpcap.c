@@ -11,7 +11,7 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include "wtap-int.h"
+#include "wtap_module.h"
 #include "file_wrappers.h"
 #include "required_file_handlers.h"
 #include "pcap-common.h"
@@ -1146,7 +1146,7 @@ static try_record_ret_t libpcap_try_record(wtap *wth, pcap_variant_t variant,
 			/*
 			 * 2 8-bit values that are filled in only
 			 * if libpcap is built with SMP debugging,
-			 * fllowed by 3 bytes of 8-bit padding,
+			 * followed by 3 bytes of 8-bit padding,
 			 * not guaranteed to be zero.
 			 *
 			 * Just skip them.
@@ -1349,8 +1349,14 @@ libpcap_read_packet(wtap *wth, FILE_T fh, wtap_rec *rec,
 		 * The packet size is really a record size and includes
 		 * the padding.
 		 */
-		packet_size -= 3;
-		orig_size -= 3;
+		if (ckd_sub(&packet_size, packet_size, 3) ||
+		    ckd_sub(&orig_size, orig_size, 3)) {
+			*err = WTAP_ERR_BAD_FILE;
+			if (err_info != NULL) {
+				*err_info = ws_strdup("pcap: AIX FDDI padding is absent");
+			}
+			return false;
+		}
 
 		/*
 		 * Skip the padding.

@@ -15,6 +15,8 @@
 #include <file.h>
 
 #include <epan/dissectors/packet-tcp.h>
+#include <epan/follow.h>
+#include <wsutil/str_util.h>
 
 #include "ui/tap-tcp-stream.h"
 
@@ -29,6 +31,7 @@
 namespace Ui {
 class TCPStreamDialog;
 class QCPErrorBarsNotSelectable;
+class DupAckGraph;
 }
 
 class QCPErrorBarsNotSelectable : public QCPErrorBars
@@ -40,6 +43,18 @@ public:
     virtual ~QCPErrorBarsNotSelectable();
 
     virtual double selectTest(const QPointF &pos, bool onlySelectable, QVariant *details = 0) const Q_DECL_OVERRIDE;
+    virtual void drawLegendIcon(QCPPainter *painter, const QRectF &rect) const override;
+};
+
+class DupAckGraph : public QCPGraph
+{
+    Q_OBJECT
+
+public:
+    explicit DupAckGraph(QCPAxis *keyAxis, QCPAxis *valueAxis);
+    virtual ~DupAckGraph();
+
+    virtual void drawLegendIcon(QCPPainter *painter, const QRectF &rect) const override;
 };
 
 class TCPStreamDialog : public GeometryStateDialog
@@ -73,7 +88,10 @@ private:
     QMap<double, struct segment *> sequence_num_map_;
     uint32_t seq_offset_;
     bool seq_origin_zero_;
+    bool si_units_;
+    bool legend_visible_;
     struct tcp_graph graph_;
+    follow_stream_count_func get_stream_count_;
     QCPTextElement *title_;
     QString stream_desc_;
     QCPGraph *base_graph_; // Clickable packets
@@ -106,7 +124,7 @@ private:
             reset_axes_(false) {}
         void triggerUpdate(int timeout, bool reset_axes = false);
         void clearPendingUpdate();
-        void doUpdate();
+        void doUpdate(follow_stream_count_func get_count);
         bool hasPendingUpdate() { return graph_update_timer_ != NULL; }
     private:
         TCPStreamDialog *dialog_;
@@ -128,8 +146,12 @@ private:
     void zoomAxes(bool in);
     void zoomXAxis(bool in);
     void zoomYAxis(bool in);
+    void setAxisUnits(QCPAxis *axis, format_size_units_e units);
     void panAxes(int x_pixels, int y_pixels);
     void resetAxes();
+    void fillLegend();
+    void moveLegend();
+    void toggleLegend();
     void fillStevens();
     void fillTcptrace();
     void fillThroughput();
@@ -148,6 +170,7 @@ private slots:
     void mouseReleased(QMouseEvent *event);
     void captureEvent(CaptureEvent e);
     void transformYRange(const QCPRange &y_range1);
+    void toggleUnits();
     void on_buttonBox_accepted();
     void on_graphTypeComboBox_currentIndexChanged(int index);
     void on_resetButton_clicked();

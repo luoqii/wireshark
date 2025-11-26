@@ -21,6 +21,7 @@
 #include <wsutil/privileges.h>
 #include <wsutil/please_report_bug.h>
 #include <wsutil/wslog.h>
+#include <wsutil/application_flavor.h>
 
 #include <cli_main.h>
 #include <wsutil/cmdarg_err.h>
@@ -216,7 +217,7 @@ static int list_config(char* interface)
         "{type=table}{tooltip=Should contain the list of provider GUIDs, keyword and level filters for the etl file or live session.}{required=sufficient}{group=Capture}\n",
         inc++);
     /*
-    * The undecidable events are those that either don't have sub-dissector or don't have anthing meaningful to display except for the EVENT_HEADER.
+    * The undecidable events are those that either don't have sub-dissector or don't have anything meaningful to display except for the EVENT_HEADER.
     */
     printf("arg {number=%u}{call=--iue}{display=Should undecidable events be included}"
         "{type=boolflag}{default=false}{tooltip=Choose if the undecidable event is included}{group=Capture}\n",
@@ -315,14 +316,14 @@ int main(int argc, char* argv[])
      * Attempt to get the pathname of the directory containing the
      * executable file.
      */
-    err_msg = configuration_init(argv[0]);
+    err_msg = configuration_init(argv[0], "wireshark");
     if (err_msg != NULL) {
         ws_warning("Can't get pathname of directory containing the extcap program: %s.",
             err_msg);
         g_free(err_msg);
     }
 
-    help_url = data_file_url("etwdump.html");
+    help_url = data_file_url("etwdump.html", application_configuration_environment_prefix());
     extcap_base_set_util_info(extcap_conf, argv[0], ETWDUMP_VERSION_MAJOR, ETWDUMP_VERSION_MINOR,
         ETWDUMP_VERSION_RELEASE, help_url);
     g_free(help_url);
@@ -422,6 +423,9 @@ int main(int argc, char* argv[])
 
     if (extcap_conf->capture) {
 
+        const struct file_extension_info* file_extensions;
+        unsigned num_extensions;
+
         if (g_strcmp0(extcap_conf->interface, ETW_EXTCAP_INTERFACE)) {
             ws_warning("ERROR: invalid interface");
             goto end;
@@ -433,7 +437,8 @@ int main(int argc, char* argv[])
             goto end;
         }
 
-        wtap_init(false);
+        application_file_extensions(&file_extensions, &num_extensions);
+        wtap_init(false, application_configuration_environment_prefix(), file_extensions, num_extensions);
 
         switch(etw_dump(etlfile, extcap_conf->fifo, params, &ret, &err_msg))
         {

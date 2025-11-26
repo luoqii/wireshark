@@ -21,11 +21,10 @@ enum section_c_types {
     SEC_C_SINR_REPORTING = 9,
     SEC_C_RRM_MEAS_REPORTS = 10,
     SEC_C_REQUEST_RRM_MEAS = 11,
-    SEC_C_MAX_INDEX
+    SEC_C_MAX_INDEX				/* used to size array below */
 };
 
-#define HIGHEST_EXTTYPE 28
-
+#define HIGHEST_EXTTYPE 29  /* Highest supported exttype */
 #define MAX_SECTION_IDs 32  /* i.e. how many may be reported from one frame */
 
 typedef struct oran_tap_info {
@@ -33,7 +32,8 @@ typedef struct oran_tap_info {
     bool     userplane;
     uint16_t eaxc;
     bool     uplink;
-    /* TODO: Timing info */
+    /* Timing info */
+    uint8_t frame;
     uint8_t slot;
     /* Missing SNs */
     uint32_t missing_sns;
@@ -52,7 +52,7 @@ typedef struct oran_tap_info {
     uint32_t num_prbs_zero;
     uint32_t num_res_zero;
 
-
+    uint32_t ul_delay_in_us;
     /* TODO: compression/bitwidth, mu/scs, slots, Section IDs, beams? */
     /* N.B. bitwidth, method, but each section could potentially have different udcompHdr.. */
 } oran_tap_info;

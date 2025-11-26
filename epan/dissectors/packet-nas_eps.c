@@ -706,7 +706,7 @@ calc_bitrate_ext2(uint8_t value) {
 int ett_nas_eps_common_elem[NUM_NAS_EPS_COMMON_ELEM];
 
 static tvbuff_t *
-deciphering_eea2_msg(packet_info *pinfo, tvbuff_t *tvb, gint offset, gint len)
+deciphering_eea2_msg(packet_info *pinfo, tvbuff_t *tvb, int offset, int len)
 {
     gcry_cipher_hd_t cipher;
     gcry_error_t err = 0;
@@ -726,7 +726,7 @@ deciphering_eea2_msg(packet_info *pinfo, tvbuff_t *tvb, gint offset, gint len)
     uint8_t seqn = tvb_get_uint8(tvb, offset);
     offset++;
 
-    guint8 siv[AES_BLOCK_LEN] = {0};
+    uint8_t siv[AES_BLOCK_LEN] = {0};
 
     siv[0] = 0x00;
     siv[1] = 0x00; // Missing calculation of overflow
@@ -754,7 +754,7 @@ deciphering_eea2_msg(packet_info *pinfo, tvbuff_t *tvb, gint offset, gint len)
 
     decipher_msg = g_byte_array_sized_new(len);
     g_byte_array_set_size(decipher_msg, len);
-    const guint8 *ciphered_msg = tvb_get_ptr(tvb, offset, len);
+    const uint8_t *ciphered_msg = tvb_get_ptr(tvb, offset, len);
     err = gcry_cipher_decrypt(cipher, decipher_msg->data, decipher_msg->len, ciphered_msg, len);
     if (gcry_err_code(err))
     {
@@ -763,7 +763,7 @@ deciphering_eea2_msg(packet_info *pinfo, tvbuff_t *tvb, gint offset, gint len)
         return NULL;
     }
     clear_tvb = tvb_new_child_real_data(tvb,
-                                        (const guint8 *)decipher_msg->data, decipher_msg->len, decipher_msg->len);
+                                        (const uint8_t *)decipher_msg->data, decipher_msg->len, decipher_msg->len);
     gcry_cipher_close(cipher);
     return clear_tvb;
 }
@@ -942,7 +942,7 @@ de_emm_sec_par_to_eutra(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo _U_,
  * Dissected in packet-gsm_a_dtap.c
  */
 
-uint16_t (*nas_eps_common_elem_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo,
+uint16_t (* const nas_eps_common_elem_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo,
                                      uint32_t offset, unsigned len,
                                      char *add_string, int string_len) = {
     /* 9.9.2    Common information elements */
@@ -4316,7 +4316,7 @@ de_esm_user_data_cont(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo _U_,
         tvbuff_t *user_data_cont_tvb;
         volatile dissector_handle_t handle;
 
-        user_data_cont_tvb = tvb_new_subset_length_caplen(tvb, offset, len, len);
+        user_data_cont_tvb = tvb_new_subset_length(tvb, offset, len);
         if (g_nas_eps_decode_user_data_container_as == DECODE_USER_DATA_AS_IP) {
             uint8_t first_byte = tvb_get_uint8(user_data_cont_tvb, 0);
             if (first_byte >= 0x45 && first_byte <= 0x4f && len > 20)
@@ -4602,7 +4602,7 @@ de_esm_ext_eps_qos(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo _U_,
     return len;
 }
 
-uint16_t (*emm_elem_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, uint32_t offset, unsigned len, char *add_string, int string_len) = {
+uint16_t (* const emm_elem_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, uint32_t offset, unsigned len, char *add_string, int string_len) = {
     /* 9.9.3    EPS Mobility Management (EMM) information elements */
     de_emm_add_upd_res,         /* 9.9.3.0A Additional update result */
     de_emm_add_upd_type,        /* 9.9.3.0B Additional update type */
@@ -4774,7 +4774,7 @@ value_string_ext nas_esm_elem_strings_ext = VALUE_STRING_EXT_INIT(nas_esm_elem_s
 #define NUM_NAS_ESM_ELEM array_length(nas_esm_elem_strings)
 int ett_nas_eps_esm_elem[NUM_NAS_ESM_ELEM];
 
-uint16_t (*esm_elem_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, uint32_t offset, unsigned len, char *add_string, int string_len) = {
+uint16_t (* const esm_elem_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, uint32_t offset, unsigned len, char *add_string, int string_len) = {
     NULL,                           /* 9.9.4.1 Access point name */
     de_esm_apn_aggr_max_br,         /* 9.9.4.2 APN aggregate maximum bit rate */
     NULL,                           /* 9.9.4.2A Connectivity type */
@@ -6871,7 +6871,7 @@ nas_esm_data_transport(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, uint
 
 #define NUM_NAS_MSG_ESM array_length(nas_msg_esm_strings)
 static int ett_nas_msg_esm[NUM_NAS_MSG_ESM];
-static void (*nas_msg_esm_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, uint32_t offset, unsigned len) = {
+static void (* const nas_msg_esm_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, uint32_t offset, unsigned len) = {
     nas_esm_act_def_eps_bearer_ctx_req, /* Activate default EPS bearer context request*/
     nas_esm_act_def_eps_bearer_ctx_acc, /* Activate default EPS bearer context accept*/
     nas_esm_act_def_eps_bearer_ctx_rej, /* Activate default EPS bearer context reject*/
@@ -6922,7 +6922,7 @@ get_nas_esm_msg_params(uint8_t oct, const char **msg_str, int *ett_tree, int *hf
 
 #define NUM_NAS_MSG_EMM array_length(nas_msg_emm_strings)
 static int ett_nas_msg_emm[NUM_NAS_MSG_EMM];
-static void (*nas_msg_emm_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, uint32_t offset, unsigned len) = {
+static void (* const nas_msg_emm_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, uint32_t offset, unsigned len) = {
     nas_emm_attach_req,         /* Attach request */
     nas_emm_attach_acc,         /* Attach accept */
     nas_emm_attach_comp,        /* Attach complete */
@@ -7295,7 +7295,6 @@ dissect_nas_eps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data 
                 proto_tree_add_item(nas_eps_tree, hf_nas_eps_seq_no, tvb, offset, 1, ENC_BIG_ENDIAN);
                 offset++;
 
-                col_append_sep_str(pinfo->cinfo, COL_INFO, NULL, "Ciphered message");
                 proto_tree_add_item(nas_eps_tree, hf_nas_eps_ciphered_msg, tvb, offset, len - 6, ENC_NA);
 
                 /* Integrity protected and ciphered = 2, Integrity protected and ciphered with new EPS security context = 4 */
@@ -7303,6 +7302,7 @@ dissect_nas_eps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data 
                 /* No decipher mechanism selected, returning without trying to decipher */
                 if (!g_nas_eps_null_decipher)
                 {
+                    col_append_sep_str(pinfo->cinfo, COL_INFO, NULL, "Ciphered message");
                     return tvb_captured_length(tvb);
                 }
                 /* Force deciphering with EEA2*/
@@ -7312,11 +7312,13 @@ dissect_nas_eps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data 
 
                     if (!tvb_deciphered)
                     {
+                        col_append_sep_str(pinfo->cinfo, COL_INFO, NULL, "Ciphered message");
                         return tvb_captured_length(tvb);
                     }
                     uint32_t pd_deciphered = tvb_get_uint8(tvb_deciphered, 0);
                     if ((pd_deciphered != 7) && (pd_deciphered != 15) && ((pd_deciphered & 0x0f) != 2))
                     {
+                        col_append_sep_str(pinfo->cinfo, COL_INFO, NULL, "Ciphered message");
                         return tvb_captured_length(tvb);
                     }
                     len = tvb_reported_length(tvb_deciphered);

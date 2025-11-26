@@ -217,6 +217,14 @@ void Plot::setAbsoluteTime(bool abs_time)
     }
 }
 
+void Plot::setYAxisFactor(double y_axis_factor)
+{
+    if (y_axis_factor != y_axis_factor_) {
+        Graph::setYAxisFactor(y_axis_factor);
+        tapDraw();
+    }
+}
+
 bool Plot::itemCompare(const plot_item_t& a, const plot_item_t& b)
 {
     double res = a.frame_ts - b.frame_ts;
@@ -256,6 +264,14 @@ uint32_t Plot::packetFromTime(double ts) const
     }
 
     return 0;
+}
+
+void Plot::setAxisColor(QCPAxis* axis, const QPen& pen)
+{
+    axis->setBasePen(pen);
+    axis->setTickPen(pen);
+    axis->setSubTickPen(pen);
+    axis->setTickLabelColor(pen.color());
 }
 
 void Plot::tap_reset(void* plot_ptr)

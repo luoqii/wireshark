@@ -6590,6 +6590,8 @@ static const value_string its_CauseCodeChoice_vals[] = {
   { 0, NULL }
 };
 
+static value_string_ext its_CauseCodeChoice_vals_ext = VALUE_STRING_EXT_INIT(its_CauseCodeChoice_vals);
+
 static const per_choice_t its_CauseCodeChoice_choice[] = {
   {   0, &hf_its_reserved0       , ASN1_NO_EXTENSIONS     , dissect_its_SubCauseCodeType },
   {   1, &hf_its_trafficCondition1, ASN1_NO_EXTENSIONS     , dissect_its_TrafficConditionSubCauseCode },
@@ -7718,7 +7720,7 @@ dissect_its_ItsPduHeader(tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_
                                    ett_its_ItsPduHeader, its_ItsPduHeader_sequence);
 
   tap_queue_packet(its_tap, actx->pinfo, actx->private_data);
-  tvbuff_t *next_tvb = tvb_new_subset_length(tvb, offset >> 3, -1);
+  tvbuff_t *next_tvb = tvb_new_subset_remaining(tvb, offset >> 3);
   its_header_t *its_hdr = its_get_private_data(actx->pinfo);
   int data_offset = dissector_try_uint(its_msgid_subdissector_table, (its_hdr->version << 16)+its_hdr->msgId, next_tvb, actx->pinfo, tree);
   if (!data_offset) {
@@ -23116,7 +23118,7 @@ dsrc_delta_time_fmt(char *s, uint32_t v)
 }
 
 static void
-cpm_general_confidence_fmt(gchar* s, guint32 v)
+cpm_general_confidence_fmt(char* s, uint32_t v)
 {
     if (v == 0) {
         snprintf(s, ITEM_LABEL_LENGTH, "unknown (%u)", v);
@@ -23130,14 +23132,14 @@ cpm_general_confidence_fmt(gchar* s, guint32 v)
 }
 
 static void
-cpm_distance_value_fmt(gchar* s, guint32 v)
+cpm_distance_value_fmt(char* s, uint32_t v)
 {
-    gint32 sv = (gint32)v;
+    int32_t sv = (int32_t)v;
     snprintf(s, ITEM_LABEL_LENGTH, "%.2fm (%d)", sv * 0.01, sv);
 }
 
 static void
-cpm_distance_confidence_fmt(gchar* s, guint32 v)
+cpm_distance_confidence_fmt(char* s, uint32_t v)
 {
     if (v == 102) {
         snprintf(s, ITEM_LABEL_LENGTH, "unavailable (%d)", v);
@@ -23151,9 +23153,9 @@ cpm_distance_confidence_fmt(gchar* s, guint32 v)
 }
 
 static void
-cpm_speed_value_ext_fmt(gchar* s, guint32 v)
+cpm_speed_value_ext_fmt(char* s, uint32_t v)
 {
-    gint32 sv = (gint32)v;
+    int32_t sv = (int32_t)v;
     if (sv == 0) {
         snprintf(s, ITEM_LABEL_LENGTH, "standstill (%d)", sv);
     }
@@ -23168,7 +23170,7 @@ cpm_speed_value_ext_fmt(gchar* s, guint32 v)
 }
 
 static void
-cpm_cartesian_angle_value_fmt(gchar* s, guint32 v)
+cpm_cartesian_angle_value_fmt(char* s, uint32_t v)
 {
     if (v == 3601) {
         snprintf(s, ITEM_LABEL_LENGTH, "unavailable (%d)", v);
@@ -23179,7 +23181,7 @@ cpm_cartesian_angle_value_fmt(gchar* s, guint32 v)
 }
 
 static void
-cpm_angle_confidence_fmt(gchar* s, guint32 v)
+cpm_angle_confidence_fmt(char* s, uint32_t v)
 {
     if (v == 127) {
         snprintf(s, ITEM_LABEL_LENGTH, "unavailable (%d)", v);
@@ -23909,7 +23911,7 @@ void proto_register_its(void)
         "SubCauseCodeType", HFILL }},
     { &hf_its_ccAndScc,
       { "ccAndScc", "its.ccAndScc",
-        FT_UINT32, BASE_DEC, VALS(its_CauseCodeChoice_vals), 0,
+        FT_UINT32, BASE_DEC|BASE_EXT_STRING, &its_CauseCodeChoice_vals_ext, 0,
         "CauseCodeChoice", HFILL }},
     { &hf_its_protectedZoneLatitude,
       { "protectedZoneLatitude", "its.protectedZoneLatitude",
@@ -32260,7 +32262,7 @@ void proto_register_its(void)
     static build_valid_func its_da_build_value[1] = {its_msgid_value};
     static decode_as_value_t its_da_values = {its_msgid_prompt, 1, its_da_build_value};
     static decode_as_t its_da = {"its", "its.msg_id", 1, 0, &its_da_values, NULL, NULL,
-                                    decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL};
+                                    decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL, NULL, NULL};
 
     register_decode_as(&its_da);
 

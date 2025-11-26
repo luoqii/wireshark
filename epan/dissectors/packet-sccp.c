@@ -80,7 +80,7 @@ static const value_string sccp_message_type_values[] = {
   { 0,                          NULL } };
 
 /* Same as above but in acronym form (for the Info column) */
-const value_string sccp_message_type_acro_values[] = {
+static const value_string sccp_message_type_acro_values[] = {
   { SCCP_MSG_TYPE_CR,           "CR" },
   { SCCP_MSG_TYPE_CC,           "CC" },
   { SCCP_MSG_TYPE_CREF,         "CREF" },
@@ -4148,7 +4148,7 @@ proto_register_sccp(void)
   static build_valid_func sccp_da_build_value[1] = {sccp_value};
   static decode_as_value_t sccp_da_values = {sccp_prompt, 1, sccp_da_build_value};
   static decode_as_t sccp_da = {"sccp", "sccp.ssn", 1, 0, &sccp_da_values, NULL, NULL,
-                                    decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL};
+                                    decode_as_default_populate_list, decode_as_default_reset, decode_as_default_change, NULL, NULL, NULL };
 
   module_t *sccp_module;
   expert_module_t* expert_sccp;

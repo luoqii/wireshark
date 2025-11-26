@@ -18,7 +18,6 @@
 #include <epan/expert.h>
 #include <epan/stream.h>
 #include <epan/golay.h>
-#include <epan/iax2_codec_type.h>
 #include <epan/show_exception.h>
 #include <epan/asn1.h>
 #include <wsutil/bitswap.h>
@@ -27,6 +26,7 @@
 #include "packet-h245.h"
 #include "packet-iax2.h"
 #include "packet-h223.h"
+#include "packet-iax2.h"
 
 /* #define DEBUG_H223 */
 
@@ -1048,7 +1048,7 @@ dissect_mux_pdu( tvbuff_t *tvb, packet_info *pinfo, uint32_t pkt_offset,
     }
 
     if(mpl > 0) {
-        pdu_tvb = tvb_new_subset_length_caplen(tvb, offset, len, mpl);
+        pdu_tvb = tvb_new_subset_length(tvb, offset, mpl);
         if(errors != -1) {
             dissect_mux_payload(pdu_tvb,pinfo,pkt_offset+offset,pdu_tree,call_info,mc,end_of_mux_sdu, ctype, circuit_id);
         } else {

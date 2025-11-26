@@ -862,8 +862,8 @@ dissect_macd_pdu_data(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
         p_fp_info->cur_tb = pdu;    /*Set TB (PDU) index correctly*/
         if (preferences_call_mac_dissectors) {
             tvbuff_t *next_tvb;
-            next_tvb = tvb_new_subset_length_caplen(tvb, offset + bit_offset/8,
-                                      ((bit_offset % 8) + length + 7)/8, -1);
+            next_tvb = tvb_new_subset_length(tvb, offset + bit_offset/8,
+                                      ((bit_offset % 8) + length + 7)/8);
             call_dissector_with_data(mac_fdd_hsdsch_handle, next_tvb, pinfo, top_level_tree, data);
             dissected = true;
         }
@@ -1525,8 +1525,8 @@ dissect_rach_channel_info(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
             /* Propagation delay */
             encoded = tvb_get_uint8(tvb, offset);
             propagation_delay = encoded * 3;
-            propagation_delay_ti = proto_tree_add_uint_format(tree, hf_fp_propagation_delay, tvb, offset, 1,
-                                               propagation_delay, "Propagation Delay: %u chips (%u)",
+            propagation_delay_ti = proto_tree_add_uint_format_value(tree, hf_fp_propagation_delay, tvb, offset, 1,
+                                               propagation_delay, "%u chips (%u)",
                                                propagation_delay, encoded);
             offset++;
         }
@@ -5358,7 +5358,7 @@ static uint8_t fake_map[256];
  * TODO: This need to be fixed!
  * Basically you would want the actual RRC messages, that sooner or later maps
  * transport channel id's to logical id's or RAB IDs
- * to set the proper logical channel/RAB ID, but for now we make syntethic ones.
+ * to set the proper logical channel/RAB ID, but for now we make synthetic ones.
  * */
 
 static uint8_t
@@ -5612,7 +5612,7 @@ fp_set_per_packet_inf_from_conv(conversation_t *p_conv,
                     }
                     else {
                         /* Unfamiliar DCH format, faking LCHID */
-                        /* Asuming the channel isn't multiplexed (ie. C/T field not present) */
+                        /* Assuming the channel isn't multiplexed (ie. C/T field not present) */
                         macinf->ctmux[j+chan] = false;
 
                         /* TODO: This stuff has to be reworked! */
@@ -5746,7 +5746,7 @@ fp_set_per_packet_inf_from_conv(conversation_t *p_conv,
 
 /* Updates the conversation info of a PCH stream based on information parsed in the current frame*/
 static void
-update_pch_coversation_info(umts_fp_conversation_info_t *p_conv_data, packet_info *pinfo, struct fp_info *p_fp_info)
+update_pch_conversation_info(umts_fp_conversation_info_t *p_conv_data, packet_info *pinfo, struct fp_info *p_fp_info)
 {
     fp_pch_channel_info_t* fp_pch_channel_info;
     /* The channel type MUST be set to PCH */
@@ -5960,7 +5960,7 @@ dissect_fp_common(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
         case CHANNEL_PCH:
             dissect_pch_channel_info(tvb, pinfo, fp_tree, offset, p_fp_info,
                                      data);
-            update_pch_coversation_info(p_conv_data, pinfo, p_fp_info);
+            update_pch_conversation_info(p_conv_data, pinfo, p_fp_info);
             break;
         case CHANNEL_CPCH:
             dissect_cpch_channel_info(tvb, pinfo, fp_tree, offset, p_fp_info);

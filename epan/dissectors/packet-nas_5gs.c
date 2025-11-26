@@ -1669,7 +1669,7 @@ de_nas_5gs_mm_5gs_mobile_id(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo,
         /* EUI-64 */
         proto_tree_add_bitmask_list(tree, tvb, offset, 1, flags_spare_tid, ENC_BIG_ENDIAN);
         offset++;
-        proto_tree_add_item(tree, hf_nas_5gs_mm_eui_64, tvb, offset, 8, ENC_NA);
+        proto_tree_add_item(tree, hf_nas_5gs_mm_eui_64, tvb, offset, 8, ENC_BIG_ENDIAN);
         break;
 
     default:
@@ -3281,7 +3281,7 @@ de_nas_5gs_mm_op_def_acc_cat_def(tvbuff_t *tvb, proto_tree *tree, packet_info *p
                     sub_tree3 = proto_tree_add_subtree_format(sub_tree2, tvb, curr_offset, -1, ett_nas_5gs_mm_op_def_acc_cat_criteria,
                                                               &item3, "OS Id + Os App Id %u", k);
                     proto_tree_add_item(sub_tree3, hf_nas_5gs_mm_op_def_access_cat_criteria_os_id,
-                                        tvb, curr_offset, 16, ENC_NA);
+                                        tvb, curr_offset, 16, ENC_BIG_ENDIAN);
                     curr_offset += 16;
                     proto_tree_add_item_ret_uint(sub_tree3, hf_nas_5gs_mm_op_def_access_cat_criteria_os_app_id_len,
                                                  tvb, curr_offset, 1, ENC_BIG_ENDIAN, &os_app_id_len);
@@ -3428,11 +3428,11 @@ de_nas_5gs_mm_pld_cont(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo,
                 proto_item *item;
                 proto_tree *subtree, *subtree2;
 
-                entry_offset = curr_offset;
                 subtree = proto_tree_add_subtree_format(tree, tvb, curr_offset, -1, ett_nas_5gs_mm_pld_cont_pld_entry, &item, "Payload container entry %d", i + 1);
                 proto_tree_add_item_ret_uint(subtree, hf_nas_5gs_mm_pld_cont_pld_cont_len, tvb, curr_offset, 2, ENC_BIG_ENDIAN, &payload_len);
                 proto_item_set_len(item, payload_len + 2);
                 curr_offset += 2;
+                entry_offset = curr_offset;
                 proto_tree_add_item_ret_uint(subtree, hf_nas_5gs_mm_pld_cont_nb_opt_ies, tvb, curr_offset, 1, ENC_NA, &opt_ies_count);
                 proto_tree_add_item_ret_uint(subtree, hf_nas_5gs_mm_pld_cont_pld_cont_type, tvb, curr_offset, 1, ENC_NA, &payload_type);
                 curr_offset++;
@@ -3483,7 +3483,7 @@ de_nas_5gs_mm_pld_cont(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo,
                 nas5gs_data->payload_container_type = payload_type;
                 /* N.B. this recursive call can overwrite nas5gs_data->payload_container_type */
                 de_nas_5gs_mm_pld_cont(tvb, subtree, pinfo, curr_offset, payload_len - (curr_offset - entry_offset), NULL, 0);
-                curr_offset = entry_offset + payload_len + 2;
+                curr_offset = entry_offset + payload_len;
                 nas5gs_data->payload_container_type = type_backup;
             }
         }
@@ -5339,16 +5339,16 @@ de_nas_5gs_mm_s_nssai_time_valid_info(tvbuff_t* tvb, proto_tree* tree, packet_in
         while ((curr_offset - start_offset2) < length) {
             proto_tree_add_item_ret_uint(subtree, hf_nas_5gs_mm_s_nssai_time_valid_info_time_window_len, tvb, curr_offset, 1, ENC_BIG_ENDIAN, &time_window_len);
             curr_offset++;
-            proto_tree_add_item(subtree, hf_nas_5gs_mm_s_nssai_time_valid_info_time_window_start_time, tvb, curr_offset, 8, ENC_NA);
+            proto_tree_add_item(subtree, hf_nas_5gs_mm_s_nssai_time_valid_info_time_window_start_time, tvb, curr_offset, 8, ENC_BIG_ENDIAN);
             curr_offset += 8;
-            proto_tree_add_item(subtree, hf_nas_5gs_mm_s_nssai_time_valid_info_time_window_stop_time, tvb, curr_offset, 8, ENC_NA);
+            proto_tree_add_item(subtree, hf_nas_5gs_mm_s_nssai_time_valid_info_time_window_stop_time, tvb, curr_offset, 8, ENC_BIG_ENDIAN);
             curr_offset += 8;
             if (time_window_len >= 9) {
                 proto_tree_add_bits_item(tree, hf_nas_5gs_spare_bits, tvb, offset << 3, 4, ENC_BIG_ENDIAN);
                 proto_tree_add_item(tree, hf_nas_5gs_mm_s_nssai_time_valid_info_time_window_recurrence_pattern, tvb, offset, 1, ENC_BIG_ENDIAN);
                 curr_offset++;
                 if (time_window_len >= 10) {
-                    proto_tree_add_item(subtree, hf_nas_5gs_mm_s_nssai_time_valid_info_time_window_recurrence_end_time, tvb, curr_offset, 8, ENC_NA);
+                    proto_tree_add_item(subtree, hf_nas_5gs_mm_s_nssai_time_valid_info_time_window_recurrence_end_time, tvb, curr_offset, 8, ENC_BIG_ENDIAN);
                     curr_offset += 8;
                 }
             }
@@ -7317,7 +7317,7 @@ value_string_ext nas_5gs_common_elem_strings_ext = VALUE_STRING_EXT_INIT(nas_5gs
 int ett_nas_5gs_common_elem[NUM_NAS_5GS_COMMON_ELEM];
 
 
-uint16_t(*nas_5gs_common_elem_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo,
+uint16_t(* const nas_5gs_common_elem_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo,
     uint32_t offset, unsigned len,
     char *add_string, int string_len) = {
         /*  9.10.2    Common information elements */
@@ -7596,7 +7596,7 @@ value_string_ext nas_5gs_mm_elem_strings_ext = VALUE_STRING_EXT_INIT(nas_5gs_mm_
 #define NUM_NAS_5GS_MM_ELEM array_length(nas_5gs_mm_elem_strings)
 int ett_nas_5gs_mm_elem[NUM_NAS_5GS_MM_ELEM];
 
-uint16_t(*nas_5gs_mm_elem_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo,
+uint16_t(* const nas_5gs_mm_elem_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo,
     uint32_t offset, unsigned len,
     char *add_string, int string_len) = {
         /*  9.11.3    5GS mobility management (5GMM) information elements */
@@ -7821,7 +7821,7 @@ value_string_ext nas_5gs_sm_elem_strings_ext = VALUE_STRING_EXT_INIT(nas_5gs_sm_
 #define NUM_NAS_5GS_SM_ELEM array_length(nas_5gs_sm_elem_strings)
 int ett_nas_5gs_sm_elem[NUM_NAS_5GS_SM_ELEM];
 
-uint16_t(*nas_5gs_sm_elem_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo,
+uint16_t(* const nas_5gs_sm_elem_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo,
     uint32_t offset, unsigned len,
     char *add_string, int string_len) = {
         /*  5GS session management (5GSM) information elements */
@@ -11560,7 +11560,7 @@ value_string_ext nas_5gs_updp_elem_strings_ext = VALUE_STRING_EXT_INIT(nas_5gs_u
 #define NUM_NAS_5GS_UPDP_ELEM array_length(nas_5gs_updp_elem_strings)
 int ett_nas_5gs_updp_elem[NUM_NAS_5GS_UPDP_ELEM];
 
-uint16_t(*nas_5gs_updp_elem_fcn[])(tvbuff_t* tvb, proto_tree* tree, packet_info* pinfo,
+uint16_t(* const nas_5gs_updp_elem_fcn[])(tvbuff_t* tvb, proto_tree* tree, packet_info* pinfo,
     uint32_t offset, unsigned len,
     char* add_string, int string_len) = {
         /*  5GS session management (5GSM) information elements */
@@ -11763,7 +11763,7 @@ static value_string_ext nas_5gs_mm_msg_strings_ext = VALUE_STRING_EXT_INIT(nas_5
 
 #define NUM_NAS_5GS_MM_MSG array_length(nas_5gs_mm_message_type_vals)
 static int ett_nas_5gs_mm_msg[NUM_NAS_5GS_MM_MSG];
-static void(*nas_5gs_mm_msg_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, uint32_t offset, unsigned len) = {
+static void(* const nas_5gs_mm_msg_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, uint32_t offset, unsigned len) = {
     nas_5gs_mm_registration_req,                /* 0x41    Registration request */
     nas_5gs_mm_registration_accept,             /* 0x42    Registration accept */
     nas_5gs_mm_registration_complete,           /* 0x43    Registration complete */
@@ -11867,7 +11867,7 @@ static value_string_ext nas_5gs_sm_msg_strings_ext = VALUE_STRING_EXT_INIT(nas_5
 #define NUM_NAS_5GS_SM_MSG array_length(nas_5gs_sm_message_type_vals)
 static int ett_nas_5gs_sm_msg[NUM_NAS_5GS_SM_MSG];
 
-static void(*nas_5gs_sm_msg_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, uint32_t offset, unsigned len) = {
+static void(* const nas_5gs_sm_msg_fcn[])(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, uint32_t offset, unsigned len) = {
     nas_5gs_sm_pdu_ses_est_req,            /* 0xc1     PDU session establishment request */
     nas_5gs_sm_pdu_ses_est_acc,            /* 0xc2     PDU session establishment accept */
     nas_5gs_sm_pdu_ses_est_rej,            /* 0xc3     PDU session establishment reject */
@@ -11927,7 +11927,7 @@ static value_string_ext nas_5gs_updp_msg_strings_ext = VALUE_STRING_EXT_INIT(nas
 #define NUM_NAS_5GS_UPDP_MSG array_length(nas_5gs_updp_msg_strings)
 static int ett_nas_5gs_updp_msg[NUM_NAS_5GS_UPDP_MSG];
 
-static void(*nas_5gs_updp_msg_fcn[])(tvbuff_t* tvb, proto_tree* tree, packet_info* pinfo, uint32_t offset, unsigned len) = {
+static void(* const nas_5gs_updp_msg_fcn[])(tvbuff_t* tvb, proto_tree* tree, packet_info* pinfo, uint32_t offset, unsigned len) = {
     nas_5gs_exp_not_dissected_yet,         /* 0x0     Reserved */
     nas_5gs_updp_manage_ue_policy_cmd,     /* 0x1     MANAGE UE POLICY COMMAND */
     nas_5gs_updp_manage_ue_policy_cmd_cmpl,/* 0x2     MANAGE UE POLICY COMPLETE */
@@ -16665,7 +16665,7 @@ proto_register_nas_5gs(void)
         },
         { &hf_nas_5gs_n3nan_node_sel_entry_len,
         { "Length of N3AN node selection information entry", "nas-5gs.andsp.n3nan.node_sel_entry_len",
-            FT_UINT8, BASE_DEC, NULL, 0x0,
+            FT_UINT16, BASE_DEC, NULL, 0x0,
             NULL, HFILL }
         },
         { &hf_nas_5gs_node_sel_entry_fqdn_format,

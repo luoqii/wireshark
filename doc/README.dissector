@@ -24,7 +24,6 @@ You'll find additional dissector related information in the following README
 files:
 
 - doc/README.heuristic      - what are heuristic dissectors and how to write them
-- doc/README.plugins        - how to "pluginize" a dissector
 - doc/README.request_response_tracking - how to track req./resp. times and such
 - doc/README.wmem           - how to obtain "memory leak free" memory
 
@@ -828,10 +827,7 @@ Here is how the frame "protocol" is registered.
 
         int proto_frame;
 
-        proto_frame = proto_register_protocol (
-                /* name */            "Frame",
-                /* short name */      "Frame",
-                /* abbrev */          "frame" );
+        proto_frame = proto_register_protocol("Frame", "Frame", "frame"); /* name, short name, abbreviation */
 
 A header field is also registered with its name and abbreviation, but
 information about its data type is needed. It helps to look at
@@ -1143,7 +1139,8 @@ Use this macro to initialize the extended value_string at compile time:
 static value_string_ext valstringname_ext = VALUE_STRING_EXT_INIT(valstringname);
 
 Extended value strings can be created at run time by calling
-   value_string_ext_new(<ptr to value_string array>,
+   value_string_ext_new(<wmem scope for the value_string, most likely wmem_epan_scope()>
+                        <ptr to value_string array>,
                         <total number of entries in the value_string_array>, /* include {0, NULL} entry */
                         <value_string_name>);
 
@@ -1170,7 +1167,8 @@ Use this macro to initialize the extended val64_string at compile time:
 static val64_string_ext val64stringname_ext = VAL64_STRING_EXT_INIT(val64stringname);
 
 Extended val64 strings can be created at run time by calling
-   val64_string_ext_new(<ptr to val64_string array>,
+   val64_string_ext_new(<wmem scope for the value_string, most likely wmem_epan_scope()>
+                        <ptr to val64_string array>,
                         <total number of entries in the val64_string_array>, /* include {0, NULL} entry */
                         <val64_string_name>);
 
@@ -1613,9 +1611,14 @@ encodings that are currently supported are:
         NTP time). It's used by the Object Management Group's Real-Time
         Publish-Subscribe Wire Protocol for the Data Distribution Service.
 
-    ENC_TIME_SECS_USECS - 8 bytes; the first 4 bytes are seconds since the
-        UN*X epoch and the next 4 bytes are microseconds since that
-        second. (I.e., a UN*X struct timeval with a 4-byte time_t.)
+    ENC_TIME_SECS_USECS - 8, 12, or 16 bytes. For 8 bytes, the first 4
+        bytes are seconds and the next 4 bytes are microseconds; for 12
+        bytes, the first 8 bytes are seconds and the next 4 bytes are
+        microseconds; for 16 bytes, the first 8 bytes are seconds and
+        the next 8 bytes are microseconds. The seconds are seconds
+        since the UN*X epoch. (I.e., a POSIX struct timeval with a 4-byte
+        time_t and a 4-byte suseconds_t, or an 8-byte time_t and either
+        a 4-byte or 8-byte suseconds_t.)
 
     ENC_TIME_SECS - 4 to 8 bytes, representing a value in seconds since
         the UN*X epoch.

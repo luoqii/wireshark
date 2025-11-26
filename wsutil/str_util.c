@@ -21,8 +21,28 @@
 #include <wsutil/to_str.h>
 
 
+struct prefix_parameters {
+    const char * const *prefix; /**< array of prefixes to represent unit multiplication factors. */
+    int prefix_count;           /**< number of elements in the prefix array. */
+    int power;                  /**< multiplication factor between prefixes. */
+    int prefix_offset;          /**< index of element within the prefix array for "no prefix". */
+};
+
 static const char hex[16] = { '0', '1', '2', '3', '4', '5', '6', '7',
                               '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
+
+/* Given a "flags" value passed into a formatting function, determine which
+ * formatting parameters should apply.
+ */
+static const struct prefix_parameters *
+prefix_parameters_for_flags(uint16_t flags) {
+    static const char * const si_prefixes[] = {" a", " f", " p", " n", " μ", " m", " ", " k", " M", " G", " T", " P", " E"};
+    static const struct prefix_parameters si_parameters = {si_prefixes, G_N_ELEMENTS(si_prefixes), 1000, 6};
+    static const char * const iec_prefixes[] = {" ", " Ki", " Mi", " Gi", " Ti", " Pi", " Ei"};
+    static const struct prefix_parameters iec_parameters = {iec_prefixes, G_N_ELEMENTS(iec_prefixes), 1024, 0};
+
+    return (flags & FORMAT_SIZE_PREFIX_IEC) != 0 ? &iec_parameters : &si_parameters;
+}
 
 char *
 wmem_strconcat(wmem_allocator_t *allocator, const char *first, ...)
@@ -199,13 +219,13 @@ char*
 wmem_ascii_strdown(wmem_allocator_t *allocator, const char *str, ssize_t len)
 {
     char *result, *s;
+    size_t abs_len;
 
     g_return_val_if_fail (str != NULL, NULL);
 
-    if (len < 0)
-        len = strlen (str);
+    abs_len = (len < 0) ? strlen(str) : (size_t)len;
 
-    result = wmem_strndup(allocator, str, len);
+    result = wmem_strndup(allocator, str, abs_len);
     for (s = result; *s; s++)
         *s = g_ascii_tolower (*s);
 
@@ -371,9 +391,6 @@ ws_memrchr(const void *_haystack, int ch, size_t n)
 #endif /* HAVE_MEMRCHR */
 }
 
-#define FORMAT_SIZE_UNIT_MASK 0x00ff
-#define FORMAT_SIZE_PFX_MASK 0xff00
-
 static const char *thousands_grouping_fmt;
 static const char *thousands_grouping_fmt_flt;
 
@@ -424,7 +441,7 @@ static void truncate_numeric_strbuf(wmem_strbuf_t *strbuf, int n) {
         if (*p != decimal_point[0]) {
             p++;
         }
-        wmem_strbuf_truncate(strbuf, p - s);
+        wmem_strbuf_truncate(strbuf, (size_t)(p - s));
     }
 }
 
@@ -438,8 +455,6 @@ format_units(wmem_allocator_t *allocator, double size,
              int precision)
 {
     wmem_strbuf_t *human_str = wmem_strbuf_new(allocator, NULL);
-    double power = 1000.0;
-    int pfx_off = 6;
     bool is_small = false;
     /* is_small is when to use the longer, spelled out unit.
      * We use it for inf, NaN, 0, and unprefixed small values,
@@ -448,23 +463,12 @@ format_units(wmem_allocator_t *allocator, double size,
      */
     bool scientific = false;
     double abs_size = fabs(size);
-    int exponent = 0;
-    static const char * const si_prefix[] = {" a", " f", " p", " n", " μ", " m", " ", " k", " M", " G", " T", " P", " E"};
-    static const char * const iec_prefix[] = {" ", " Ki", " Mi", " Gi", " Ti", " Pi", " Ei"};
-    const char * const *prefix = si_prefix;
-    int max_exp = (int)G_N_ELEMENTS(si_prefix) - 1;
-
+    const struct prefix_parameters * const pp = prefix_parameters_for_flags(flags);
+    int prefix_index = pp->prefix_offset;
     char *ret_val;
 
     if (thousands_grouping_fmt == NULL)
         test_printf_thousands_grouping();
-
-    if (flags & FORMAT_SIZE_PREFIX_IEC) {
-        prefix = iec_prefix;
-        max_exp = (int)G_N_ELEMENTS(iec_prefix) - 1;
-        power = 1024.0;
-        pfx_off = 0;
-    }
 
     if (isfinite(size) && size != 0.0) {
 
@@ -481,30 +485,30 @@ format_units(wmem_allocator_t *allocator, double size,
          */
         if (abs_size < 1.0) {
             while (abs_size < comp) {
-                abs_size *= power;
-                exponent--;
-                if ((exponent + pfx_off) < 0) {
+                abs_size *= pp->power;
+                if (prefix_index == 0) {
                     scientific = true;
                     break;
                 }
+                prefix_index--;
             }
         } else {
-            while (abs_size >= comp*power) {
-                abs_size *= 1/power;
-                exponent++;
-                if ((exponent + pfx_off) > max_exp) {
+            while (abs_size >= comp * pp->power) {
+                abs_size /= pp->power;
+                if (prefix_index == pp->prefix_count - 1) {
                     scientific = true;
                     break;
                 }
+                prefix_index++;
             }
         }
     }
 
     if (scientific) {
         wmem_strbuf_append_printf(human_str, "%.*g", precision + 1, size);
-        exponent = 0;
+        prefix_index = pp->prefix_offset;
     } else {
-        if (exponent == 0) {
+        if (prefix_index == pp->prefix_offset) {
             is_small = true;
         }
         size = copysign(abs_size, size);
@@ -526,9 +530,7 @@ format_units(wmem_allocator_t *allocator, double size,
         // as is.)
     }
 
-    if ((size_t)(pfx_off + exponent) < G_N_ELEMENTS(si_prefix)) {
-        wmem_strbuf_append(human_str, prefix[pfx_off+exponent]);
-    }
+    wmem_strbuf_append(human_str, pp->prefix[prefix_index]);
 
     switch (unit) {
         case FORMAT_SIZE_UNIT_NONE:
@@ -594,72 +596,59 @@ format_units(wmem_allocator_t *allocator, double size,
  */
 char *
 format_size_wmem(wmem_allocator_t *allocator, int64_t size,
-                        format_size_units_e unit, uint16_t flags)
+                 format_size_units_e unit, uint16_t flags)
 {
     wmem_strbuf_t *human_str = wmem_strbuf_new(allocator, NULL);
-    int power = 1000;
-    int pfx_off = 0;
     bool is_small = false;
-    static const char *prefix[] = {" T", " G", " M", " k", " Ti", " Gi", " Mi", " Ki"};
+    const struct prefix_parameters * const pp = prefix_parameters_for_flags(flags);
     char *ret_val;
 
     if (thousands_grouping_fmt == NULL)
         test_printf_thousands_grouping();
 
-    if (flags & FORMAT_SIZE_PREFIX_IEC) {
-        pfx_off = 4;
-        power = 1024;
+    int prefix_index = pp->prefix_offset;
+    int64_t scale = 1;
+    while (prefix_index + 1 < pp->prefix_count && scale < INT64_MAX / (10 * pp->power) && size >= scale * pp->power * 10) {
+        prefix_index++;
+        scale *= pp->power;
     }
 
-    if (size / power / power / power / power >= 10) {
-        wmem_strbuf_append_printf(human_str, thousands_grouping_fmt, size / power / power / power / power);
-        wmem_strbuf_append(human_str, prefix[pfx_off]);
-    } else if (size / power / power / power >= 10) {
-        wmem_strbuf_append_printf(human_str, thousands_grouping_fmt, size / power / power / power);
-        wmem_strbuf_append(human_str, prefix[pfx_off+1]);
-    } else if (size / power / power >= 10) {
-        wmem_strbuf_append_printf(human_str, thousands_grouping_fmt, size / power / power);
-        wmem_strbuf_append(human_str, prefix[pfx_off+2]);
-    } else if (size / power >= 10) {
-        wmem_strbuf_append_printf(human_str, thousands_grouping_fmt, size / power);
-        wmem_strbuf_append(human_str, prefix[pfx_off+3]);
-    } else {
-        wmem_strbuf_append_printf(human_str, thousands_grouping_fmt, size);
-        is_small = true;
-    }
+    wmem_strbuf_append_printf(human_str, thousands_grouping_fmt, size / scale);
+    wmem_strbuf_append(human_str, pp->prefix[prefix_index]);
+    is_small = prefix_index == pp->prefix_offset;
 
     switch (unit) {
         case FORMAT_SIZE_UNIT_NONE:
             break;
         case FORMAT_SIZE_UNIT_BYTES:
-            wmem_strbuf_append(human_str, is_small ? " bytes" : "B");
+            wmem_strbuf_append(human_str, is_small ? "bytes" : "B");
             break;
         case FORMAT_SIZE_UNIT_BITS:
-            wmem_strbuf_append(human_str, is_small ? " bits" : "b");
+            wmem_strbuf_append(human_str, is_small ? "bits" : "b");
             break;
         case FORMAT_SIZE_UNIT_BITS_S:
-            wmem_strbuf_append(human_str, is_small ? " bits/s" : "bps");
+            wmem_strbuf_append(human_str, is_small ? "bits/s" : "bps");
             break;
         case FORMAT_SIZE_UNIT_BYTES_S:
-            wmem_strbuf_append(human_str, is_small ? " bytes/s" : "Bps");
+            wmem_strbuf_append(human_str, is_small ? "bytes/s" : "Bps");
             break;
         case FORMAT_SIZE_UNIT_PACKETS:
-            wmem_strbuf_append(human_str, is_small ? " packets" : "packets");
+            wmem_strbuf_append(human_str, is_small ? "packets" : "pkts");
             break;
         case FORMAT_SIZE_UNIT_PACKETS_S:
-            wmem_strbuf_append(human_str, is_small ? " packets/s" : "packets/s");
+            wmem_strbuf_append(human_str, is_small ? "packets/s" : "pkts/s");
             break;
         case FORMAT_SIZE_UNIT_FIELDS:
-            wmem_strbuf_append(human_str, is_small ? " fields" : "fields");
+            wmem_strbuf_append(human_str, is_small ? "fields" : "flds");
             break;
         /* These aren't that practical to use with integers, but
          * perhaps better than asserting.
          */
         case FORMAT_SIZE_UNIT_SECONDS:
-            wmem_strbuf_append(human_str, is_small ? " seconds" : "s");
+            wmem_strbuf_append(human_str, is_small ? "seconds" : "s");
             break;
         case FORMAT_SIZE_UNIT_ERLANGS:
-            wmem_strbuf_append(human_str, is_small ? " erlangs" : "E");
+            wmem_strbuf_append(human_str, is_small ? "erlangs" : "E");
             break;
         default:
             ws_assert_not_reached();
@@ -727,13 +716,11 @@ escape_string_len(wmem_allocator_t *alloc, const char *string, ssize_t len,
 {
     char c, r;
     wmem_strbuf_t *buf;
-    size_t alloc_size;
-    ssize_t i;
+    size_t abs_len, alloc_size, i;
 
-    if (len < 0)
-        len = strlen(string);
+    abs_len = (len < 0) ? strlen(string) : (size_t)len;
 
-    alloc_size = len;
+    alloc_size = abs_len;
     if (add_quotes)
         alloc_size += 2;
 
@@ -742,7 +729,7 @@ escape_string_len(wmem_allocator_t *alloc, const char *string, ssize_t len,
     if (add_quotes && quote_char != '\0')
         wmem_strbuf_append_c(buf, quote_char);
 
-    for (i = 0; i < len; i++) {
+    for (i = 0; i < abs_len; i++) {
         c = string[i];
         if ((escape_func(c, &r))) {
             wmem_strbuf_append_c(buf, '\\');
@@ -1230,7 +1217,7 @@ char *
 format_text(wmem_allocator_t *allocator,
                         const char *string, size_t len)
 {
-    return format_text_internal(allocator, string, len, false);
+    return format_text_internal(allocator, (const uint8_t*)string, len, false);
 }
 
 /** Given a wmem scope and a null-terminated string, expected to be in
@@ -1254,7 +1241,7 @@ format_text(wmem_allocator_t *allocator,
 char *
 format_text_string(wmem_allocator_t* allocator, const char *string)
 {
-    return format_text_internal(allocator, string, strlen(string), false);
+    return format_text_internal(allocator, (const uint8_t*)string, strlen(string), false);
 }
 
 /*
@@ -1266,7 +1253,7 @@ format_text_string(wmem_allocator_t* allocator, const char *string)
 char *
 format_text_wsp(wmem_allocator_t* allocator, const char *string, size_t len)
 {
-    return format_text_internal(allocator, string, len, true);
+    return format_text_internal(allocator, (const uint8_t*)string, len, true);
 }
 
 /*
@@ -1490,7 +1477,7 @@ hex_dump_buffer(bool (*print_line)(void *, const char *), void *fp,
     char                  line[MAX_LINE_LEN + 1];
     unsigned int          use_digits;
 
-    static char binhex[16] = {
+    static const char binhex[16] = {
         '0', '1', '2', '3', '4', '5', '6', '7',
         '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 

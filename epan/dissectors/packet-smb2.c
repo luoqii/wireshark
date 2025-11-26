@@ -34,6 +34,7 @@
 #include <epan/reassemble.h>
 #include <epan/uat.h>
 #include <epan/tfs.h>
+#include <epan/read_keytab_file.h>
 #include <wsutil/array.h>
 
 #include "packet-smb2.h"
@@ -41,8 +42,6 @@
 #include "packet-kerberos.h"
 #include "packet-windows-common.h"
 #include "packet-dcerpc-nt.h"
-
-#include "read_keytab_file.h"
 
 #include <wsutil/wsgcrypt.h>
 #include <wsutil/ws_roundup.h>
@@ -1626,8 +1625,8 @@ smb2_sesid_info_hash(const void *k)
  * This keeps track of fid to name mapping and application level conversations
  * over named pipes.
  *
- * This handles implementation bugs, where the fid_persitent is 0 or
- * the fid_persitent/fid_volative is not unique per conversation.
+ * This handles implementation bugs, where the fid_persistent is 0 or
+ * the fid_persistent/fid_volatile is not unique per conversation.
  */
 static int
 smb2_fid_info_equal(const void *k1, const void *k2)
@@ -2169,7 +2168,7 @@ dissect_smb2_olb_buffer(packet_info *pinfo, proto_tree *parent_tree, tvbuff_t *t
 		return;
 	}
 
-	sub_tvb = tvb_new_subset_length_caplen(tvb, off, MIN((int)len, tvb_captured_length_remaining(tvb, off)), len);
+	sub_tvb = tvb_new_subset_length(tvb, off, len);
 
 	dissector(sub_tvb, pinfo, sub_tree, si);
 }
@@ -2597,9 +2596,9 @@ dissect_smb2_fid(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, int offset
 	switch (mode) {
 	case FID_MODE_OPEN:
 		/* This mode is only for create requests */
+		offset = dissect_nt_guid_hnd(tvb, offset, pinfo, tree, &di, drep, hf_smb2_fid,
+				&policy_hnd, &hnd_item, PIDL_POLHND_OPEN);
 		if (si->saved) {
-			offset = dissect_nt_guid_hnd(tvb, offset, pinfo, tree, &di, drep, hf_smb2_fid,
-					&policy_hnd, &hnd_item, PIDL_POLHND_OPEN);
 			si->saved->hnd_item = hnd_item;
 		}
 		if (!pinfo->fd->visited) {
@@ -2823,7 +2822,7 @@ dissect_fscc_file_attr(tvbuff_t* tvb, proto_tree* parent_tree, int offset, uint3
 	return offset;
 }
 
-/* this info level is unique to SMB2 and differst from the corresponding
+/* this info level is unique to SMB2 and different from the corresponding
  * SMB_FILE_ALL_INFO in SMB
  */
 static int
@@ -4407,13 +4406,13 @@ dissect_smb2_session_setup_response(tvbuff_t *tvb, packet_info *pinfo, proto_tre
 	    ((si->session->session_key_frame == UINT32_MAX) ||
 	     (si->session->session_key_frame < pinfo->num)))
 	{
-		enc_key_t *ek;
+		const enc_key_t *ek;
 
 		if (krb_decrypt) {
 			read_keytab_file_from_preferences();
 		}
 
-		for (ek=enc_key_list;ek;ek=ek->next) {
+		for (ek=keytab_get_enc_key_list();ek;ek=ek->next) {
 			if (!ek->is_ap_rep_key) {
 				continue;
 			}
@@ -7391,7 +7390,6 @@ dissect_file_data_smb2_pipe(tvbuff_t *raw_tvb, packet_info *pinfo, proto_tree *t
 	const smb2_info_t *si = (const smb2_info_t *)data;
 	bool result=false;
 	bool save_fragmented;
-	int remaining;
 	unsigned reported_len;
 	const smb2_fid_info_t *file = NULL;
 	uint32_t id;
@@ -7405,11 +7403,7 @@ dissect_file_data_smb2_pipe(tvbuff_t *raw_tvb, packet_info *pinfo, proto_tree *t
 	file = smb2_pipe_get_fid_info(si);
 	id = (uint32_t)(GPOINTER_TO_UINT(file) & UINT32_MAX);
 
-	remaining = tvb_captured_length_remaining(raw_tvb, offset);
-
-	tvb = tvb_new_subset_length_caplen(raw_tvb, offset,
-			     MIN((int)datalen, remaining),
-			     datalen);
+	tvb = tvb_new_subset_length(raw_tvb, offset, datalen);
 
 	/*
 	 * Offer desegmentation service to Named Pipe subdissectors (e.g. DCERPC)
@@ -12306,7 +12300,7 @@ dissect_smb2_comp_transform_header(packet_info *pinfo, proto_tree *tree,
 
 	  new "chained" compressed method:
 
-	  [fist 8 bytes of COMPRESS_TRANSFORM_HEADER with Flags=CHAINED]
+	  [first 8 bytes of COMPRESS_TRANSFORM_HEADER with Flags=CHAINED]
 	    [ sequence of
                [ COMPRESSION_PAYLOAD_HEADER ]
                [ COMPRESSED PAYLOAD ]

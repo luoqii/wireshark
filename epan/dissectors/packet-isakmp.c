@@ -1571,7 +1571,7 @@ static const range_string notifmsg_v2_3gpp_type[] = {
   { 61472,61472,      "Auto-Discovery Sender (Fortinet)" },
   { 61473,61473,      "Auto-Discovery Receiver (Fortinet)" },
   { 61474,61519,      "Private Use - STATUS TYPES" },
-  { 61520,61520,      "Network Overlay ID (Fortinet" },
+  { 61520,61520,      "Network Overlay ID (Fortinet)" },
   { 61521,65535,      "Private Use - STATUS TYPES" },
   { 0,0,        NULL },
 };
@@ -1975,7 +1975,7 @@ typedef struct _ikev2_encr_alg_spec {
 #define IKEV2_ENCR_AES_CCM_256_12  119
 
 
-static ikev2_encr_alg_spec_t ikev2_encr_algs[] = {
+static const ikev2_encr_alg_spec_t ikev2_encr_algs[] = {
   {IKEV2_ENCR_NULL, 0, 1, 0, GCRY_CIPHER_NONE, GCRY_CIPHER_MODE_NONE, 0, 0},
   {IKEV2_ENCR_3DES, 24, 8, 8, GCRY_CIPHER_3DES, GCRY_CIPHER_MODE_CBC, 0, 0},
   {IKEV2_ENCR_AES_CBC_128, 16, 16, 16, GCRY_CIPHER_AES128, GCRY_CIPHER_MODE_CBC, 0, 0},
@@ -2049,7 +2049,7 @@ typedef struct _ikev2_auth_alg_spec {
 #define IKEV2_AUTH_HMAC_MD5_128  14
 #define IKEV2_AUTH_HMAC_SHA1_160 15
 
-static ikev2_auth_alg_spec_t ikev2_auth_algs[] = {
+static const ikev2_auth_alg_spec_t ikev2_auth_algs[] = {
 /*{number, output_len, key_len, trunc_len, gcry_alg, gcry_flag}*/
   {IKEV2_AUTH_NONE, 0, 0, 0, GCRY_MD_NONE, 0},
   {IKEV2_AUTH_HMAC_MD5_96, 16, 16, 12, GCRY_MD_MD5, GCRY_MD_FLAG_HMAC},
@@ -2073,8 +2073,8 @@ static ikev2_auth_alg_spec_t ikev2_auth_algs[] = {
 typedef struct _ikev2_decrypt_data {
   unsigned char *encr_key;
   unsigned char *auth_key;
-  ikev2_encr_alg_spec_t *encr_spec;
-  ikev2_auth_alg_spec_t *auth_spec;
+  const ikev2_encr_alg_spec_t *encr_spec;
+  const ikev2_auth_alg_spec_t *auth_spec;
 } ikev2_decrypt_data_t;
 
 typedef struct _ikev2_uat_data_key {
@@ -2096,8 +2096,8 @@ typedef struct _ikev2_uat_data {
   unsigned sk_ai_len;
   unsigned char *sk_ar;
   unsigned sk_ar_len;
-  ikev2_encr_alg_spec_t *encr_spec;
-  ikev2_auth_alg_spec_t *auth_spec;
+  const ikev2_encr_alg_spec_t *encr_spec;
+  const ikev2_auth_alg_spec_t *auth_spec;
 } ikev2_uat_data_t;
 
 static ikev2_uat_data_t* ikev2_uat_data;
@@ -2166,8 +2166,8 @@ static const value_string vs_ikev2_auth_algs[] = {
   {0, NULL}
 };
 
-static ikev2_encr_alg_spec_t* ikev2_decrypt_find_encr_spec(unsigned num) {
-  ikev2_encr_alg_spec_t *e;
+static const ikev2_encr_alg_spec_t* ikev2_decrypt_find_encr_spec(unsigned num) {
+  const ikev2_encr_alg_spec_t *e;
 
   for (e = ikev2_encr_algs; e->number != 0; e++) {
     if (e->number == num) {
@@ -2177,8 +2177,8 @@ static ikev2_encr_alg_spec_t* ikev2_decrypt_find_encr_spec(unsigned num) {
   return NULL;
 }
 
-static ikev2_auth_alg_spec_t* ikev2_decrypt_find_auth_spec(unsigned num) {
-  ikev2_auth_alg_spec_t *a;
+static const ikev2_auth_alg_spec_t* ikev2_decrypt_find_auth_spec(unsigned num) {
+  const ikev2_auth_alg_spec_t *a;
 
   for (a = ikev2_auth_algs; a->number != 0; a++) {
     if (a->number == num) {
@@ -2252,9 +2252,9 @@ generate_iv(const void *b1, size_t b1_len,
  * The caller owns the result and does not need to copy it.
  * This function may return NULL.
  */
-static gpointer
+static void *
 get_iv(uint32_t message_id, decrypt_data_t *decr) {
-  gpointer iv, iv1;
+  void *iv, *iv1;
   size_t cipher_blklen;
   void *msgid_key;
   uint32_t msgid_net;
@@ -3056,6 +3056,11 @@ static const uint8_t VID_FORTINET_EXCHANGE_INTERFACE_IP[] = { /* Exchange Interf
         0xE8, 0xB4, 0x99, 0xE3, 0x36, 0xC7, 0x6E, 0xE6
 };
 
+static const uint8_t VID_FORTINET_FORTICLIENT_EAP_EXTENSION[] = { /* Forticlient EAP Extension (Fortinet) */
+        0xC1, 0xDC, 0x43, 0x50, 0x47, 0x6B, 0x98, 0xA4,
+        0x29, 0xB9, 0x17, 0x81, 0x91, 0x4C, 0xA4, 0x3E
+};
+
 static const bytes_string vendor_id[] = {
   { VID_SSH_IPSEC_EXPRESS_1_1_0, sizeof(VID_SSH_IPSEC_EXPRESS_1_1_0), "Ssh Communications Security IPSEC Express version 1.1.0" },
   { VID_SSH_IPSEC_EXPRESS_1_1_1, sizeof(VID_SSH_IPSEC_EXPRESS_1_1_1), "Ssh Communications Security IPSEC Express version 1.1.1" },
@@ -3171,6 +3176,7 @@ static const bytes_string vendor_id[] = {
   { VID_FORTINET_AUTODISCOVERY_RECEIVER, sizeof(VID_FORTINET_AUTODISCOVERY_RECEIVER), "Auto-Discovery Receiver (Fortinet)" },
   { VID_FORTINET_AUTODISCOVERY_SENDER, sizeof(VID_FORTINET_AUTODISCOVERY_SENDER), "Auto-Discovery Sender (Fortinet)" },
   { VID_FORTINET_EXCHANGE_INTERFACE_IP, sizeof(VID_FORTINET_EXCHANGE_INTERFACE_IP), "Exchange Interface IP (Fortinet)" },
+  { VID_FORTINET_FORTICLIENT_EAP_EXTENSION, sizeof(VID_FORTINET_FORTICLIENT_EAP_EXTENSION), "Forticlient EAP Extension (Fortinet)" },
   { 0, 0, NULL }
 };
 
@@ -6181,7 +6187,7 @@ dissect_enc(tvbuff_t *tvb,
          * Unfortunately gcrypt_cipher_gettag() have nothing similar to gcry_md_read(),
          * so we need copy data to buffer here.
          * Here, depending on cgrypt version gcm length shall be given differently:
-         * - in 1.7.x length can be of any aproved length (4,8,12,13,14,15,16 bytes),
+         * - in 1.7.x length can be of any approved length (4,8,12,13,14,15,16 bytes),
          * - in 1.6.x length must be equal of cipher block length. Aaargh... :-(
          * We use accepted for both versions length of block size for GCM (16 bytes).
          * For CCM length given must be the same as given to gcry_cipher_ctl(GCRYCTL_SET_CCM_LENGTHS)
@@ -6487,8 +6493,8 @@ ikev2_uat_data_copy_cb(void *dest, const void *source, size_t len _U_)
   d->sk_ar = (unsigned char *)g_memdup2(o->sk_ar, o->sk_ar_len);
   d->sk_ar_len = o->sk_ar_len;
 
-  d->encr_spec = (ikev2_encr_alg_spec_t *)g_memdup2(o->encr_spec, sizeof(ikev2_encr_alg_spec_t));
-  d->auth_spec = (ikev2_auth_alg_spec_t *)g_memdup2(o->auth_spec, sizeof(ikev2_auth_alg_spec_t));
+  d->encr_spec = (const ikev2_encr_alg_spec_t *)g_memdup2(o->encr_spec, sizeof(ikev2_encr_alg_spec_t));
+  d->auth_spec = (const ikev2_auth_alg_spec_t *)g_memdup2(o->auth_spec, sizeof(ikev2_auth_alg_spec_t));
 
   return dest;
 }

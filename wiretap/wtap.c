@@ -18,8 +18,10 @@
 #include <sys/types.h>
 
 #include "wtap_opttypes.h"
-
 #include "file_wrappers.h"
+#include "wtap_module.h"
+
+#include <wsutil/array.h>
 #include <wsutil/file_util.h>
 #include <wsutil/buffer.h>
 #include <wsutil/ws_assert.h>
@@ -122,6 +124,18 @@ wtap_file_tsprec(wtap *wth)
 	return wth->file_tsprec;
 }
 
+const nstime_t*
+wtap_file_start_ts(wtap *wth)
+{
+	return &wth->file_start_ts;
+}
+
+const nstime_t*
+wtap_file_end_ts(wtap *wth)
+{
+	return &wth->file_end_ts;
+}
+
 unsigned
 wtap_file_get_num_shbs(wtap *wth)
 {
@@ -190,6 +204,17 @@ wtap_file_get_idb_info(wtap *wth)
 	idb_info->interface_data	= wth->interface_data;
 
 	return idb_info;
+}
+
+wtapng_dpib_lookup_info_t *
+wtap_file_get_dpib_lookup_info(wtap *wth)
+{
+	wtapng_dpib_lookup_info_t *lookup_info;
+
+	lookup_info = g_new(wtapng_dpib_lookup_info_t, 1);
+	lookup_info->dpibs = wth->dpibs;
+
+	return lookup_info;
 }
 
 wtap_block_t
@@ -277,6 +302,12 @@ void
 wtap_add_idb(wtap *wth, wtap_block_t idb)
 {
 	g_array_append_val(wth->interface_data, idb);
+}
+
+void
+wtap_add_dpib(wtap *wth, wtap_block_t dpib)
+{
+	g_array_append_val(wth->dpibs, dpib);
 }
 
 static wtap_block_t
@@ -559,6 +590,7 @@ wtap_dump_params_init(wtap_dump_params *params, wtap *wth)
 	params->nrbs_growing = wth->nrbs;
 	params->dsbs_growing = wth->dsbs;
 	params->mevs_growing = wth->meta_events;
+	params->dpibs_growing = wth->dpibs;
 	params->dont_copy_idbs = false;
 }
 
@@ -585,6 +617,7 @@ wtap_dump_params_init_no_idbs(wtap_dump_params *params, wtap *wth)
 	params->nrbs_growing = wth->nrbs;
 	params->dsbs_growing = wth->dsbs;
 	params->mevs_growing = wth->meta_events;
+	params->dpibs_growing = wth->dpibs;
 	params->dont_copy_idbs = true;
 }
 
@@ -1306,6 +1339,9 @@ static const struct encap_type_info encap_table_base[] = {
 
 	/* WTAP_ENCAP_DECT_NR */
 	{ "dect_nr", "DECT-2020 New Radio (NR) MAC layer" },
+
+	/* WTAP_ENCAP_MMODULE */
+	{ "m_module", "Bachmann M-Module File" },
 };
 
 WS_DLL_LOCAL
@@ -1592,6 +1628,7 @@ wtap_close(wtap *wth)
 	wtap_block_array_free(wth->interface_data);
 	wtap_block_array_free(wth->dsbs);
 	wtap_block_array_free(wth->meta_events);
+	wtap_block_array_free(wth->dpibs);
 
 	g_free(wth);
 }
@@ -1955,7 +1992,7 @@ wtap_read_so_far(wtap *wth)
 
 /* Perform global/initial initialization */
 void
-wtap_rec_init(wtap_rec *rec, gsize space)
+wtap_rec_init(wtap_rec *rec, size_t space)
 {
 	memset(rec, 0, sizeof *rec);
 	ws_buffer_init(&rec->options_buf, 0);
@@ -2216,7 +2253,7 @@ wtap_buffer_append_epdu_string(Buffer *buf, uint16_t epdu_tag, const char *val)
 	 */
 	if (string_len > UINT16_MAX)
 		string_len = UINT16_MAX;
-	wtap_buffer_append_epdu_tag(buf, epdu_tag, val, (uint16_t) string_len);
+	wtap_buffer_append_epdu_tag(buf, epdu_tag, (const uint8_t*)val, (uint16_t) string_len);
 }
 
 int
@@ -2237,15 +2274,16 @@ wtap_buffer_append_epdu_end(Buffer *buf)
  * Initialize the library.
  */
 void
-wtap_init(bool load_wiretap_plugins)
+wtap_init(bool load_wiretap_plugins, const char* app_env_var_prefix, const struct file_extension_info* file_extensions, unsigned num_extensions)
 {
 	init_open_routines();
 	wtap_opttypes_initialize();
 	wtap_init_encap_types();
-	wtap_init_file_type_subtypes();
+	wtap_init_file_type_subtypes(app_env_var_prefix);
+	wtap_init_file_type_extensions(file_extensions, num_extensions);
 	if (load_wiretap_plugins) {
 #ifdef HAVE_PLUGINS
-		libwiretap_plugins = plugins_init(WS_PLUGIN_WIRETAP);
+		libwiretap_plugins = plugins_init(WS_PLUGIN_WIRETAP, app_env_var_prefix);
 #endif
 		g_slist_foreach(wtap_plugins, call_plugin_register_wtap_module, NULL);
 	}

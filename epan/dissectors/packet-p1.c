@@ -1,7 +1,7 @@
 /* Do not modify this file. Changes will be overwritten.                      */
 /* Generated automatically by the ASN.1 to Wireshark dissector compiler       */
 /* packet-p1.c                                                                */
-/* asn2wrs.py -b -C -q -L -p p1 -c ./p1.cnf -s ./packet-p1-template -D . -O ../.. MTAAbstractService.asn MTSAbstractService.asn MTSAccessProtocol.asn MHSProtocolObjectIdentifiers.asn MTSUpperBounds.asn */
+/* asn2wrs.py -b -q -L -p p1 -c ./p1.cnf -s ./packet-p1-template -D . -O ../.. MTAAbstractService.asn MTSAbstractService.asn MTSAccessProtocol.asn MHSProtocolObjectIdentifiers.asn MTSUpperBounds.asn */
 
 /* packet-p1.c
  * Routines for X.411 (X.400 Message Transfer)  packet dissection
@@ -2667,14 +2667,14 @@ dissect_p1_PerMessageIndicators(bool implicit_tag _U_, tvbuff_t *tvb _U_, int of
 
 static int
 dissect_p1_Time(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-	tvbuff_t *arrival = NULL;
+	char *arrival = NULL;
 	p1_address_ctx_t* ctx = (p1_address_ctx_t*)actx->subtree.tree_ctx;
 
-	  offset = dissect_ber_UTCTime(implicit_tag, actx, tree, tvb, offset, hf_index, NULL, NULL);
+	  offset = dissect_ber_UTCTime(implicit_tag, actx, tree, tvb, offset, hf_index, &arrival, NULL);
 
 
 	if(arrival && ctx && ctx->do_address)
-		proto_item_append_text(actx->subtree.tree, " %s", tvb_format_text(actx->pinfo->pool, arrival, 0, tvb_reported_length(arrival)));
+		proto_item_append_text(actx->subtree.tree, " %s", arrival);
 
 
   return offset;
@@ -3585,6 +3585,8 @@ const value_string p1_NonDeliveryDiagnosticCode_vals[] = {
   {  78, "unsupported-security-policy" },
   { 0, NULL }
 };
+
+static value_string_ext p1_NonDeliveryDiagnosticCode_vals_ext = VALUE_STRING_EXT_INIT(p1_NonDeliveryDiagnosticCode_vals);
 
 
 int
@@ -9857,7 +9859,7 @@ void proto_register_p1(void) {
         "NonDeliveryReasonCode", HFILL }},
     { &hf_p1_non_delivery_diagnostic_code,
       { "non-delivery-diagnostic-code", "p1.non_delivery_diagnostic_code",
-        FT_UINT32, BASE_DEC, VALS(p1_NonDeliveryDiagnosticCode_vals), 0,
+        FT_UINT32, BASE_DEC|BASE_EXT_STRING, &p1_NonDeliveryDiagnosticCode_vals_ext, 0,
         "NonDeliveryDiagnosticCode", HFILL }},
     { &hf_p1_ContentTypes_item,
       { "ContentType", "p1.ContentType",

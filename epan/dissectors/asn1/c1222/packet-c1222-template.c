@@ -331,7 +331,9 @@ static uat_t *c1222_uat;
       fieldname##_allocated = fieldname##_len; \
       fieldname[0] = 0x06;  /* create absolute OID tag */ \
       fieldname[1] = (fieldname##_len - 2) & 0xff;  \
-      memcpy(&(fieldname[2]), c1222_baseoid, c1222_baseoid_len); \
+      if (c1222_baseoid != NULL) { \
+        memcpy(&(fieldname[2]), c1222_baseoid, c1222_baseoid_len); \
+      } \
       tvb_memcpy(tvb, &(fieldname[c1222_baseoid_len+2]), start_offset+2, length-2); \
       break; \
     case 0x06:  /* absolute OID */ \
@@ -850,7 +852,7 @@ keylookup(uint8_t *keybuff, uint8_t keyid)
  *
  * \param buffer points to a memory copy of the packet to be authenticated/decrypted
  *        and contains the decrypted value on successful return.
- * \param length lenth of input packet
+ * \param length length of input packet
  * \param decrypt true if packet is to be authenticated and decrypted; false if authentication only is requested
  * \returns true if the requested operation was successful; otherwise false
  */

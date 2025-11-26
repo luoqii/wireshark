@@ -56,12 +56,12 @@ static int hf_dvb_s2_section_syntax_indic;
 static int hf_dvb_s2_private_indicator;
 static int hf_dvb_s2_reserved_1;
 static int hf_dvb_s2_section_length;
-static int hf_dvb_s2_mac_addres_6;
-static int hf_dvb_s2_mac_addres_5;
-static int hf_dvb_s2_mac_addres_4;
-static int hf_dvb_s2_mac_addres_3;
-static int hf_dvb_s2_mac_addres_2;
-static int hf_dvb_s2_mac_addres_1;
+static int hf_dvb_s2_mac_address_6;
+static int hf_dvb_s2_mac_address_5;
+static int hf_dvb_s2_mac_address_4;
+static int hf_dvb_s2_mac_address_3;
+static int hf_dvb_s2_mac_address_2;
+static int hf_dvb_s2_mac_address_1;
 static int hf_dvb_s2_reserved_2;
 static int hf_dvb_s2_payload_scrambling_control;
 static int hf_dvb_s2_address_scrambling_control;
@@ -591,9 +591,9 @@ static const value_string table_modcods[] = {
 #define DVB_S2_TABLE_TX_TYPE_CODE_RATE_MASK 0x1C
 #define DVB_S2_TABLE_TX_TYPE_CONSTRAINT_LENGTH_K_MASK 0x01
 #define DVB_S2_TABLE_TX_TYPE_PARAM_INTERLEAVER_MASK 0x01
-#define DVB_S2_TABLE_TX_TYPE_N_MASK 0xFFF0
+#define DVB_S2_TABLE_TX_TYPE_N_MASK 0xF0
 #define DVB_S2_TABLE_TX_TYPE_S_MASK 0x0FC0
-#define DVB_S2_TABLE_TX_TYPE_P_MASK 0x3FF0
+#define DVB_S2_TABLE_TX_TYPE_P_MASK 0xF0
 #define DVB_S2_TABLE_TX_TYPE_N1_12_MASK 0x0FF8
 #define DVB_S2_TABLE_TX_TYPE_K1_12_MASK 0x07FC
 #define DVB_S2_TABLE_TX_TYPE_K2_12_MASK 0x03FE
@@ -2350,10 +2350,10 @@ static int dissect_dvb_s2_table(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
         proto_tree_add_item(dvb_s2_hdr_table_tree, hf_dvb_s2_section_length , tvb, cur_off + new_off, 2, ENC_NA);
         new_off +=2;
         mac_6 = tvb_get_uint8(tvb, cur_off + new_off);
-        proto_tree_add_item(dvb_s2_hdr_table_tree, hf_dvb_s2_mac_addres_6 , tvb, cur_off + new_off, 1, ENC_NA);
+        proto_tree_add_item(dvb_s2_hdr_table_tree, hf_dvb_s2_mac_address_6 , tvb, cur_off + new_off, 1, ENC_NA);
         new_off +=1;
         mac_5 = tvb_get_uint8(tvb, cur_off + new_off);
-        proto_tree_add_item(dvb_s2_hdr_table_tree, hf_dvb_s2_mac_addres_5 , tvb, cur_off + new_off, 1, ENC_NA);
+        proto_tree_add_item(dvb_s2_hdr_table_tree, hf_dvb_s2_mac_address_5 , tvb, cur_off + new_off, 1, ENC_NA);
         new_off +=1;
         proto_tree_add_item(dvb_s2_hdr_table_tree, hf_dvb_s2_reserved_2, tvb, cur_off + new_off, 1, ENC_NA);
         proto_tree_add_item(dvb_s2_hdr_table_tree, hf_dvb_s2_payload_scrambling_control, tvb, cur_off + new_off, 1, ENC_NA);
@@ -2366,16 +2366,16 @@ static int dissect_dvb_s2_table(tvbuff_t *tvb, packet_info *pinfo, proto_tree *t
         proto_tree_add_item(dvb_s2_hdr_table_tree, hf_dvb_s2_last_section_number , tvb, cur_off + new_off, 1, ENC_NA);
         new_off +=1;
         mac_4 = tvb_get_uint8(tvb, cur_off + new_off);
-        proto_tree_add_item(dvb_s2_hdr_table_tree, hf_dvb_s2_mac_addres_4 , tvb, cur_off + new_off, 1, ENC_NA);
+        proto_tree_add_item(dvb_s2_hdr_table_tree, hf_dvb_s2_mac_address_4 , tvb, cur_off + new_off, 1, ENC_NA);
         new_off +=1;
         mac_3 = tvb_get_uint8(tvb, cur_off + new_off);
-        proto_tree_add_item(dvb_s2_hdr_table_tree, hf_dvb_s2_mac_addres_3 , tvb, cur_off + new_off, 1, ENC_NA);
+        proto_tree_add_item(dvb_s2_hdr_table_tree, hf_dvb_s2_mac_address_3 , tvb, cur_off + new_off, 1, ENC_NA);
         new_off +=1;
         mac_2 = tvb_get_uint8(tvb, cur_off + new_off);
-        proto_tree_add_item(dvb_s2_hdr_table_tree, hf_dvb_s2_mac_addres_2 , tvb, cur_off + new_off, 1, ENC_NA);
+        proto_tree_add_item(dvb_s2_hdr_table_tree, hf_dvb_s2_mac_address_2 , tvb, cur_off + new_off, 1, ENC_NA);
         new_off +=1;
         mac_1 = tvb_get_uint8(tvb, cur_off + new_off);
-        proto_tree_add_item(dvb_s2_hdr_table_tree, hf_dvb_s2_mac_addres_1 , tvb, cur_off + new_off, 1, ENC_NA);
+        proto_tree_add_item(dvb_s2_hdr_table_tree, hf_dvb_s2_mac_address_1 , tvb, cur_off + new_off, 1, ENC_NA);
         new_off +=1;
         if ((mac_1 == 0xff) && (mac_2 == 0xff) && (mac_3 == 0xff) && (mac_4 == 0xff) && (mac_5 == 0xff) && (mac_6 == 0xff)) {
             table_id = DVB_S2_TABLE_TIMB;
@@ -2607,32 +2607,32 @@ void proto_register_dvb_s2_table(void)
                 FT_UINT16, BASE_DEC, NULL, DVB_S2_TABLE_SECTION_LENGTH_MASK,
                 NULL, HFILL}
         },
-        {&hf_dvb_s2_mac_addres_6, {
+        {&hf_dvb_s2_mac_address_6, {
                 "Table MAC address 6", "dvb-s2_table.mac_address_6",
                 FT_UINT8, BASE_HEX, NULL, 0x0,
                 NULL, HFILL}
         },
-        {&hf_dvb_s2_mac_addres_5, {
+        {&hf_dvb_s2_mac_address_5, {
                 "Table MAC address 5", "dvb-s2_table.mac_address_5",
                 FT_UINT8, BASE_HEX, NULL, 0x0,
                 NULL, HFILL}
         },
-        {&hf_dvb_s2_mac_addres_4, {
+        {&hf_dvb_s2_mac_address_4, {
                 "Table MAC address 4", "dvb-s2_table.mac_address_4",
                 FT_UINT8, BASE_HEX, NULL, 0x0,
                 NULL, HFILL}
         },
-        {&hf_dvb_s2_mac_addres_3, {
+        {&hf_dvb_s2_mac_address_3, {
                 "Table MAC address 3", "dvb-s2_table.mac_address_3",
                 FT_UINT8, BASE_HEX, NULL, 0x0,
                 NULL, HFILL}
         },
-        {&hf_dvb_s2_mac_addres_2, {
+        {&hf_dvb_s2_mac_address_2, {
                 "Table MAC address 2", "dvb-s2_table.mac_address_2",
                 FT_UINT8, BASE_HEX, NULL, 0x0,
                 NULL, HFILL}
         },
-        {&hf_dvb_s2_mac_addres_1, {
+        {&hf_dvb_s2_mac_address_1, {
                 "Table MAC address 1", "dvb-s2_table.mac_address_1",
                 FT_UINT8, BASE_HEX, NULL, 0x0,
                 NULL, HFILL}
@@ -3357,7 +3357,7 @@ void proto_register_dvb_s2_table(void)
         },
         {&hf_dvb_s2_table_tx_type_n, {
                 "Tx type N", "dvb-s2_table.tx_type.n",
-                FT_UINT16, BASE_DEC, NULL, DVB_S2_TABLE_TX_TYPE_N_MASK,
+                FT_UINT8, BASE_DEC, NULL, DVB_S2_TABLE_TX_TYPE_N_MASK,
                 NULL, HFILL}
         },
         {&hf_dvb_s2_table_tx_type_s, {
@@ -3367,7 +3367,7 @@ void proto_register_dvb_s2_table(void)
         },
         {&hf_dvb_s2_table_tx_type_p_interleaver, {
                 "Tx type p", "dvb-s2_table.tx_type.p",
-                FT_UINT16, BASE_DEC, NULL, DVB_S2_TABLE_TX_TYPE_P_MASK,
+                FT_UINT8, BASE_DEC, NULL, DVB_S2_TABLE_TX_TYPE_P_MASK,
                 NULL, HFILL}
         },
         {&hf_dvb_s2_table_tx_type_n1_12, {

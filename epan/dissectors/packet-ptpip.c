@@ -112,6 +112,7 @@ static const value_string ptp_opcode_names[] = {
     { PTP_OC_GetObjectHandles,                          "GetObjectHandles" },
     { PTP_OC_GetObjectInfo,                             "GetObjectInfo" },
     { PTP_OC_GetObject,                                 "GetObject" },
+    { PTP_OC_GetThumb,                                  "GetThumb" },
     { PTP_OC_DeleteObject,                              "DeleteObject" },
     { PTP_OC_SendObjectInfo,                            "SendObjectInfo" },
     { PTP_OC_SendObject,                                "SendObject" },
@@ -262,7 +263,6 @@ static value_string_ext ptp_opcode_canon_names_ext = VALUE_STRING_EXT_INIT(ptp_o
 
 static const value_string ptp_opcode_nikon_names[] = {
     { PTP_OC_NIKON_GetProfileAllData,                   "NIKON_GetProfileAllData" },
-    { PTP_OC_NIKON_SendProfileData,                     "NIKON_SendProfileData" },
     { PTP_OC_NIKON_SendProfileData,                     "NIKON_SendProfileData" },
     { PTP_OC_NIKON_DeleteProfile,                       "NIKON_DeleteProfile" },
     { PTP_OC_NIKON_SetProfileData,                      "NIKON_SetProfileData" },
@@ -981,7 +981,7 @@ void dissect_ptp_transactionID(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tr
 
 /**
  * This method handles dissecting the Unicode name that is
- * specificed in multiple packets.
+ * specified in multiple packets.
  */
 static void dissect_ptpIP_unicode_name(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, uint16_t *offset)
 {

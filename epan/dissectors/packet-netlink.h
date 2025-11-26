@@ -10,7 +10,7 @@
 #ifndef __PACKET_NETLINK_H__
 #define __PACKET_NETLINK_H__
 
-#include <epan/value_string.h>
+#include <wsutil/value_string.h>
 
 /* from <include/uapi/linux/netlink.h> prefixed with WS_ */
 enum {
@@ -91,6 +91,7 @@ enum ws_nfproto {
 };
 extern const value_string nfproto_family_vals[];
 extern const value_string netfilter_hooks_vals[];
+extern const value_string nfq_ctinfo_vals[];
 
 #define PACKET_NETLINK_MAGIC 0x4A5ACCCE
 

@@ -44,6 +44,7 @@ public:
     void setPlotStartTime(double start_time);
     bool absoluteTime() const { return abs_time_; }
     void setAbsoluteTime(bool abs_time);
+    void setYAxisFactor(double y_axis_factor);
     int hfIndex() const { return hf_index_; }
     const std::vector<plot_item_t>& getItems() const { return items_; }
 
@@ -51,6 +52,7 @@ public:
 
     static bool itemCompare(const plot_item_t& a, const plot_item_t& b);
     static bool itemRelCapCompare(const plot_item_t& a, const plot_item_t& b);
+    static void setAxisColor(QCPAxis* axis, const QPen& pen);
     uint32_t packetFromTime(double ts) const;
 
     void makeCsv(QTextStream& stream) const;

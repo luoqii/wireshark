@@ -28,6 +28,7 @@ DIAG_ON(frame-larger-than=)
 #include <epan/stats_tree_priv.h>
 #include <epan/plugin_if.h>
 #include <epan/export_object.h>
+#include <epan/secrets.h>
 
 #include "ui/iface_toolbar.h"
 
@@ -36,7 +37,6 @@ DIAG_ON(frame-larger-than=)
 #include <capture/capture_session.h>
 #endif
 
-#include "ui/alert_box.h"
 #ifdef HAVE_LIBPCAP
 #include "ui/capture_ui_utils.h"
 #endif
@@ -90,6 +90,7 @@ DIAG_ON(frame-larger-than=)
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QUrl>
+#include <ui/tap-aggregation.h>
 
 //menu_recent_file_write_all
 
@@ -431,6 +432,11 @@ WiresharkMainWindow::WiresharkMainWindow(QWidget *parent) :
     connect(mainApp, &MainApplication::preferencesChanged, this, &WiresharkMainWindow::updatePreferenceActions);
     connect(mainApp, &MainApplication::preferencesChanged, this, &WiresharkMainWindow::zoomText);
     connect(mainApp, &MainApplication::preferencesChanged, this, &WiresharkMainWindow::updateTitlebar);
+    connect(mainApp, &MainApplication::aggregationVisiblity,
+        [this] {
+            main_ui_->actionAggregationView->setVisible(prefs.enable_aggregation);
+        });
+    connect(mainApp, &MainApplication::aggregationChanged, [this]() { if (recent.aggregation_view) { aggregationViewChanged(true); } });
 
     connect(mainApp, &MainApplication::updateRecentCaptureStatus, this, &WiresharkMainWindow::updateRecentCaptures);
     connect(mainApp, &MainApplication::preferencesChanged, this, &WiresharkMainWindow::updateRecentCaptures);
@@ -1499,7 +1505,7 @@ bool WiresharkMainWindow::saveCaptureFile(capture_file *cf, bool dont_reopen) {
 bool WiresharkMainWindow::saveAsCaptureFile(capture_file *cf, bool must_support_comments, bool dont_reopen) {
     QString file_name = "";
     int file_type;
-    wtap_compression_type compression_type;
+    ws_compression_type compression_type;
     cf_write_status_t status;
     char    *dirname;
     bool discard_comments = false;
@@ -1617,7 +1623,7 @@ bool WiresharkMainWindow::saveAsCaptureFile(capture_file *cf, bool must_support_
 void WiresharkMainWindow::exportSelectedPackets() {
     QString file_name = "";
     int file_type;
-    wtap_compression_type compression_type;
+    ws_compression_type compression_type;
     packet_range_t range;
     cf_write_status_t status;
     char    *dirname;
@@ -2084,6 +2090,7 @@ void WiresharkMainWindow::initMainToolbarIcons()
     main_ui_->actionGoPreviousHistoryPacket->setIcon(StockIcon("go-previous"));
     main_ui_->actionGoNextHistoryPacket->setIcon(StockIcon("go-next"));
     main_ui_->actionGoAutoScroll->setIcon(StockIcon("x-stay-last"));
+    main_ui_->actionAggregationView->setIcon(StockIcon("aggregation"));
 
     main_ui_->actionViewColorizePacketList->setIcon(StockIcon("x-colorize-packets"));
 
@@ -2149,6 +2156,7 @@ void WiresharkMainWindow::initTimeDisplayFormatMenu()
     td_actions[main_ui_->actionViewTimeDisplayFormatDateYDOYandTimeOfDay] = TS_ABSOLUTE_WITH_YDOY;
     td_actions[main_ui_->actionViewTimeDisplayFormatTimeOfDay] = TS_ABSOLUTE;
     td_actions[main_ui_->actionViewTimeDisplayFormatSecondsSinceEpoch] = TS_EPOCH;
+    td_actions[main_ui_->actionViewTimeDisplayFormatSecondsSinceCaptureStart] = TS_RELATIVE_CAP;
     td_actions[main_ui_->actionViewTimeDisplayFormatSecondsSinceFirstCapturedPacket] = TS_RELATIVE;
     td_actions[main_ui_->actionViewTimeDisplayFormatSecondsSincePreviousCapturedPacket] = TS_DELTA;
     td_actions[main_ui_->actionViewTimeDisplayFormatSecondsSincePreviousDisplayedPacket] = TS_DELTA_DIS;
@@ -2389,6 +2397,9 @@ void WiresharkMainWindow::setMenusForCaptureFile(bool force_disable)
         can_save_as = cf_can_save_as(capture_file_.capFile());
     }
 
+    main_ui_->actionAggregationView->setVisible(prefs.enable_aggregation);
+    main_ui_->actionAggregationView->setChecked(recent.aggregation_view);
+
     main_ui_->actionViewReload_as_File_Format_or_Capture->setEnabled(enable);
     main_ui_->actionFileMerge->setEnabled(can_write);
     main_ui_->actionFileClose->setEnabled(enable);
@@ -2415,10 +2426,7 @@ void WiresharkMainWindow::setMenusForCaptureFile(bool force_disable)
 
     main_ui_->actionFileExportPDU->setEnabled(enable);
     main_ui_->actionFileStripHeaders->setEnabled(enable);
-    /* XXX: "Export TLS Session Keys..." should be enabled only if
-     * ssl_session_key_count() > 0.
-     */
-    main_ui_->actionFileExportTLSSessionKeys->setEnabled(enable);
+    main_ui_->actionFileExportTLSSessionKeys->setEnabled(enable && secrets_get_count("TLS") > 0);
 
     foreach(QAction *eo_action, main_ui_->menuFileExportObjects->actions()) {
         eo_action->setEnabled(enable);
@@ -2507,12 +2515,14 @@ void WiresharkMainWindow::setForCapturedPackets(bool have_captured_packets)
     main_ui_->actionEditFindPrevious->setEnabled(have_captured_packets);
 
     main_ui_->actionGoGoToPacket->setEnabled(have_captured_packets);
-    main_ui_->actionGoPreviousPacket->setEnabled(have_captured_packets);
     main_ui_->actionGoNextPacket->setEnabled(have_captured_packets);
+    main_ui_->actionGoPreviousPacket->setEnabled(have_captured_packets);
     main_ui_->actionGoFirstPacket->setEnabled(have_captured_packets);
     main_ui_->actionGoLastPacket->setEnabled(have_captured_packets);
     main_ui_->actionGoNextConversationPacket->setEnabled(have_captured_packets);
     main_ui_->actionGoPreviousConversationPacket->setEnabled(have_captured_packets);
+    main_ui_->actionGoFirstConversationPacket->setEnabled(have_captured_packets);
+    main_ui_->actionGoLastConversationPacket->setEnabled(have_captured_packets);
 
     main_ui_->actionViewZoomIn->setEnabled(have_captured_packets);
     main_ui_->actionViewZoomOut->setEnabled(have_captured_packets);
@@ -2950,6 +2960,11 @@ void WiresharkMainWindow::addPluginIFStructures()
 
     if (cntToolbars)
         tbMenu->menuAction()->setVisible(true);
+}
+
+void WiresharkMainWindow::setFunnelMenus(void)
+{
+    funnel_statistics_->loadInitFunnelMenus();
 }
 
 void WiresharkMainWindow::removeAdditionalToolbar(QString toolbarName)

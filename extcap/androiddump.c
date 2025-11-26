@@ -28,6 +28,8 @@
 #include <wsutil/cmdarg_err.h>
 #include <wsutil/inet_addr.h>
 #include <wsutil/exported_pdu_tlvs.h>
+#include <wsutil/report_message.h>
+#include <wsutil/application_flavor.h>
 
 #include "ui/failure_message.h"
 
@@ -360,8 +362,8 @@ static const char* interface_to_logbuf(char* interface)
 #ifdef _WIN32
 #define CONTINUE_ON_TIMEOUT(length) \
     if (length == SOCKET_ERROR) { \
-        int err = WSAGetLastError(); \
-        if (err == WSAETIMEDOUT || err == WSAEWOULDBLOCK) \
+        int last_err = WSAGetLastError(); \
+        if (last_err == WSAETIMEDOUT || last_err == WSAEWOULDBLOCK) \
             continue; \
     }
 #elif EWOULDBLOCK != EAGAIN
@@ -463,20 +465,23 @@ static struct extcap_dumper extcap_dumper_open(char *fifo, int encap) {
     int file_type_subtype;
     int err = 0;
     char *err_info = NULL;
+    const struct file_extension_info* file_extensions;
+    unsigned num_extensions;
 
-    wtap_init(false);
+    application_file_extensions(&file_extensions, &num_extensions);
+    wtap_init(false, application_configuration_environment_prefix(), file_extensions, num_extensions);
 
     params.encap = encap;
     params.snaplen = PACKET_LENGTH;
     file_type_subtype = wtap_pcap_nsec_file_type_subtype();
-    extcap_dumper.dumper.wtap = wtap_dump_open(fifo, file_type_subtype, WTAP_UNCOMPRESSED, &params, &err, &err_info);
+    extcap_dumper.dumper.wtap = wtap_dump_open(fifo, file_type_subtype, WS_FILE_UNCOMPRESSED, &params, &err, &err_info);
     if (!extcap_dumper.dumper.wtap) {
-        cfile_dump_open_failure_message(fifo, err, err_info, file_type_subtype);
+        report_cfile_dump_open_failure(fifo, err, err_info, file_type_subtype);
         exit(EXIT_CODE_CANNOT_SAVE_WIRETAP_DUMP);
     }
     extcap_dumper.encap = encap;
     if (!wtap_dump_flush(extcap_dumper.dumper.wtap, &err)) {
-        cfile_dump_open_failure_message(fifo, err, NULL, file_type_subtype);
+        report_cfile_dump_open_failure(fifo, err, NULL, file_type_subtype);
         exit(EXIT_CODE_CANNOT_SAVE_WIRETAP_DUMP);
     }
 #endif
@@ -527,18 +532,18 @@ static bool extcap_dumper_dump(struct extcap_dumper extcap_dumper,
     rec.rec_header.packet_header.caplen = (uint32_t) captured_length;
     rec.rec_header.packet_header.len = (uint32_t) reported_length;
 
-    ws_buffer_append(&rec.data, buffer, captured_length);
+    ws_buffer_append(&rec.data, (const uint8_t*)buffer, captured_length);
 
     if (!wtap_dump(extcap_dumper.dumper.wtap, &rec, &err, &err_info)) {
-        cfile_write_failure_message(NULL, fifo, err, err_info, 0,
-                                    wtap_dump_file_type_subtype(extcap_dumper.dumper.wtap));
+        report_cfile_write_failure(NULL, fifo, err, err_info, 0,
+                                   wtap_dump_file_type_subtype(extcap_dumper.dumper.wtap));
         wtap_rec_cleanup(&rec);
         return false;
     }
 
     if (!wtap_dump_flush(extcap_dumper.dumper.wtap, &err)) {
-        cfile_write_failure_message(NULL, fifo, err, NULL, 0,
-                                    wtap_dump_file_type_subtype(extcap_dumper.dumper.wtap));
+        report_cfile_write_failure(NULL, fifo, err, NULL, 0,
+                                   wtap_dump_file_type_subtype(extcap_dumper.dumper.wtap));
         wtap_rec_cleanup(&rec);
         return false;
     }
@@ -1685,7 +1690,7 @@ static int capture_android_bluetooth_external_parser(char *interface,
     uint64_t                      *timestamp;
     char                          *packet = buffer + BLUEDROID_TIMESTAMP_SIZE - sizeof(own_pcap_bluetooth_h4_header); /* skip timestamp (8 bytes) and reuse its space for header */
     own_pcap_bluetooth_h4_header  *h4_header;
-    uint8_t                       *payload = packet + sizeof(own_pcap_bluetooth_h4_header);
+    uint8_t                       *payload = (uint8_t*)(packet + sizeof(own_pcap_bluetooth_h4_header));
     const char                    *adb_tcp_bluedroid_external_parser_template = "tcp:%05u";
     socklen_t                      slen;
     ssize_t                        length;
@@ -2514,7 +2519,7 @@ int main(int argc, char *argv[]) {
      * Attempt to get the pathname of the directory containing the
      * executable file.
      */
-    err_msg = configuration_init(argv[0]);
+    err_msg = configuration_init(argv[0], "wireshark");
     if (err_msg != NULL) {
         ws_warning("Can't get pathname of directory containing the extcap program: %s.",
                   err_msg);
@@ -2525,7 +2530,7 @@ int main(int argc, char *argv[]) {
 
     extcap_conf = g_new0(extcap_parameters, 1);
 
-    help_url = data_file_url("androiddump.html");
+    help_url = data_file_url("androiddump.html", application_configuration_environment_prefix());
     extcap_base_set_util_info(extcap_conf, argv[0], ANDROIDDUMP_VERSION_MAJOR, ANDROIDDUMP_VERSION_MINOR,
         ANDROIDDUMP_VERSION_RELEASE, help_url);
     g_free(help_url);

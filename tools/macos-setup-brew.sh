@@ -20,12 +20,17 @@ function print_usage() {
     printf "The basic usage installs the needed software\\n\\n"
     printf "Usage: %s [--install-optional] [--install-dmg-deps] [...other options...]\\n" "$0"
     printf "\\t--install-required: install third party libraries required to build Wireshark\\n"
+    printf "\\t  (You should probably set WIRESHARK_BASE_DIR instead:\\n"
+    printf "\\t  (https://www.wireshark.org/docs/wsdg_html_chunked/ChapterSetup.html#_macos)\\n"
     printf "\\t--install-optional: install optional third party libraries\\n"
+    printf "\\t  (You should probably set WIRESHARK_BASE_DIR instead.)\\n"
     printf "\\t--install-doc-deps: install packages required to build the documentation\\n"
+    printf "\\t  (You should probably set WIRESHARK_BASE_DIR instead.)\\n"
     printf "\\t--install-dmg-deps: install packages required to build the .dmg file\\n"
     printf "\\t--install-sparkle-deps: install the Sparkle automatic updater\\n"
     printf "\\t--install-test-deps: install packages required for automated testing\\n"
     printf "\\t--install-all: install everything\\n"
+    printf "\\t  (You should probably set WIRESHARK_BASE_DIR instead.)\\n"
     printf "\\t--install-stratoshark: install everything to compile Stratoshark and the Falco Events plugin\\n"
     printf "\\t[other]: other options are passed as-is to brew\\n"
 }
@@ -55,7 +60,7 @@ INSTALL_STRATOSHARK=0
 OPTIONS=()
 for arg; do
     case $arg in
-        --help)
+        --help|-h)
             print_usage
             exit 0
             ;;
@@ -97,6 +102,7 @@ BUILD_LIST=(
     ccache
     cmake
     ninja
+    pkgconf
 )
 
 # Qt isn't technically required, but...

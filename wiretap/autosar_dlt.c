@@ -24,7 +24,7 @@
 #include "autosar_dlt.h"
 
 #include "file_wrappers.h"
-#include "wtap-int.h"
+#include "wtap_module.h"
 
 static const uint8_t dlt_magic[] = { 'D', 'L', 'T', 0x01 };
 
@@ -173,6 +173,7 @@ autosar_dlt_read_block(autosar_dlt_params_t *params, int64_t start_pos, int *err
         void *tmpbuf = g_malloc0(sizeof header);
         if (!wtap_read_bytes_or_eof(params->fh, tmpbuf, sizeof header - 4, err, err_info)) {
             /* this would have been caught before ...*/
+            g_free(tmpbuf);
             *err = WTAP_ERR_BAD_FILE;
             g_free(*err_info);
             *err_info = ws_strdup_printf("AUTOSAR DLT: Internal Error! Not enough bytes for storage header at pos 0x%" PRIx64 "!", start_pos);
@@ -188,6 +189,7 @@ autosar_dlt_read_block(autosar_dlt_params_t *params, int64_t start_pos, int *err
         }
 
         if (!wtap_read_bytes_or_eof(params->fh, tmpbuf, item_header.length, err, err_info)) {
+            g_free(tmpbuf);
             *err = WTAP_ERR_BAD_FILE;
             g_free(*err_info);
             *err_info = ws_strdup_printf("AUTOSAR DLT: Capture file cut short! Not enough bytes for item at pos 0x%" PRIx64 "!", start_pos);

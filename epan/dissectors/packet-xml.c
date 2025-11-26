@@ -15,6 +15,8 @@
 
 #include "config.h"
 
+#define WS_LOG_DOMAIN "XML"
+
 #include <string.h>
 #include <errno.h>
 
@@ -26,12 +28,12 @@
 #include <epan/expert.h>
 #include <epan/iana_charsets.h>
 #include <epan/asn1.h>
+#include <epan/read_keytab_file.h>
 #include <wsutil/str_util.h>
 #include <wsutil/report_message.h>
 #include <wsutil/wsgcrypt.h>
 #include <wsutil/array.h>
 #include "packet-kerberos.h"
-#include "read_keytab_file.h"
 
 #include <libxml/parser.h>
 
@@ -108,8 +110,8 @@ typedef struct _xml_ns_t {
 
 } xml_ns_t;
 
-static xml_ns_t xml_ns     = {"xml",     "/", -1, -1, -1, NULL, NULL, NULL};
-static xml_ns_t unknown_ns = {"unknown", "?", -1, -1, -1, NULL, NULL, NULL};
+static xml_ns_t xml_ns     = {"xml",     "/", 0, 0, 0, NULL, NULL, NULL};
+static xml_ns_t unknown_ns = {"unknown", "?", 0, 0, 0, NULL, NULL, NULL};
 static xml_ns_t *root_ns;
 
 static bool pref_heuristic_unicode;
@@ -143,7 +145,7 @@ static wmem_array_t *hf_arr;
 static GArray *ett_arr;
 static GRegex* encoding_pattern;
 
-static const char *default_media_types[] = {
+static const char * const default_media_types[] = {
     "text/xml",
     "text/vnd.wap.wml",
     "text/vnd.wap.si",
@@ -811,7 +813,7 @@ static void after_untag(void *tvbparse_data, const void *wanted_data _U_, tvbpar
         xml_frame_t *nonce_frame = xml_get_tag(current_frame, "Nonce");
         xml_frame_t *nonce_cdata = NULL;
         tvbuff_t *nonce_tvb = NULL;
-        enc_key_t *ek = NULL;
+        const enc_key_t *ek = NULL;
         uint8_t seed[64];
         size_t seed_length = 16; // TODO
         const size_t key_length = 16; //TODO
@@ -833,7 +835,7 @@ static void after_untag(void *tvbparse_data, const void *wanted_data _U_, tvbpar
                 read_keytab_file_from_preferences();
             }
 
-            for (ek=enc_key_list;ek;ek=ek->next) {
+            for (ek=keytab_get_enc_key_list();ek;ek=ek->next) {
                 if (ek->fd_num == (int)current_frame->pinfo->num) {
                     break;
                 }
@@ -1193,9 +1195,9 @@ static xml_ns_t *xml_new_namespace(wmem_map_t *hash, const char *name, ...)
     char     *attr_name;
 
     ns->name       = wmem_strdup(wmem_epan_scope(), name);
-    ns->hf_tag     = -1;
-    ns->hf_cdata   = -1;
-    ns->ett        = -1;
+    ns->hf_tag     = 0;
+    ns->hf_cdata   = 0;
+    ns->ett        = 0;
     ns->attributes = wmem_map_new(wmem_epan_scope(), g_str_hash, g_str_equal);
     ns->elements   = NULL;
 
@@ -1203,7 +1205,7 @@ static xml_ns_t *xml_new_namespace(wmem_map_t *hash, const char *name, ...)
 
     while(( attr_name = va_arg(ap, char *) )) {
         int *hfp = wmem_new(wmem_epan_scope(), int);
-        *hfp = -1;
+        *hfp = 0;
         wmem_map_insert(ns->attributes, wmem_strdup(wmem_epan_scope(), attr_name), hfp);
     };
 
@@ -1323,7 +1325,7 @@ static void copy_attrib_item(void *k, void *v _U_, void *p)
     int        *value = wmem_new(wmem_epan_scope(), int);
     wmem_map_t *dst   = (wmem_map_t *)p;
 
-    *value = -1;
+    *value = 0;
     wmem_map_insert(dst, key, value);
 
 }
@@ -1342,9 +1344,9 @@ static xml_ns_t *duplicate_element(xml_ns_t *orig)
     xml_ns_t *new_item = wmem_new(wmem_epan_scope(), xml_ns_t);
 
     new_item->name          = wmem_strdup(wmem_epan_scope(), orig->name);
-    new_item->hf_tag        = -1;
-    new_item->hf_cdata      = -1;
-    new_item->ett           = -1;
+    new_item->hf_tag        = 0;
+    new_item->hf_cdata      = 0;
+    new_item->ett           = 0;
     new_item->attributes    = copy_attributes_hash(orig->attributes);
     new_item->elements      = wmem_map_new(wmem_epan_scope(), g_str_hash, g_str_equal);
     new_item->element_names = NULL;    // Not used for duplication
@@ -1370,7 +1372,7 @@ static xml_ns_t *make_xml_hier(char       *elem_name,
     unsigned  depth;
     struct _attr_reg_data  d;
 
-    if ( g_str_equal(elem_name, root->name) ) {
+    if ( !elem_name || g_str_equal(elem_name, root->name) ) {
         return NULL;
     }
 
@@ -1456,9 +1458,9 @@ static void register_dtd(dtd_build_data_t *dtd_data, GString *errors)
 
         element->name          = nl->name;
         element->element_names = nl->list;
-        element->hf_tag        = -1;
-        element->hf_cdata      = -1;
-        element->ett           = -1;
+        element->hf_tag        = 0;
+        element->hf_cdata      = 0;
+        element->ett           = 0;
         element->attributes    = wmem_map_new(wmem_epan_scope(), g_str_hash, g_str_equal);
         element->elements      = wmem_map_new(wmem_epan_scope(), g_str_hash, g_str_equal);
 
@@ -1483,7 +1485,7 @@ static void register_dtd(dtd_build_data_t *dtd_data, GString *errors)
                 char *name = (char *)current_attribute->data;
                 int   *id_p = wmem_new(wmem_epan_scope(), int);
 
-                *id_p = -1;
+                *id_p = 0;
                 wmem_map_insert(element->attributes, name, id_p);
             }
         }
@@ -1520,9 +1522,9 @@ static void register_dtd(dtd_build_data_t *dtd_data, GString *errors)
     root_element = wmem_new(wmem_epan_scope(), xml_ns_t);
     root_element->name          = wmem_strdup(wmem_epan_scope(), root_name);
     root_element->fqn           = dtd_data->proto_name ? dtd_data->proto_name : root_element->name;
-    root_element->hf_tag        = -1;
-    root_element->hf_cdata      = -1;
-    root_element->ett           = -1;
+    root_element->hf_tag        = 0;
+    root_element->hf_cdata      = 0;
+    root_element->ett           = 0;
     root_element->elements      = wmem_map_new(wmem_epan_scope(), g_str_hash, g_str_equal);
     root_element->element_names = element_names;
 
@@ -1697,28 +1699,9 @@ static void dtd_internalSubset_cb(void* ctx _U_, const xmlChar* name, const xmlC
     }
 }
 
-// NOLINTNEXTLINE(misc-no-recursion)
-static GList* dtd_elementDecl_add_list(GList* list, xmlElementContent* content)
-{
-    if (content != NULL) {
-        if (content->c1 != NULL) {
-            if (content->c1->name != NULL) {
-                list = g_list_prepend(list, wmem_ascii_strdown(wmem_epan_scope(), (const char*)content->c1->name, -1));
-            }
-            list = dtd_elementDecl_add_list(list, content->c1);
-        }
-        if (content->c2 != NULL) {
-            if (content->c2->name != NULL) {
-                list = g_list_prepend(list, wmem_ascii_strdown(wmem_epan_scope(), (const char*)content->c2->name, -1));
-            }
-            list = dtd_elementDecl_add_list(list, content->c2);
-        }
-    }
+#define XML_ELEM_MAX_CHILDREN 256
 
-    return list;
-}
-
-static void dtd_elementDecl_cb(void* ctx _U_, const xmlChar* name, int type _U_, xmlElementContent* content _U_)
+static void dtd_elementDecl_cb(void* ctx _U_, const xmlChar* name, int type, xmlElementContent* content)
 {
     dtd_named_list_t* new_element = g_new0(dtd_named_list_t, 1);
 
@@ -1731,11 +1714,23 @@ static void dtd_elementDecl_cb(void* ctx _U_, const xmlChar* name, int type _U_,
     }
 
     //Make list
-    if ((content != NULL) && (content->name != NULL)) {
-        new_element->list = g_list_prepend(new_element->list, wmem_ascii_strdown(wmem_epan_scope(), (const char*)content->name, -1));
+    int len = 0;
+    const xmlChar *children[XML_ELEM_MAX_CHILDREN]={0};
+    xmlValidGetPotentialChildren(content, children, &len, XML_ELEM_MAX_CHILDREN);
+    if (len == XML_ELEM_MAX_CHILDREN) {
+        ws_warning("Element '%s' has too many children, list truncated", new_element->name);
     }
-    new_element->list = dtd_elementDecl_add_list(new_element->list, content);
-
+    int i = 0;
+    if (type == XML_ELEMENT_TYPE_MIXED) {
+        /* The first child is always "#PCDATA", which we don't care about
+         * as we always create a .cdata field regardless. */
+        ws_assert(len && (xmlStrcmp("#PCDATA", children[0]) == 0));
+        i = 1;
+    }
+    for (; i < len; ++i) {
+        new_element->list = g_list_prepend(new_element->list, wmem_ascii_strdown(wmem_epan_scope(), (const char*)children[i], -1));
+    }
+    new_element->list = g_list_reverse(new_element->list);
     g_ptr_array_add(g_build_data->elements, new_element);
 }
 
@@ -1927,12 +1922,12 @@ static void init_xml_names(void)
 
     xml_new_namespace(xmpli_names, "xml", "version", "encoding", "standalone", NULL);
 
-    dirname = get_persconffile_path("dtds", false);
+    dirname = get_persconffile_path("dtds", false, epan_get_environment_prefix());
 
     if (test_for_directory(dirname) != EISDIR) {
         /* Although dir isn't a directory it may still use memory */
         g_free(dirname);
-        dirname = get_datafile_path("dtds");
+        dirname = get_datafile_path("dtds", epan_get_environment_prefix());
     }
 
     if (test_for_directory(dirname) == EISDIR) {

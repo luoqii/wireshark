@@ -1388,8 +1388,9 @@ dissect_3gpp_supi(tvbuff_t* tvb, proto_tree* tree, packet_info* pinfo, int offse
 				http2_set_stream_imsi(pinfo, matched_imsi);
 			}
 		}
+		g_free(matched_imsi);
 	}
-	g_regex_unref(regex);
+	g_match_info_free(match_info);
 
 	return;
 }
@@ -1400,7 +1401,7 @@ dissect_3gpp_notifyuri(tvbuff_t* tvb, proto_tree* tree _U_, packet_info* pinfo, 
 	tvbuff_t   *notifyuri_tvb;
 	GMatchInfo *match_info;
 	static GRegex *regex = NULL;
-	char *matched_referenceid = NULL;
+	char *matched_notifyuri = NULL;
 	const char *imsi = NULL;
 
 	if (len <= 0) {
@@ -1409,12 +1410,10 @@ dissect_3gpp_notifyuri(tvbuff_t* tvb, proto_tree* tree _U_, packet_info* pinfo, 
 
 	notifyuri_tvb = tvb_new_subset_length(tvb, offset, len);
 
-	/* NotifyUri sent from different SBI interface usually has the format:
-	 *   https://<address>:<port>/some_sbi_service/referenceid/<id>
-	 */
+	/* NotifyUri is generally just uri does not have any specific format */
 	if (regex == NULL) {
 		regex = g_regex_new (
-			"^.*\\/referenceid\\/([A-Za-z0-9\\-.]+).*",
+		        "^(?:https?:\\/\\/[^/]+)?(\\/.*)$", //Matches with uris except root
 			G_REGEX_CASELESS | G_REGEX_FIRSTLINE, 0, NULL);
 	}
 
@@ -1422,18 +1421,18 @@ dissect_3gpp_notifyuri(tvbuff_t* tvb, proto_tree* tree _U_, packet_info* pinfo, 
 	g_regex_match(regex, notifyuri_str, 0, &match_info);
 
 	if (g_match_info_matches(match_info)) {
-		matched_referenceid = g_match_info_fetch(match_info, 1); //will be empty string if imsi is not in supi
-		if (matched_referenceid && (strcmp(matched_referenceid, "") != 0)) {
+		matched_notifyuri = g_match_info_fetch(match_info, 1); //will be empty string if notify uri does not contain http or https
+		if (matched_notifyuri && (strcmp(matched_notifyuri, "") != 0)) {
 			if (proto_is_frame_protocol(pinfo->layers, "http2")) {
 				imsi = http2_get_stream_imsi(pinfo);
 				if(imsi) {
-					/* Add mapping of referenceid to imsi */
-					http2_add_referenceid_imsi(matched_referenceid, imsi);
+					http2_add_notifyuri_imsi(matched_notifyuri, imsi);
 				}
 			}
 		}
+		g_free(matched_notifyuri);
 	}
-	g_regex_unref(regex);
+	g_match_info_free(match_info);
 
 	return;
 }
@@ -1611,7 +1610,7 @@ register_static_headers(void) {
 	};
 
 	/* List of decoding functions the index matches the HF */
-	static void(*json_decode_fn[])(tvbuff_t * tvb, proto_tree * tree, packet_info * pinfo, int offset, int len, const char* key_str) = {
+	static void(* const json_decode_fn[])(tvbuff_t * tvb, proto_tree * tree, packet_info * pinfo, int offset, int len, const char* key_str) = {
 		dissect_base64decoded_eps_ie,   /* ueEpsPdnConnection */
 		dissect_base64decoded_eps_ie,   /* bearerLevelQoS */
 		dissect_base64decoded_eps_ie,   /* epsBearerSetup */

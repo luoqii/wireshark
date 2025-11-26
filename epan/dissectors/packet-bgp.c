@@ -1442,8 +1442,8 @@ static const value_string bgpattr_type[] = {
     { BGPTYPE_SAFI_SPECIFIC_ATTR,  "SAFI_SPECIFIC_ATTRIBUTE" },
     { BGPTYPE_CONNECTOR_ATTRIBUTE, "Connector Attribute" },
     { BGPTYPE_AS_PATHLIMIT,        "AS_PATHLIMIT "},
-    { BGPTYPE_TUNNEL_ENCAPS_ATTR,  "TUNNEL_ENCAPSULATION_ATTRIBUTE" },
     { BGPTYPE_PMSI_TUNNEL_ATTR,    "PMSI_TUNNEL_ATTRIBUTE" },
+    { BGPTYPE_TUNNEL_ENCAPS_ATTR,  "TUNNEL_ENCAPSULATION_ATTRIBUTE" },
     { BGPTYPE_TRAFFIC_ENGINEERING, "Traffic Engineering" },
     { BGPTYPE_IPV6_ADDR_SPEC_EC,   "IPv6 Address Specific Extended Community" },
     { BGPTYPE_AIGP,                "AIGP" },
@@ -1707,8 +1707,8 @@ static const value_string bgpext_com_stype_tr_as4[] = {
     { BGP_EXT_COM_STYPE_AS4_RT,       "Route Target" },
     { BGP_EXT_COM_STYPE_AS4_RO,       "Route Origin" },
     { BGP_EXT_COM_STYPE_AS4_GEN,      "Generic" },
-    { BGP_EXT_COM_STYPE_AS4_BGP_DC,   "BGP Data Collection"},
     { BGP_EXT_COM_STYPE_AS4_OSPF_DID, "OSPF Domain Identifier" },
+    { BGP_EXT_COM_STYPE_AS4_BGP_DC,   "BGP Data Collection"},
     { BGP_EXT_COM_STYPE_AS4_S_AS,     "Source AS" },
     { BGP_EXT_COM_STYPE_AS4_CIS_V,    "Cisco VPN Identifier" },
     { BGP_EXT_COM_STYPE_AS4_RT_REC,   "Route-Target Record"},
@@ -8583,7 +8583,7 @@ decode_prefix_MP(proto_tree *tree, int hf_path_id, int hf_addr4, int hf_addr6,
 /*
  * Dissect a BGP capability.
  */
-static int
+int
 dissect_bgp_capability_item(tvbuff_t *tvb, proto_tree *tree, packet_info *pinfo, int offset, bool action)
 {
     proto_tree *cap_tree;
@@ -9109,7 +9109,7 @@ heuristic_as2_or_4_from_as_path(tvbuff_t *tvb, int as_path_offset, int end_attr_
         k++;
         /* we get the length of the AS segment */
         length = tvb_get_uint8(tvb, k);
-        /* let's point to the fist byte of the AS segment */
+        /* let's point to the first byte of the AS segment */
         k++;
         /* we move to the next segment */
         k = k + (length*assumed_as_len);

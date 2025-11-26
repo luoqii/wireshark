@@ -20,13 +20,9 @@
 #include <epan/wmem_scopes.h>
 #include <epan/expert.h>
 #include <epan/conversation.h>
+#include <epan/tap.h>
 #include <epan/unit_strings.h>
 #include <wsutil/wsgcrypt.h>
-
-#ifdef HAVE_LIBGNUTLS
-#include <gnutls/x509.h>
-#include <gnutls/pkcs12.h>
-#endif /* HAVE_LIBGNUTLS */
 
 /* TODO inline this now that Libgcrypt is mandatory? */
 #define SSL_CIPHER_CTX gcry_cipher_hd_t
@@ -435,7 +431,11 @@ typedef struct {
 
 typedef struct _SslRecordInfo {
     unsigned char *plain_data;     /**< Decrypted data. */
-    unsigned   data_len;       /**< Length of decrypted data. */
+    unsigned plain_data_len;       /**< Total length of decrypted data,
+                                        including the content type and padding
+                                        if the TLS version supports them. */
+    unsigned content_len;   /**< Length of the part of the decrypted data
+                                 corresponding to the record content. */
     int     id;             /**< Identifies the exact record within a frame
                                  (there can be multiple records in a frame). */
     ContentType type;       /**< Content type of the decrypted record data. */
@@ -789,7 +789,10 @@ tls_add_packet_info(int proto, packet_info *pinfo, uint8_t curr_layer_num_ssl);
 
 /* add to packet data a copy of the specified real data */
 extern void
-ssl_add_record_info(int proto, packet_info *pinfo, const unsigned char *data, int data_len, int record_id, SslFlow *flow, ContentType type, uint8_t curr_layer_num_ssl, uint64_t record_seq);
+ssl_add_record_info(int proto, packet_info *pinfo,
+                    const unsigned char *plain_data, int plain_data_len, int content_len,
+                    int record_id, SslFlow *flow, ContentType type, uint8_t curr_layer_num_ssl,
+                    uint64_t record_seq);
 
 /* search in packet data for the specified id; return a newly created tvb for the associated data */
 extern tvbuff_t*
@@ -1413,9 +1416,13 @@ ssl_dissect_hnd_compress_certificate(ssl_common_dissect_t *hf, tvbuff_t *tvb, pr
                                      uint32_t offset, uint32_t offset_end, packet_info *pinfo,
                                      SslSession *session _U_, SslDecryptSession *ssl _U_,
                                      bool is_from_server _U_, bool is_dtls _U_);
+
+extern tap_packet_status
+ssl_follow_tap_listener(void *tapdata, packet_info *pinfo, epan_dissect_t *edt _U_, const void *ssl, tap_flags_t flags _U_);
+
 /* {{{ */
 #define SSL_COMMON_LIST_T(name) \
-ssl_common_dissect_t name;
+ssl_common_dissect_t name
 /* }}} */
 
 /* {{{ */
@@ -2944,11 +2951,11 @@ ssl_common_dissect_t name;
     }, \
     { & name .ei.hs_ext_cert_status_undecoded, \
         { prefix ".handshake.status_request.undecoded", PI_UNDECODED, PI_NOTE, \
-        "Responder ID list or Request Extensions are not implemented, contact Wireshark developers if you want this to be supported", EXPFILL } \
+        "Responder ID list or Request Extensions are not implemented", EXPFILL } \
     }, \
     { & name .ei.hs_ciphersuite_undecoded, \
         { prefix ".handshake.ciphersuite.undecoded", PI_UNDECODED, PI_NOTE, \
-        "Ciphersuite not implemented, contact Wireshark developers if you want this to be supported", EXPFILL } \
+        "Ciphersuite not implemented", EXPFILL } \
     }, \
     { & name .ei.hs_srv_keyex_illegal, \
         { prefix ".handshake.server_keyex_illegal", PI_PROTOCOL, PI_WARN, \

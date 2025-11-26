@@ -916,7 +916,7 @@ dissect_zbee_aps(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data
         }
         else if ((packet.delivery == ZBEE_APS_FCF_GROUP) && (nwk->version >= ZBEE_VERSION_2007)) {
             /* Group addressing was added in ZigBee 2006, and contains only the
-             * source endpoint. (IMO, Broacast deliveries should do the same).
+             * source endpoint. (IMO, Broadcast deliveries should do the same).
              */
             packet.dst_present = false;
             packet.src_present = true;
@@ -1075,7 +1075,7 @@ dissect_zbee_aps_no_endpt:
         uint32_t        num_blocks;
         fragment_head   *frag_msg = NULL;
         tvbuff_t        *new_tvb;
-        guint32         counter;
+        uint32_t        counter;
 
         /* Set the fragmented flag. */
         pinfo->fragmented = true;

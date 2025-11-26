@@ -6844,7 +6844,7 @@ drsuapi_dissect_element_DsGetNCChangesMSZIPCtr1_ts_(tvbuff_t *tvb _U_, int offse
 		uint32_t saved_flags = di->call_data->flags;
 		offset = dissect_ndr_uint3264(tvb, offset, pinfo, tree, di, drep, hf_drsuapi_drsuapi_DsGetNCChangesMSZIPCtr1_ts_, &size);
 		di->call_data->flags &= ~DCERPC_IS_NDR64;
-		subtvb = tvb_new_subset_length_caplen(tvb, offset, (const int)size, -1);
+		subtvb = tvb_new_subset_length(tvb, offset, (const int)size);
 		drsuapi_dissect_element_DsGetNCChangesMSZIPCtr1_ts__(subtvb, 0, pinfo, tree, di, drep);
 		offset += (int)size;
 		di->call_data->flags = saved_flags;
@@ -6936,7 +6936,7 @@ drsuapi_dissect_element_DsGetNCChangesMSZIPCtr6_ts_(tvbuff_t *tvb _U_, int offse
 		uint32_t saved_flags = di->call_data->flags;
 		offset = dissect_ndr_uint3264(tvb, offset, pinfo, tree, di, drep, hf_drsuapi_drsuapi_DsGetNCChangesMSZIPCtr6_ts_, &size);
 		di->call_data->flags &= ~DCERPC_IS_NDR64;
-		subtvb = tvb_new_subset_length_caplen(tvb, offset, (const int)size, -1);
+		subtvb = tvb_new_subset_length(tvb, offset, (const int)size);
 		drsuapi_dissect_element_DsGetNCChangesMSZIPCtr6_ts__(subtvb, 0, pinfo, tree, di, drep);
 		offset += (int)size;
 		di->call_data->flags = saved_flags;
@@ -7028,7 +7028,7 @@ drsuapi_dissect_element_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr1_ts_(tvbuff_t *tvb 
 		uint32_t saved_flags = di->call_data->flags;
 		offset = dissect_ndr_uint3264(tvb, offset, pinfo, tree, di, drep, hf_drsuapi_drsuapi_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr1_ts_, &size);
 		di->call_data->flags &= ~DCERPC_IS_NDR64;
-		subtvb = tvb_new_subset_length_caplen(tvb, offset, (const int)size, -1);
+		subtvb = tvb_new_subset_length(tvb, offset, (const int)size);
 		drsuapi_dissect_element_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr1_ts__(subtvb, 0, pinfo, tree, di, drep);
 		offset += (int)size;
 		di->call_data->flags = saved_flags;
@@ -7120,7 +7120,7 @@ drsuapi_dissect_element_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr6_ts_(tvbuff_t *tvb 
 		uint32_t saved_flags = di->call_data->flags;
 		offset = dissect_ndr_uint3264(tvb, offset, pinfo, tree, di, drep, hf_drsuapi_drsuapi_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr6_ts_, &size);
 		di->call_data->flags &= ~DCERPC_IS_NDR64;
-		subtvb = tvb_new_subset_length_caplen(tvb, offset, (const int)size, -1);
+		subtvb = tvb_new_subset_length(tvb, offset, (const int)size);
 		drsuapi_dissect_element_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr6_ts__(subtvb, 0, pinfo, tree, di, drep);
 		offset += (int)size;
 		di->call_data->flags = saved_flags;
@@ -19729,7 +19729,7 @@ void proto_register_dcerpc_drsuapi(void)
 	{ &hf_drsuapi_drsuapi_DsGetNCChangesMSZIPCtr1_ts,
 	  { "Ts", "drsuapi.drsuapi_DsGetNCChangesMSZIPCtr1.ts", FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
 	{ &hf_drsuapi_drsuapi_DsGetNCChangesMSZIPCtr1_ts_,
-	  { "Subcontext length", "drsuapi.drsuapi_DsGetNCChangesMSZIPCtr1.subcontext", FT_UINT32, BASE_HEX, NULL, 0, NULL, HFILL }},
+	  { "Subcontext length", "drsuapi.drsuapi_DsGetNCChangesMSZIPCtr1.ts.subcontext", FT_UINT32, BASE_HEX, NULL, 0, NULL, HFILL }},
 	{ &hf_drsuapi_drsuapi_DsGetNCChangesMSZIPCtr6_compressed_length,
 	  { "Compressed Length", "drsuapi.drsuapi_DsGetNCChangesMSZIPCtr6.compressed_length", FT_UINT32, BASE_DEC, NULL, 0, NULL, HFILL }},
 	{ &hf_drsuapi_drsuapi_DsGetNCChangesMSZIPCtr6_decompressed_length,
@@ -19737,7 +19737,7 @@ void proto_register_dcerpc_drsuapi(void)
 	{ &hf_drsuapi_drsuapi_DsGetNCChangesMSZIPCtr6_ts,
 	  { "Ts", "drsuapi.drsuapi_DsGetNCChangesMSZIPCtr6.ts", FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
 	{ &hf_drsuapi_drsuapi_DsGetNCChangesMSZIPCtr6_ts_,
-	  { "Subcontext length", "drsuapi.drsuapi_DsGetNCChangesMSZIPCtr6.subcontext", FT_UINT32, BASE_HEX, NULL, 0, NULL, HFILL }},
+	  { "Subcontext length", "drsuapi.drsuapi_DsGetNCChangesMSZIPCtr6.ts.subcontext", FT_UINT32, BASE_HEX, NULL, 0, NULL, HFILL }},
 	{ &hf_drsuapi_drsuapi_DsGetNCChangesRequest10_destination_dsa_guid,
 	  { "Destination Dsa Guid", "drsuapi.drsuapi_DsGetNCChangesRequest10.destination_dsa_guid", FT_GUID, BASE_NONE, NULL, 0, NULL, HFILL }},
 	{ &hf_drsuapi_drsuapi_DsGetNCChangesRequest10_extended_op,
@@ -19825,7 +19825,7 @@ void proto_register_dcerpc_drsuapi(void)
 	{ &hf_drsuapi_drsuapi_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr1_ts,
 	  { "Ts", "drsuapi.drsuapi_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr1.ts", FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
 	{ &hf_drsuapi_drsuapi_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr1_ts_,
-	  { "Subcontext length", "drsuapi.drsuapi_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr1.subcontext", FT_UINT32, BASE_HEX, NULL, 0, NULL, HFILL }},
+	  { "Subcontext length", "drsuapi.drsuapi_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr1.ts.subcontext", FT_UINT32, BASE_HEX, NULL, 0, NULL, HFILL }},
 	{ &hf_drsuapi_drsuapi_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr6_compressed_length,
 	  { "Compressed Length", "drsuapi.drsuapi_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr6.compressed_length", FT_UINT32, BASE_DEC, NULL, 0, NULL, HFILL }},
 	{ &hf_drsuapi_drsuapi_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr6_decompressed_length,
@@ -19833,7 +19833,7 @@ void proto_register_dcerpc_drsuapi(void)
 	{ &hf_drsuapi_drsuapi_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr6_ts,
 	  { "Ts", "drsuapi.drsuapi_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr6.ts", FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL }},
 	{ &hf_drsuapi_drsuapi_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr6_ts_,
-	  { "Subcontext length", "drsuapi.drsuapi_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr6.subcontext", FT_UINT32, BASE_HEX, NULL, 0, NULL, HFILL }},
+	  { "Subcontext length", "drsuapi.drsuapi_DsGetNCChangesWIN2K3_LZ77_DIRECT2Ctr6.ts.subcontext", FT_UINT32, BASE_HEX, NULL, 0, NULL, HFILL }},
 	{ &hf_drsuapi_drsuapi_DsGetNCChanges_bind_handle,
 	  { "Bind Handle", "drsuapi.drsuapi_DsGetNCChanges.bind_handle", FT_BYTES, BASE_NONE, NULL, 0, NULL, HFILL }},
 	{ &hf_drsuapi_drsuapi_DsGetNCChanges_ctr,

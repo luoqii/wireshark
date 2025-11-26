@@ -5381,6 +5381,8 @@ static const value_string mms_ConfirmedServiceRequest_vals[] = {
   { 0, NULL }
 };
 
+static value_string_ext mms_ConfirmedServiceRequest_vals_ext = VALUE_STRING_EXT_INIT(mms_ConfirmedServiceRequest_vals);
+
 static const ber_choice_t ConfirmedServiceRequest_choice[] = {
   {   0, &hf_mms_status          , BER_CLASS_CON, 0, BER_FLAGS_IMPLTAG, dissect_mms_Status_Request },
   {   1, &hf_mms_getNameList     , BER_CLASS_CON, 1, BER_FLAGS_IMPLTAG, dissect_mms_GetNameList_Request },
@@ -5591,9 +5593,9 @@ dissect_mms_T_vmdPhysicalStatus(bool implicit_tag _U_, tvbuff_t *tvb _U_, int of
 
 static int
 dissect_mms_BIT_STRING_SIZE_0_128(bool implicit_tag _U_, tvbuff_t *tvb _U_, int offset _U_, asn1_ctx_t *actx _U_, proto_tree *tree _U_, int hf_index _U_) {
-  offset = dissect_ber_bitstring(implicit_tag, actx, tree, tvb, offset,
-                                    NULL, 0, hf_index, -1,
-                                    NULL);
+  offset = dissect_ber_constrained_bitstring(implicit_tag, actx, tree, tvb, offset,
+                                                0, 128, NULL, 0, hf_index, -1,
+                                                NULL);
 
   return offset;
 }
@@ -8755,7 +8757,7 @@ void proto_register_mms(void) {
         NULL, HFILL }},
     { &hf_mms_confirmedServiceRequest,
       { "confirmedServiceRequest", "mms.confirmedServiceRequest",
-        FT_UINT32, BASE_DEC, VALS(mms_ConfirmedServiceRequest_vals), 0,
+        FT_UINT32, BASE_DEC|BASE_EXT_STRING, &mms_ConfirmedServiceRequest_vals_ext, 0,
         NULL, HFILL }},
     { &hf_mms_cs_request_detail,
       { "cs-request-detail", "mms.cs_request_detail",

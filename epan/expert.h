@@ -16,7 +16,7 @@
 
 #include <epan/proto.h>
 #include <epan/packet_info.h>
-#include "value_string.h"
+#include <wsutil/value_string.h>
 #include "ws_symbol_export.h"
 
 #ifdef __cplusplus
@@ -57,11 +57,12 @@ typedef struct expert_field_info {
 	const char       *protocol;
 	int               orig_severity; /* Matches severity when registered, used to restore original severity
 					  * if UAT severity entry is removed */
+	struct expert_field_info *same_name_next; /**< Link to next ei with the same abbrev */
 	hf_register_info  hf_info;
 
 } expert_field_info;
 
-#define EXPFILL 0, NULL, 0, \
+#define EXPFILL 0, NULL, 0, NULL, \
         {0, {NULL, NULL, FT_NONE, BASE_NONE, NULL, 0, NULL, HFILL}}
 
 typedef struct ei_register_info {

@@ -58,6 +58,7 @@ ADD_MAN_PAGE(reordercap  1)
 ADD_MAN_PAGE(sshdig      1)
 ADD_MAN_PAGE(sshdump     1)
 ADD_MAN_PAGE(text2pcap   1)
+ADD_MAN_PAGE(dumpcalls   1)
 ADD_MAN_PAGE(falcodump   1)
 ADD_MAN_PAGE(udpdump     1)
 ADD_MAN_PAGE(wifidump    1)
@@ -256,6 +257,7 @@ set(WSUG_GRAPHICS
 	wsug_src/images/toolbar/x-colorize-packets.png
 	wsug_src/images/toolbar/x-resize-columns.png
 	wsug_src/images/toolbar/x-stay-last.png
+	wsug_src/images/toolbar/aggregation.png
 	wsug_src/images/toolbar/zoom-in.png
 	wsug_src/images/toolbar/zoom-original.png
 	wsug_src/images/toolbar/zoom-out.png
@@ -448,6 +450,7 @@ set(WSLUA_MODULES
 	${CMAKE_SOURCE_DIR}/epan/wslua/wslua_pref.c
 	${CMAKE_SOURCE_DIR}/epan/wslua/wslua_proto_expert.c
 	${CMAKE_SOURCE_DIR}/epan/wslua/wslua_proto_field.c
+	${CMAKE_SOURCE_DIR}/epan/wslua/wslua_proto_helpers.c
 	${CMAKE_SOURCE_DIR}/epan/wslua/wslua_tree.c
 	${CMAKE_SOURCE_DIR}/epan/wslua/wslua_tvb.c
 	${CMAKE_SOURCE_DIR}/epan/wslua/wslua_byte_array.c

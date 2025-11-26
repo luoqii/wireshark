@@ -91,7 +91,7 @@ fConfirmedRequestPDU(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsign
  * @param pinfo the packet info of the current data
  * @param tree the tree to append this item to
  * @param offset the offset in the tvb
- * @param ack - indocates whether working on request or ack
+ * @param ack - indicates whether working on request or ack
  * @param svc - output variable to return service choice
  * @param tt  - output varable to return service choice item
  * @return modified offset
@@ -326,7 +326,7 @@ fConfirmedServiceAck(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsign
 /**
  * AcknowledgeAlarm-Request ::= SEQUENCE {
  *  acknowledgingProcessIdentifier [0] Unsigned32,
- *  eventObjectIdentifier          [1] BACnetObjectIdentifer,
+ *  eventObjectIdentifier          [1] BACnetObjectIdentifier,
  *  eventStateAcknowledge          [2] BACnetEventState,
  *  timeStamp                      [3] BACnetTimeStamp,
  *  acknowledgementSource          [4] Character String,
@@ -344,8 +344,8 @@ fAcknowledgeAlarmRequest(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, un
 /**
  * ConfirmedCOVNotification-Request ::= SEQUENCE {
  *  subscriberProcessIdentifier [0] Unsigned32,
- *  initiatingDeviceIdentifier  [1] BACnetObjectIdentifer,
- *  monitoredObjectIdentifier   [2] BACnetObjectIdentifer,
+ *  initiatingDeviceIdentifier  [1] BACnetObjectIdentifier,
+ *  monitoredObjectIdentifier   [2] BACnetObjectIdentifier,
  *  timeRemaining               [3] unsigned,
  *  listOfValues                [4] SEQUENCE OF BACnetPropertyValues
  * }
@@ -361,8 +361,8 @@ fConfirmedCOVNotificationRequest(tvbuff_t *tvb, packet_info *pinfo, proto_tree *
 /**
  * ConfirmedEventNotification-Request ::= SEQUENCE {
  *  ProcessIdentifier           [0] Unsigned32,
- *  initiatingDeviceIdentifier  [1] BACnetObjectIdentifer,
- *  eventObjectIdentifier       [2] BACnetObjectIdentifer,
+ *  initiatingDeviceIdentifier  [1] BACnetObjectIdentifier,
+ *  eventObjectIdentifier       [2] BACnetObjectIdentifier,
  *  timeStamp                   [3] BACnetTimeStamp,
  *  notificationClass           [4] unsigned,
  *  priority                    [5] unsigned8,
@@ -385,7 +385,7 @@ fConfirmedEventNotificationRequest(tvbuff_t *tvb, packet_info *pinfo,  proto_tre
 
 /**
  * GetAlarmSummary-ACK ::= SEQUENCE OF SEQUENCE {
- *  objectIdentifier         BACnetObjectIdentifer,
+ *  objectIdentifier         BACnetObjectIdentifier,
  *  alarmState               BACnetEventState,
  *  acknowledgedTransitions  BACnetEventTransitionBits
  * }
@@ -431,7 +431,7 @@ fGetEnrollmentSummaryRequest(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree
 
 /**
  * GetEnrollmentSummary-ACK ::= SEQUENCE OF SEQUENCE {
- *  objectIdentifier    BACnetObjectIdentifer,
+ *  objectIdentifier    BACnetObjectIdentifier,
  *  eventType           BACnetEventType,
  *  eventState          BACnetEventState,
  *  priority            Unsigned8,
@@ -448,7 +448,7 @@ fGetEnrollmentSummaryAck(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, un
 
 /**
  * GetEventInformation-Request ::= SEQUENCE {
- *  lastReceivedObjectIdentifier    [0] BACnetObjectIdentifer
+ *  lastReceivedObjectIdentifier    [0] BACnetObjectIdentifier
  * }
  * @param tvb the tv buffer of the current data
  * @param pinfo the packet info of the current data
@@ -651,7 +651,7 @@ fCreateObjectAck(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned o
 
 /**
  * DeleteObject-Request ::= SEQUENCE {
- *  ObjectIdentifier    BACnetObjectIdentifer
+ *  ObjectIdentifier    BACnetObjectIdentifier
  * }
  * @param tvb the tv buffer of the current data
  * @param pinfo the packet info of the current data
@@ -1003,7 +1003,7 @@ fVtDataAck(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset)
 /**
  * Authenticate-Request ::= SEQUENCE {
  *  pseudoRandomNumber     [0] Unsigned32,
- *  excpectedInvokeID      [1] Unsigned8 OPTIONAL,
+ *  expectedInvokeID       [1] Unsigned8 OPTIONAL,
  *  operatorName           [2] CharacterString OPTIONAL,
  *  operatorPassword       [3] CharacterString (SIZE(1..20)) OPTIONAL,
  *  startEncypheredSession [4] BOOLEAN OPTIONAL
@@ -1062,8 +1062,8 @@ fUnconfirmedServiceRequest(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, 
 /**
  * UnconfirmedCOVNotification-Request ::= SEQUENCE {
  *  subscriberProcessIdentifier [0] Unsigned32,
- *  initiatingDeviceIdentifier  [1] BACnetObjectIdentifer,
- *  monitoredObjectIdentifier   [2] BACnetObjectIdentifer,
+ *  initiatingDeviceIdentifier  [1] BACnetObjectIdentifier,
+ *  monitoredObjectIdentifier   [2] BACnetObjectIdentifier,
  *  timeRemaining               [3] unsigned,
  *  listOfValues                [4] SEQUENCE OF BACnetPropertyValues
  * }
@@ -1079,8 +1079,8 @@ fUnconfirmedCOVNotificationRequest(tvbuff_t *tvb, packet_info *pinfo, proto_tree
 /**
  * UnconfirmedEventNotification-Request ::= SEQUENCE {
  *  ProcessIdentifier           [0] Unsigned32,
- *  initiatingDeviceIdentifier  [1] BACnetObjectIdentifer,
- *  eventObjectIdentifier       [2] BACnetObjectIdentifer,
+ *  initiatingDeviceIdentifier  [1] BACnetObjectIdentifier,
+ *  eventObjectIdentifier       [2] BACnetObjectIdentifier,
  *  timeStamp                   [3] BACnetTimeStamp,
  *  notificationClass           [4] unsigned,
  *  priority                    [5] unsigned8,
@@ -1457,7 +1457,7 @@ fDailySchedule(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned off
  * BACnetHealth ::= SEQUENCE {
  *  timestamp                   [0] BACnetDateTime,
  *  result                      [1] Error,
- *  property                    [2] BACnetPropertiyIdentifier OPTIONAL,
+ *  property                    [2] BACnetPropertyIdentifier OPTIONAL,
  *  details                     [3] CharacterString OPTIONAL
  * }
  * @param tvb the tv buffer of the current data
@@ -1610,7 +1610,7 @@ fDestination(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offse
  * BACnetDeviceObjectPropertyReference ::= SEQUENCE {
  *  objectIdentifier    [0] BACnetObjectIdentifier,
  *  propertyIdentifier  [1] BACnetPropertyIdentifier,
- *  propertyArrayIndex  [2] Unsigend OPTIONAL,
+ *  propertyArrayIndex  [2] Unsigned OPTIONAL,
  *  deviceIdentifier    [3] BACnetObjectIdentifier OPTIONAL
  * }
  * @param tvb the tv buffer of the current data
@@ -1626,7 +1626,7 @@ fDeviceObjectPropertyReference(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tr
  * BACnetObjectPropertyReference ::= SEQUENCE {
  *  objectIdentifier    [0] BACnetObjectIdentifier,
  *  propertyIdentifier  [1] BACnetPropertyIdentifier,
- *  propertyArrayIndex  [2] Unsigend OPTIONAL,
+ *  propertyArrayIndex  [2] Unsigned OPTIONAL,
  * }
  * @param tvb the tv buffer of the current data
  * @param pinfo the packet info of the current data
@@ -2062,7 +2062,7 @@ fSessionKey(tvbuff_t *tvb, proto_tree *tree, unsigned offset);
  * BACnetSpecialEvent ::= SEQUENCE {
  *  period      CHOICE {
  *      calendarEntry       [0] BACnetCalendarEntry,
- *      calendarRefernce    [1] BACnetObjectIdentifier
+ *      calendarReference    [1] BACnetObjectIdentifier
  *      },
  *      listOfTimeValues    [2] SEQUENCE OF BACnetTimeValue,
  *      eventPriority       [3] Unsigned (1..16)
@@ -2209,7 +2209,7 @@ static unsigned
 fTagNo(tvbuff_t *tvb, unsigned offset);
 
 /**
- * splits Tag Header coresponding to 20.2.1 General Rules For BACnet Tags
+ * splits Tag Header corresponding to 20.2.1 General Rules For BACnet Tags
  * @param tvb the tv buffer of the current data = "TestyVirtualBuffer"
  * @param pinfo the packet info of the current data = packet info
  * @param offset the offset in the tvb = offset in actual tvb
@@ -2372,7 +2372,7 @@ fPropertyArrayIndex(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigne
  *  objectIdentifier        [0] BACnetObjectIdentifier,
  *  eventState              [1] BACnetEventState,
  *  acknowledgedTransitions [2] BACnetEventTransitionBits,
- *  eventTimeStamps         [3] SEQURNCE SIZE (3) OF BACnetTimeStamps,
+ *  eventTimeStamps         [3] SEQUENCE SIZE (3) OF BACnetTimeStamps,
  *  notifyType              [4] BACnetNotifyType,
  *  eventEnable             [5] BACnetEventTransitionBits,
  *  eventPriorities         [6] SEQUENCE SIZE (3) OF Unsigned
@@ -3605,6 +3605,7 @@ BACnetObjectType [] = {
    Enumerated values 128-1023 may be used by others subject to
    the procedures and constraints described in Clause 23. */
 };
+static value_string_ext BACnetObjectType_ext = VALUE_STRING_EXT_INIT(BACnetObjectType);
 
 static const value_string
 BACnetObjectTypeAbbrev[] = {
@@ -4191,6 +4192,7 @@ BACnetErrorCode [] = {
    Enumerated values 256-65535 may be used by others subject to the
    procedures and constraints described in Clause 23. */
 };
+static value_string_ext BACnetErrorCode_ext = VALUE_STRING_EXT_INIT(BACnetErrorCode);
 
 static const value_string
 BACnetPropertyIdentifier [] = {
@@ -5505,7 +5507,7 @@ BACnetAuthorizationConstraintAuthentication[] = {
 
 /* These values are generated by tools/generate-bacnet-vendors.py from
  * https://bacnet.org/assigned-vendor-ids/
- * Version: "As of May 23, 2025"
+ * Version: "As of August 27, 2025"
  */
 
 static const value_string
@@ -5517,7 +5519,7 @@ BACnetVendorIdentifiers [] = {
     {    4, "PolarSoft" },
     {    5, "Johnson Controls, Inc." },
     {    6, "ABB (Formerly American Auto-Matrix)" },
-    {    7, "Siemens Schweiz AG (Formerly: Landis & Staefa Division Europe)" },
+    {    7, "Siemens Schweiz AG" },
     {    8, "Delta Controls" },
     {    9, "Siemens Schweiz AG" },
     {   10, "Schneider Electric" },
@@ -5532,7 +5534,7 @@ BACnetVendorIdentifiers [] = {
     {   19, "TAC AB" },
     {   20, "Hewlett-Packard Company" },
     {   21, "Dorsette’s Inc." },
-    {   22, "Siemens Schweiz AG (Formerly: Cerberus AG)" },
+    {   22, "Siemens Schweiz AG" },
     {   23, "York Controls Group" },
     {   24, "Automated Logic Corporation" },
     {   25, "CSI Control Systems International" },
@@ -5789,7 +5791,7 @@ BACnetVendorIdentifiers [] = {
     {  276, "GE Consumer & Industrial" },
     {  277, "Functional Devices, Inc." },
     {  278, "StudioSC" },
-    {  279, "M-System Co., Ltd." },
+    {  279, "MG CO., LTD." },
     {  280, "Yokota Co., Ltd." },
     {  281, "Hitranse Technology Co., LTD" },
     {  282, "Vigilent Corporation" },
@@ -5876,7 +5878,7 @@ BACnetVendorIdentifiers [] = {
     {  363, "CEAG Notlichtsysteme GmbH" },
     {  364, "Distech Controls Inc." },
     {  365, "Industrial Technology Research Institute" },
-    {  366, "ICONICS, Inc." },
+    {  366, "Mitsubishi Electric Iconics Digital Solutions" },
     {  367, "IQ Controls s.c." },
     {  368, "OJ Electronics A/S" },
     {  369, "Rolbit Ltd." },
@@ -5941,7 +5943,7 @@ BACnetVendorIdentifiers [] = {
     {  428, "SWG Stuckmann Wirtschaftliche Gebäudesysteme GmbH" },
     {  429, "SensorSwitch" },
     {  430, "Multitek Power Limited" },
-    {  431, "Aquametro AG" },
+    {  431, "Integra Metering AG" },
     {  432, "LG Electronics Inc." },
     {  433, "Electronic Theatre Controls, Inc." },
     {  434, "Mitsubishi Electric Corporation Nagoya Works" },
@@ -6055,7 +6057,7 @@ BACnetVendorIdentifiers [] = {
     {  542, "DOT CONTROLS a.s." },
     {  543, "BeaconMedæs" },
     {  544, "Midea Commercial Aircon" },
-    {  545, "WattMaster Controls" },
+    {  545, "AAON" },
     {  546, "Kamstrup A/S" },
     {  547, "CA Computer Automation GmbH" },
     {  548, "Laars Heating Systems Company" },
@@ -6703,7 +6705,7 @@ BACnetVendorIdentifiers [] = {
     { 1190, "ISDE ING SL" },
     { 1191, "ABM automation building messaging GmbH" },
     { 1192, "Kentec Electronics Ltd" },
-    { 1193, "Emerson Commercial and Residential Solutions" },
+    { 1193, "Copeland LP" },
     { 1194, "Powerside" },
     { 1195, "SMC Group" },
     { 1196, "EOS Weather Instruments" },
@@ -6778,7 +6780,7 @@ BACnetVendorIdentifiers [] = {
     { 1265, "Elmeasure India Pvt Ltd." },
     { 1266, "Pineshore Energy LLC" },
     { 1267, "Brasch Environmental Technologies, LLC" },
-    { 1268, "Lion Controls Co., LTD" },
+    { 1268, "ShenZhen ZhiXing Building Tech Co., Ltd" },
     { 1269, "Sinux" },
     { 1270, "Avnet Inc." },
     { 1271, "Somfy Activites SA" },
@@ -6883,7 +6885,7 @@ BACnetVendorIdentifiers [] = {
     { 1370, "Revolution Microelectronics (America) Inc." },
     { 1371, "Real-Time Systems GmbH" },
     { 1372, "ZedBee Technologies Pvt Ltd" },
-    { 1373, "Winmate Technology Solutions Pvt. Ltd." },
+    { 1373, "Wimate Technology Solutions Pvt. Ltd." },
     { 1374, "Senticon Ltd." },
     { 1375, "Rossaker AB" },
     { 1376, "OPIT Solutions Ltd" },
@@ -6994,66 +6996,86 @@ BACnetVendorIdentifiers [] = {
     { 1483, "Clouder Oy" },
     { 1484, "Gebäude Automatisierung GmbH" },
     { 1485, "solvimus GmbH" },
-    { 1486, "GuangZhou Wangkong Ltd."},
-    { 1487, "SafeSquare GmbH"},
-    { 1488, "Heklatech AB"},
-    { 1489, "Silvair"},
-    { 1490, "Adveco"},
-    { 1491, "Eura Drives Electric Co., Ltd."},
-    { 1492, "Caleb Controls"},
-    { 1493, "InBiot Monitoring S.L"},
-    { 1494, "Qingdao Haier Air Conditioner Electric Co., Ltd."},
-    { 1495, "Hangzhou Weiyl Technology Co., Ltd."},
-    { 1496, "yord sàrl"},
-    { 1497, "Infinitum Electric"},
-    { 1498, "Red Bean Systems Limited"},
-    { 1499, "Blue Time Concept SA"},
-    { 1500, "Shenzhen INVT Electric Co., Ltd."},
-    { 1501, "Messung Systems Pvt Ltd."},
-    { 1502, "ABB Electrification Canada Inc."},
-    { 1503, "Core Controls"},
-    { 1504, "Noord Tech d.o.o."},
-    { 1505, "Varibits AS"},
-    { 1506, "Roger Sp. z o.o. sp.k."},
-    { 1507, "Viega GmbH & Co. KG"},
-    { 1508, "Astersoft"},
-    { 1509, "BIG-EU"},
-    { 1510, "Inferrix Limited"},
-    { 1511, "Richards Electric Motor Co."},
-    { 1512, "dAPPControls"},
-    { 1513, "Entouch Controls"},
-    { 1514, "Mavili Elektronik Ticaret ve Sanayi Anonim Sirketi"},
-    { 1515, "BubblyNet"},
-    { 1516, "AlMayssan Technical Services Co. Ltd."},
-    { 1517, "Viridi Parente, Inc."},
-    { 1518, "Novel Apps Corp."},
-    { 1519, "Oventrop (China) HVAC System Technology Co., Ltd."},
-    { 1521, "Lacroix Sofrel"},
-    { 1522, "MachineSens loT Trading Co., LLC"},
-    { 1523, "Elmec Inc."},
-    { 1524, "Beijing Haishi Software Co., Ltd."},
-    { 1525, "Radix Electrosystems Pvt. Ltd."},
-    { 1526, "Värmebaronen AB"},
-    { 1527, "Treau Inc., dba Gradient"},
-    { 1528, "WEST Solution AG"},
-    { 1529, "Trueway Controls Hongkong Limited"},
-    { 1530, "BuildingLogiX"},
-    { 1531, "Ifesca GmbH"},
-    { 1532, "Fellowes Inc."},
-    { 1533, "Caleffi S.p.A."},
-    { 1534, "JDRF Electromag"},
-    { 1536, "Wecon Technology Co., Ltd."},
-    { 1537, "Acacia Green Technologies Ltd."},
-    { 1538, "Degree Analytics"},
-    { 1539, "Roltek Teknoloji A.S."},
-    { 1540, "Digital Control Technology Limited"},
-    { 1541, "Kentima AB"},
-    { 1542, "Pergamon Perceptive Technologies"},
-    { 1543, "Prefect Controls Ltd."},
-    { 1544, "SenTech Corporation"},
-    { 1545, "S+S Regeltechnik GmbH"},
-    { 1546, "AirBox, Inc."},
-    { 1547, "RVE"},
+    { 1486, "GuangZhou Wangkong Ltd." },
+    { 1487, "SafeSquare GmbH" },
+    { 1488, "Heklatech AB" },
+    { 1489, "Silvair" },
+    { 1490, "Adveco" },
+    { 1491, "Eura Drives Electric Co., Ltd." },
+    { 1492, "Caleb Controls" },
+    { 1493, "InBiot Monitoring S.L" },
+    { 1494, "Qingdao Haier Air Conditioner Electric Co., Ltd." },
+    { 1495, "Hangzhou Weiyl Technology Co., Ltd." },
+    { 1496, "yord sàrl" },
+    { 1497, "Infinitum Electric" },
+    { 1498, "Red Bean Systems Limited" },
+    { 1499, "Blue Time Concept SA" },
+    { 1500, "Shenzhen INVT Electric Co., Ltd." },
+    { 1501, "Messung Systems Pvt Ltd." },
+    { 1502, "ABB Electrification Canada Inc." },
+    { 1503, "Core Controls" },
+    { 1504, "Noord Tech d.o.o." },
+    { 1505, "Varibits AS" },
+    { 1506, "Roger Sp. z o.o. sp.k." },
+    { 1507, "Viega GmbH & Co. KG" },
+    { 1508, "Astersoft" },
+    { 1509, "BIG-EU" },
+    { 1510, "Inferrix Limited" },
+    { 1511, "Richards Electric Motor Co." },
+    { 1512, "dAPPControls" },
+    { 1513, "Entouch Controls" },
+    { 1514, "Mavili Elektronik Ticaret ve Sanayi Anonim Sirketi" },
+    { 1515, "BubblyNet" },
+    { 1516, "AlMayssan Technical Services Co. Ltd." },
+    { 1517, "Viridi Parente, Inc." },
+    { 1518, "Novel Apps Corp." },
+    { 1519, "Oventrop (China) HVAC System Technology Co., Ltd." },
+    { 1521, "Lacroix Sofrel" },
+    { 1522, "MachineSens loT Trading Co., LLC" },
+    { 1523, "Elmec Inc." },
+    { 1524, "Beijing Haishi Software Co., Ltd." },
+    { 1525, "Radix Electrosystems Pvt. Ltd." },
+    { 1526, "Värmebaronen AB" },
+    { 1527, "Treau Inc., dba Gradient" },
+    { 1528, "WEST Solution AG" },
+    { 1529, "Trueway Controls Hongkong Limited" },
+    { 1530, "BuildingLogiX" },
+    { 1531, "Ifesca GmbH" },
+    { 1532, "Fellowes Inc." },
+    { 1533, "Caleffi S.p.A." },
+    { 1534, "JDRF Electromag" },
+    { 1535, "Redwire Labs" },
+    { 1536, "Wecon Technology Co., Ltd." },
+    { 1537, "Acacia Green Technologies Ltd" },
+    { 1538, "Degree Analytics" },
+    { 1539, "Roltek Teknoloji A.S." },
+    { 1540, "Digital Control Technology Limited" },
+    { 1541, "Kentima AB" },
+    { 1542, "Pergamon Perceptive Technologies" },
+    { 1543, "Prefect Controls Ltd." },
+    { 1544, "SenTech Corporation" },
+    { 1545, "S+S Regeltechnik GmbH" },
+    { 1546, "AirBox, Inc." },
+    { 1547, "RVE" },
+    { 1548, "Motorola Solutions" },
+    { 1549, "BACSYS Innovations Private Limited" },
+    { 1550, "Ewattch" },
+    { 1551, "Builtlayer LLC" },
+    { 1552, "A&G Domotix S.R.L." },
+    { 1553, "Hytronik Industrial Limited" },
+    { 1554, "WHO Reinraumtechnik" },
+    { 1555, "TRICO Limited" },
+    { 1556, "SLKAutomation SRL" },
+    { 1557, "Zaphire AS" },
+    { 1558, "AJ Manufacturing" },
+    { 1559, "Future Motors Ltd." },
+    { 1560, "Himel Hong Kong Limited" },
+    { 1561, "Shenzhen Sunricher Technology Co., Ltd." },
+    { 1562, "Actility S.A." },
+    { 1563, "Oy Halton Group Ltd." },
+    { 1564, "AVTECH Software, Inc." },
+    { 1565, "InControl Engineering LLC" },
+    { 1566, "SoundWater Technologies LLC" },
     { 0, NULL }
 };
 static value_string_ext BACnetVendorIdentifiers_ext = VALUE_STRING_EXT_INIT(BACnetVendorIdentifiers);
@@ -7810,8 +7832,9 @@ fEnumeratedTagSplit(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree,
     if (fUnsigned32(tvb, offset+tag_len, lvt, &val)) {
         if (vs)
             subtree = proto_tree_add_subtree_format(tree, tvb, offset, lvt+tag_len,
-                ett_bacapp_tag, NULL, "%s %s (%u)", label, val_to_split_str(pinfo->pool, val, split_val, vs,
-                ASHRAE_Reserved_Fmt, Vendor_Proprietary_Fmt), val);
+                ett_bacapp_tag, NULL, "%s %s (%u)", label,
+                val_to_split_str(pinfo->pool, val, split_val, vs,
+                                 ASHRAE_Reserved_Fmt, Vendor_Proprietary_Fmt), val);
         else
             subtree = proto_tree_add_subtree_format(tree, tvb, offset, lvt+tag_len,
                 ett_bacapp_tag, NULL, "%s %u", label, val);
@@ -7988,10 +8011,8 @@ fPresentValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offs
                     subtree = proto_tree_add_subtree_format(tree, tvb, offset, lvt+tag_len, ett_bacapp_tag, NULL,
                         "Present Value (enum value): %s",
                         val_to_split_str(pinfo->pool, enum_index,
-                        split_val,
-                        vs,
-                        ASHRAE_Reserved_Fmt,
-                        Vendor_Proprietary_Fmt));
+                                         split_val, vs,
+                                         ASHRAE_Reserved_Fmt, Vendor_Proprietary_Fmt));
                     proto_tree_add_uint(subtree, hf_bacapp_present_value_enum_index, tvb, offset, lvt+tag_len, enum_index);
                     fTagHeaderTree(tvb, pinfo, subtree, offset, &tag_no, &tag_info, &lvt);
                 } else {
@@ -8012,10 +8033,9 @@ fPresentValue(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offs
             subtree = proto_tree_add_subtree_format(tree, tvb, offset, tag_len + 4, ett_bacapp_tag, NULL,
                 "Present Value (enum value): %s",
                 val_to_split_str(pinfo->pool, object_type,
-                128,
-                BACnetObjectType,
-                ASHRAE_Reserved_Fmt,
-                Vendor_Proprietary_Fmt));
+                                 128, BACnetObjectType,
+                                 ASHRAE_Reserved_Fmt,
+                                 Vendor_Proprietary_Fmt));
             proto_tree_add_uint(subtree, hf_bacapp_present_value_enum_index, tvb, offset, lvt+tag_len, object_type);
             fTagHeaderTree(tvb, pinfo, subtree, offset, &tag_no, &tag_info, &lvt);
             curr_offset += tag_len + lvt;
@@ -8528,8 +8548,8 @@ fObjectIdentifier(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned 
     updateBacnetInfoValue(BACINFO_OBJECTID,
                   wmem_strdup(pinfo->pool,
                     val_to_split_str(pinfo->pool, object_type, 128,
-                    BACnetObjectType, ASHRAE_Reserved_Fmt,
-                    Vendor_Proprietary_Fmt)));
+                                     BACnetObjectType, ASHRAE_Reserved_Fmt,
+                                     Vendor_Proprietary_Fmt)));
     updateBacnetInfoValue(BACINFO_INSTANCEID,
                   wmem_strdup_printf(pinfo->pool,
                     "Instance ID: %u",
@@ -8865,14 +8885,14 @@ fPropertyIdentifier(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigne
             ett_bacapp_tag, NULL,
             "%s: %s (%u)", label,
             val_to_split_str(pinfo->pool, propertyIdentifier, 512,
-                BACnetPropertyIdentifier,
-                ASHRAE_Reserved_Fmt,
-                Vendor_Proprietary_Fmt), propertyIdentifier);
+                             BACnetPropertyIdentifier,
+                             ASHRAE_Reserved_Fmt,
+                             Vendor_Proprietary_Fmt), propertyIdentifier);
         col_append_fstr(pinfo->cinfo, COL_INFO, "%s ",
                 val_to_split_str(pinfo->pool, propertyIdentifier, 512,
-                    BACnetPropertyIdentifier,
-                    ASHRAE_Reserved_Fmt,
-                    Vendor_Proprietary_Fmt));
+                                 BACnetPropertyIdentifier,
+                                 ASHRAE_Reserved_Fmt,
+                                 Vendor_Proprietary_Fmt));
     } else {
         /* property identifiers cannot be larger than 22-bits */
         return offset;
@@ -9147,7 +9167,7 @@ fBitStringTag(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offs
 }
 
 /* handles generic application types, as well as enumerated and enumerations
-   with reserved and proprietarty ranges (split) */
+   with reserved and proprietary ranges (split) */
 static unsigned
 fApplicationTypesEnumeratedSplit(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsigned offset,
     const char *label, const value_string *src, uint32_t split_val)
@@ -9724,7 +9744,7 @@ fAbstractSyntaxNType(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, unsign
         case 23: /* date-list */
             offset = fCalendarEntry(tvb, pinfo, tree, offset);
             break;
-        case 116: /* time-sychronization-recipients */
+        case 116: /* time-synchronization-recipients */
         case 206: /* utc-time-synchronization-recipients */
         case 202: /* restart-notification-recipients */
             offset = fRecipient(tvb, pinfo, tree, offset);
@@ -10624,7 +10644,7 @@ fDailySchedule(tvbuff_t *tvb, packet_info *pinfo, proto_tree *subtree, unsigned 
  * BACnetHealth ::= SEQUENCE {
  *  timestamp                   [0] BACnetDateTime,
  *  result                      [1] Error,
- *  property                    [2] BACnetPropertiyIdentifier OPTIONAL,
+ *  property                    [2] BACnetPropertyIdentifier OPTIONAL,
  *  details                     [3] CharacterString OPTIONAL
  * }
  * @param tvb the tv buffer of the current data
@@ -18011,7 +18031,7 @@ proto_register_bacapp(void)
         },
         { &hf_bacapp_objectType,
           { "Object Type",           "bacapp.objectType",
-            FT_UINT32, BASE_DEC, VALS(BACnetObjectType), 0xffc00000, NULL, HFILL }
+            FT_UINT32, BASE_DEC|BASE_EXT_STRING, &BACnetObjectType_ext, 0xffc00000, NULL, HFILL }
         },
         { &hf_bacapp_object_name,
           { "Object Name",           "bacapp.object_name",
@@ -18075,7 +18095,7 @@ proto_register_bacapp(void)
         },
         { &hf_bacapp_error_code,
           { "Error Code", "bacapp.error_code",
-            FT_UINT32, BASE_DEC, VALS(BACnetErrorCode), 0, NULL, HFILL }
+            FT_UINT32, BASE_DEC|BASE_EXT_STRING, &BACnetErrorCode_ext, 0, NULL, HFILL }
         },
         { &hf_bacapp_present_value_null,
           { "Present Value (null)", "bacapp.present_value.null",

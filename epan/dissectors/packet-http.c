@@ -332,12 +332,12 @@ typedef enum _http_transfer_coding {
 typedef struct {
 	char	*content_type;
 	char	*content_type_parameters;
-	bool have_content_length;
 	int64_t  content_length;
 	char     *content_encoding;
-	bool transfer_encoding_chunked;
-	http_transfer_coding transfer_encoding;
 	char    *upgrade;
+	http_transfer_coding transfer_encoding;
+	bool have_content_length;
+	bool transfer_encoding_chunked;
 } headers_t;
 
 /* request or response streaming reassembly data */
@@ -365,9 +365,9 @@ typedef struct {
 
  typedef struct _request_trans_t {
 	uint64_t first_range_num;
-	uint32_t req_frame;
 	nstime_t abs_time;
 	char *request_uri;
+	uint32_t req_frame;
 } request_trans_t;
 
  typedef struct _match_trans_t {
@@ -389,7 +389,8 @@ static bool process_header(tvbuff_t *tvb, int offset, int next_offset,
 			   const unsigned char *line, int linelen, int colon_offset,
 			   packet_info *pinfo, proto_tree *tree,
 			   headers_t *eh_ptr, http_conv_t *conv_data,
-			   media_container_type_t http_type, wmem_map_t *header_value_map, bool streaming_chunk_mode);
+			   media_container_type_t http_type, wmem_map_t *header_value_map,
+			   wmem_allocator_t *header_value_map_allocator, bool streaming_chunk_mode);
 static int find_header_hf_value(tvbuff_t *tvb, int offset, unsigned header_len);
 static bool check_auth_ntlmssp(proto_item *hdr_item, tvbuff_t *tvb,
 				   packet_info *pinfo, char *value);
@@ -1185,7 +1186,7 @@ http_upgrade_dissector(const char *protocol) {
 	return dissector_get_string_handle(upgrade_subdissector_table, protocol);
 }
 
-const char *
+static const char *
 http_get_header_value(packet_info* pinfo, const char *name, bool the_other_direction) {
 	conversation_t* conv = find_or_create_conversation(pinfo);
 	const http_conv_t *conv_data = (http_conv_t *)conversation_get_proto_data(conv, proto_http);
@@ -1247,6 +1248,37 @@ dissect_http_message(tvbuff_t *tvb, int offset, packet_info *pinfo,
 	wmem_map_t* header_value_map = NULL;
 	int 		chunk_offset = 0;
 	wmem_map_t	*chunk_map = NULL;
+	wmem_allocator_t *header_value_map_allocator = NULL;
+
+	/*
+	 * Originally this dissector only saved the header information (both in
+	 * headers and header_value_map) in pinfo->pool scoped data, passing it
+	 * to the (reassembled, if necessary) body contained in the message.
+	 *
+	 * Some protocols use the chunked transfer method to streaming data;
+	 * the headers are not repeated before each chunk but some dissectors
+	 * want the headers when dissecting each chunk (instead of saving the
+	 * headers themselves when called for the first chunk.) So in that
+	 * case the headers are saved in file scoped memory.
+	 *
+	 * Other protocols use the HTTP Upgrade mechanism; at least the first
+	 * frame for the upgrade protocol (which is likely after the response
+	 * that confirms the upgrade) will need a copy of the headers (likely
+	 * the response header and probably the request as well.) In that case
+	 * we also need to save the headers in file scoped memory.
+	 *
+	 * The current implementation saves the headers in file scoped memory
+	 * for all request/response pairs (but not for stray headers outside
+	 * of a request/response pair, often in fuzzed data.) It probably only
+	 * needs to do so for the above two cases, which could mean initially
+	 * allocating a map in pinfo->pool scope and then copying its contents
+	 * to file scope after an Upgrade header is found in order to prevent
+	 * memory consumption from growing over time for captures with HTTP
+	 * that does *not* use Upgrade or streaming chunked transfer method.
+	 * (For HTTP Upgrade both the request and response should have Upgrade
+	 * headers.)
+	 */
+
 	/*
 	 * For supporting dissecting chunked data in streaming reassembly mode.
 	 *
@@ -1579,6 +1611,7 @@ dissect_http_message(tvbuff_t *tvb, int offset, packet_info *pinfo,
 			handle = streaming_reassembly_data->streaming_handle;
 			content_info = streaming_reassembly_data->content_info;
 			header_value_map = (wmem_map_t*) content_info->data;
+			header_value_map_allocator = wmem_file_scope();
 		}
 	}
 
@@ -1589,7 +1622,10 @@ dissect_http_message(tvbuff_t *tvb, int offset, packet_info *pinfo,
 		DISSECTOR_ASSERT_HINT(header_value_map == NULL, "The header_value_map variable should be NULL while headers is NULL.");
 
 		headers = wmem_new0((streaming_chunk_mode ? wmem_file_scope() : pinfo->pool), headers_t);
-		header_value_map = wmem_map_new(wmem_file_scope(), g_str_hash, g_str_equal);
+		if (streaming_chunk_mode) {
+			header_value_map_allocator = wmem_file_scope();
+			header_value_map = wmem_map_new(header_value_map_allocator, g_str_hash, g_str_equal);
+		}
 	}
 
 	if (streaming_chunk_mode && begin_with_chunk) {
@@ -1763,6 +1799,18 @@ dissect_http_message(tvbuff_t *tvb, int offset, packet_info *pinfo,
 				    offset, next_offset - offset, ett_http_request, &hdr_item, text);
 
 			if (!PINFO_FD_VISITED(pinfo)) {
+				if (header_value_map_allocator != wmem_file_scope()) {
+					/*
+					 * If we already have a header_value_map allocated
+					 * with pinfo->pool scope, that means we saw a
+					 * field-line followed by a start line in the same
+					 * message; that's bogus, so we shouldn't need to
+					 * worry about passing the previous "headers" to a
+					 * next dissector, so it's okay to drop the map.
+					 */
+					header_value_map_allocator = wmem_file_scope();
+					header_value_map = wmem_map_new(header_value_map_allocator, g_str_hash, g_str_equal);
+				}
 				if (http_type == MEDIA_CONTAINER_HTTP_REQUEST) {
 					curr = push_req(conv_data, pinfo);
 					curr->request_method = wmem_strdup(wmem_file_scope(), stat_info->request_method);
@@ -1784,9 +1832,28 @@ dissect_http_message(tvbuff_t *tvb, int offset, packet_info *pinfo,
 			/*
 			 * Header.
 			 */
+			if (header_value_map == NULL && conv_data->req_res_tail) {
+				prv_data = (http_req_res_private_data_t*)conv_data->req_res_tail->private_data;
+				if (prv_data) {
+					header_value_map_allocator = wmem_file_scope();
+					if (prv_data->req_fwd_flow == direction) {
+						header_value_map = prv_data->request_headers;
+					} else {
+						header_value_map = prv_data->response_headers;
+					}
+				}
+			}
+			if (header_value_map == NULL) {
+				/*
+				 * We are seeing a header but have not tracked request or response, so we don't know
+				 * direction of this header, so not going to keep track of it
+				 */
+				header_value_map_allocator = pinfo->pool;
+				header_value_map = wmem_map_new(header_value_map_allocator, g_str_hash, g_str_equal);
+			}
 			bool good_header = process_header(tvb, offset, next_offset, line, linelen,
-			    colon_offset, pinfo, http_tree, headers, conv_data,
-			    http_type, header_value_map, streaming_chunk_mode);
+			    colon_offset, pinfo, http_tree, headers, conv_data, http_type, header_value_map,
+			    header_value_map_allocator, streaming_chunk_mode);
 			if (http_check_ascii_headers && !good_header) {
 				/*
 				 * Line is not a good HTTP header.
@@ -2079,6 +2146,9 @@ dissect_http_message(tvbuff_t *tvb, int offset, packet_info *pinfo,
 		content_info = wmem_new0(pinfo->pool, media_content_info_t);
 		content_info->media_str = headers->content_type_parameters;
 		content_info->type = http_type;
+		if (header_value_map == NULL) {
+			header_value_map = wmem_map_new(pinfo->pool, g_str_hash, g_str_equal);
+		}
 		content_info->data = header_value_map;
 	}
 
@@ -2106,8 +2176,7 @@ dissecting_body:
 		 * which, if no content length was specified,
 		 * is -1, i.e. "to the end of the frame.
 		 */
-		next_tvb = tvb_new_subset_length_caplen(tvb, offset, datalen,
-		    reported_datalen);
+		next_tvb = tvb_new_subset_length(tvb, offset, reported_datalen);
 
 		/*
 		 * Handle *transfer* encodings.
@@ -2135,10 +2204,6 @@ dissecting_body:
 				 * Add a new data source for the
 				 * de-chunked data.
 				 */
-#if 0 /* Handled in chunked_encoding_dissector() */
-				tvb_set_child_real_data_tvbuff(tvb,
-					next_tvb);
-#endif
 				add_new_data_source(pinfo, next_tvb,
 					"De-chunked entity body");
 				/* chunked-body might be smaller than
@@ -2553,7 +2618,7 @@ dissecting_body:
 			conv_data->server_port = pinfo->srcport;
 			/* Prepare structure for upgrade protocol data */
 			conv_data->upgrade_info = wmem_new0(wmem_file_scope(), http_upgrade_info_t);
-			conv_data->upgrade_info->server_port = pinfo->destport;
+			conv_data->upgrade_info->server_port = pinfo->srcport;
 			conv_data->upgrade_info->http_version = 1;
 			conv_data->upgrade_info->get_header_value = http_get_header_value;
 		}
@@ -3470,7 +3535,7 @@ process_header(tvbuff_t *tvb, int offset, int next_offset,
 	       const unsigned char *line, int linelen, int colon_offset,
 	       packet_info *pinfo, proto_tree *tree, headers_t *eh_ptr,
 	       http_conv_t *conv_data, media_container_type_t http_type, wmem_map_t *header_value_map,
-	       bool streaming_chunk_mode)
+	       wmem_allocator_t *header_value_map_allocator, bool streaming_chunk_mode)
 {
 	int len;
 	int line_end_offset;
@@ -3568,7 +3633,7 @@ process_header(tvbuff_t *tvb, int offset, int next_offset,
 	 * has value_bytes_len bytes in it.
 	 */
 	value_bytes_len = line_end_offset - value_offset;
-	value_bytes = (char *)wmem_alloc(wmem_file_scope(), value_bytes_len+1);
+	value_bytes = (char *)wmem_alloc(PINFO_FD_VISITED(pinfo) ? pinfo->pool : header_value_map_allocator, value_bytes_len+1);
 	memcpy(value_bytes, &line[value_offset - offset], value_bytes_len);
 	value_bytes[value_bytes_len] = '\0';
 	value = tvb_get_string_enc(pinfo->pool, tvb, value_offset, value_bytes_len, ENC_ASCII);
@@ -3576,7 +3641,7 @@ process_header(tvbuff_t *tvb, int offset, int next_offset,
 	value_len = (int)strlen(value);
 
 	if (!PINFO_FD_VISITED(pinfo)) { /* Record header if packet was not visited yet */
-		wmem_map_insert(header_value_map, wmem_strdup(wmem_file_scope(), header_name), value_bytes);
+		wmem_map_insert(header_value_map, wmem_strdup(header_value_map_allocator, header_name), value_bytes);
 	}
 
 	if (hf_index == -1) {

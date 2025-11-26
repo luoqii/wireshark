@@ -198,6 +198,7 @@ static int ett_x11_visualtype;
 
 static expert_field ei_x11_invalid_format;
 static expert_field ei_x11_request_length;
+static expert_field ei_x11_event_length;
 static expert_field ei_x11_keycode_value_out_of_range;
 
 /* desegmentation of X11 messages */
@@ -1116,8 +1117,7 @@ static const value_string zero_is_none_vals[] = {
       unsigned char eventcode;                                        \
       const char *sent;                                               \
       proto_tree *event_proto_tree;                                   \
-      next_tvb = tvb_new_subset_length_caplen(tvb, offset, next_offset - offset,    \
-                                next_offset - offset);                \
+      next_tvb = tvb_new_subset_length(tvb, offset, next_offset - offset);    \
       eventcode = tvb_get_uint8(next_tvb, 0);                        \
       sent = (eventcode & 0x80) ? "Sent-" : "";                       \
       event_proto_tree = proto_tree_add_subtree_format(t, next_tvb,   \
@@ -1226,9 +1226,7 @@ static const value_string zero_is_none_vals[] = {
                   ; /* XXX yes, what then?  Need to skip/join. */     \
             }                                                         \
       }                                                               \
-      if (length_remaining > plen)                                    \
-            length_remaining = plen;                                  \
-      next_tvb = tvb_new_subset_length_caplen(tvb, offset, length_remaining, plen); \
+      next_tvb = tvb_new_subset_length(tvb, offset, plen);            \
                                                                       \
       if (sep == NULL) {                                              \
             col_set_str(pinfo->cinfo, COL_INFO, str);                 \
@@ -1418,55 +1416,77 @@ static void listOfByte(tvbuff_t *tvb, int *offsetp, proto_tree *t, int hf,
 }
 
 static void listOfCard16(tvbuff_t *tvb, int *offsetp, proto_tree *t, int hf,
-                         int hf_item, int length, unsigned byte_order)
+                         int hf_item, unsigned num_items, unsigned byte_order)
 {
-      proto_item *ti = proto_tree_add_item(t, hf, tvb, *offsetp, length * 2, byte_order);
+      int length;
+      if (ckd_mul(&length, num_items, 2)) {
+            // hf is a FT_NONE, so this will mean "to the end of the tvbuff"
+            // An exception will be thrown at some point when adding an item.
+            length = INT_MAX;
+      }
+      proto_item *ti = proto_tree_add_item(t, hf, tvb, *offsetp, length, byte_order);
       proto_tree *tt = proto_item_add_subtree(ti, ett_x11_list_of_card32);
-      while(length--) {
+      while(num_items--) {
             proto_tree_add_item(tt, hf_item, tvb, *offsetp, 2, byte_order);
             *offsetp += 2;
       }
 }
 
 static void listOfInt16(tvbuff_t *tvb, int *offsetp, proto_tree *t, int hf,
-                         int hf_item, int length, unsigned byte_order)
+                         int hf_item, unsigned num_items, unsigned byte_order)
 {
-      proto_item *ti = proto_tree_add_item(t, hf, tvb, *offsetp, length * 2, byte_order);
+      int length;
+      if (ckd_mul(&length, num_items, 2)) {
+            length = INT_MAX;
+      }
+      proto_item *ti = proto_tree_add_item(t, hf, tvb, *offsetp, length, byte_order);
       proto_tree *tt = proto_item_add_subtree(ti, ett_x11_list_of_card32);
-      while(length--) {
+      while(num_items--) {
             proto_tree_add_item(tt, hf_item, tvb, *offsetp, 2, byte_order);
             *offsetp += 2;
       }
 }
 
 static void listOfCard32(tvbuff_t *tvb, int *offsetp, proto_tree *t, int hf,
-                         int hf_item, int length, unsigned byte_order)
+                         int hf_item, unsigned num_items, unsigned byte_order)
 {
-      proto_item *ti = proto_tree_add_item(t, hf, tvb, *offsetp, length * 4, byte_order);
+      int length;
+      if (ckd_mul(&length, num_items, 4)) {
+            length = INT_MAX;
+      }
+      proto_item *ti = proto_tree_add_item(t, hf, tvb, *offsetp, length, byte_order);
       proto_tree *tt = proto_item_add_subtree(ti, ett_x11_list_of_card32);
-      while(length--) {
+      while(num_items--) {
             proto_tree_add_item(tt, hf_item, tvb, *offsetp, 4, byte_order);
             *offsetp += 4;
       }
 }
 
 static void listOfInt32(tvbuff_t *tvb, int *offsetp, proto_tree *t, int hf,
-                         int hf_item, int length, unsigned byte_order)
+                         int hf_item, unsigned num_items, unsigned byte_order)
 {
-      proto_item *ti = proto_tree_add_item(t, hf, tvb, *offsetp, length * 4, byte_order);
+      int length;
+      if (ckd_mul(&length, num_items, 4)) {
+            length = INT_MAX;
+      }
+      proto_item *ti = proto_tree_add_item(t, hf, tvb, *offsetp, length, byte_order);
       proto_tree *tt = proto_item_add_subtree(ti, ett_x11_list_of_card32);
-      while(length--) {
+      while(num_items--) {
             proto_tree_add_item(tt, hf_item, tvb, *offsetp, 4, byte_order);
             *offsetp += 4;
       }
 }
 
 static void listOfCard64(tvbuff_t *tvb, int *offsetp, proto_tree *t, int hf,
-                         int hf_item, int length, unsigned byte_order)
+                         int hf_item, unsigned num_items, unsigned byte_order)
 {
-      proto_item *ti = proto_tree_add_item(t, hf, tvb, *offsetp, length * 8, byte_order);
+      int length;
+      if (ckd_mul(&length, num_items, 8)) {
+            length = INT_MAX;
+      }
+      proto_item *ti = proto_tree_add_item(t, hf, tvb, *offsetp, length, byte_order);
       proto_tree *tt = proto_item_add_subtree(ti, ett_x11_list_of_card32);
-      while(length--) {
+      while(num_items--) {
             proto_tree_add_item(tt, hf_item, tvb, *offsetp, 8, byte_order);
             *offsetp += 8;
       }
@@ -1474,11 +1494,15 @@ static void listOfCard64(tvbuff_t *tvb, int *offsetp, proto_tree *t, int hf,
 
 #if 0 /* Not yet used by any extension */
 static void listOfInt64(tvbuff_t *tvb, int *offsetp, proto_tree *t, int hf,
-                         int hf_item, int length, unsigned byte_order)
+                         int hf_item, unsigned num_items, unsigned byte_order)
 {
-      proto_item *ti = proto_tree_add_item(t, hf, tvb, *offsetp, length * 8, byte_order);
+      int length;
+      if (ckd_mul(&length, num_items, 8)) {
+            length = INT_MAX;
+      }
+      proto_item *ti = proto_tree_add_item(t, hf, tvb, *offsetp, length, byte_order);
       proto_tree *tt = proto_item_add_subtree(ti, ett_x11_list_of_card32);
-      while(length--) {
+      while(num_items--) {
             proto_tree_add_item(tt, hf_item, tvb, *offsetp, 8, byte_order);
             *offsetp += 8;
       }
@@ -1486,22 +1510,30 @@ static void listOfInt64(tvbuff_t *tvb, int *offsetp, proto_tree *t, int hf,
 #endif
 
 static void listOfFloat(tvbuff_t *tvb, int *offsetp, proto_tree *t, int hf,
-                         int hf_item, int length, unsigned byte_order)
+                         int hf_item, unsigned num_items, unsigned byte_order)
 {
-      proto_item *ti = proto_tree_add_item(t, hf, tvb, *offsetp, length * 4, byte_order);
+      int length;
+      if (ckd_mul(&length, num_items, 4)) {
+            length = INT_MAX;
+      }
+      proto_item *ti = proto_tree_add_item(t, hf, tvb, *offsetp, length, byte_order);
       proto_tree *tt = proto_item_add_subtree(ti, ett_x11_list_of_float);
-      while(length--) {
+      while(num_items--) {
             proto_tree_add_item(tt, hf_item, tvb, *offsetp, 4, byte_order);
             *offsetp += 4;
       }
 }
 
 static void listOfDouble(tvbuff_t *tvb, int *offsetp, proto_tree *t, int hf,
-                         int hf_item, int length, unsigned byte_order)
+                         int hf_item, unsigned num_items, unsigned byte_order)
 {
-      proto_item *ti = proto_tree_add_item(t, hf, tvb, *offsetp, length * 8, byte_order);
+      int length;
+      if (ckd_mul(&length, num_items, 8)) {
+            length = INT_MAX;
+      }
+      proto_item *ti = proto_tree_add_item(t, hf, tvb, *offsetp, length, byte_order);
       proto_tree *tt = proto_item_add_subtree(ti, ett_x11_list_of_double);
-      while(length--) {
+      while(num_items--) {
             proto_tree_add_item(tt, hf_item, tvb, *offsetp, 8, byte_order);
             *offsetp += 8;
       }
@@ -3376,11 +3408,13 @@ static void tryExtensionEvent(int event, tvbuff_t *tvb, int *offsetp, proto_tree
             func(tvb, offsetp, t, byte_order);
 }
 
-static void tryGenericExtensionEvent(tvbuff_t *tvb, int *offsetp, proto_tree *t,
+static void tryGenericExtensionEvent(tvbuff_t *tvb, packet_info *pinfo, int *offsetp, proto_tree *t,
                                      x11_conv_data_t *state, unsigned byte_order)
 {
+      proto_item *ti;
       const char *extname;
-      int extension, length;
+      int extension;
+      uint32_t length;
 
       extension = tvb_get_uint8(tvb, *offsetp);
       (*offsetp)++;
@@ -3394,9 +3428,17 @@ static void tryGenericExtensionEvent(tvbuff_t *tvb, int *offsetp, proto_tree *t,
 
       CARD16(event_sequencenumber);
 
-      length = REPLYLENGTH(eventlength);
-      length = length * 4 + 32;
+      ti = proto_tree_add_item_ret_uint(t, hf_x11_eventlength, tvb, *offsetp, 4, byte_order, &length);
       *offsetp += 4;
+      /* The length field specifies the number of 4-byte blocks after the
+       * initial 32 bytes. */
+      uint64_t tmp = (uint64_t)length * 4 + 32;
+      if (tmp > INT_MAX) {
+            expert_add_info_format(pinfo, ti, &ei_x11_event_length, "Bogus generic extension length (%"PRId64" bytes)", tmp);
+            return;
+      }
+      length = (uint32_t)tmp;
+      /* XXX - It might be better to take a subset TVB instead of passing length. */
 
       if (extname) {
           x11_generic_event_info *info;
@@ -3410,7 +3452,7 @@ static void tryGenericExtensionEvent(tvbuff_t *tvb, int *offsetp, proto_tree *t,
               for (i = 0; info[i].dissect != NULL; i++) {
                   if (info[i].minor == opcode) {
                       *offsetp += 2;
-                      info[i].dissect(tvb, length, offsetp, t, byte_order);
+                      info[i].dissect(tvb, (int)length, offsetp, t, byte_order);
                       return;
                   }
               }
@@ -3815,11 +3857,11 @@ static void dissect_x11_request(tvbuff_t *tvb, packet_info *pinfo,
                 break;
             case 16:
                 if (v32)
-                    LISTofCARD16(data16, v32 * 2);
+                    listOfCard16(tvb, offsetp, t, hf_x11_data16, hf_x11_data16_item, v32, byte_order);
                 break;
             case 32:
                 if (v32)
-                    LISTofCARD32(data32, v32 * 4);
+                    listOfCard32(tvb, offsetp, t, hf_x11_data32, hf_x11_data32_item, v32, byte_order);
                 break;
             default:
                 expert_add_info(pinfo, ti, &ei_x11_invalid_format);
@@ -4849,7 +4891,6 @@ static void dissect_x11_requests(tvbuff_t *tvb, packet_info *pinfo,
       const char *volatile sep = NULL;
       conversation_t *conversation;
       x11_conv_data_t *volatile state;
-      int length;
       tvbuff_t *volatile next_tvb;
 
       while ((length_remaining = tvb_reported_length_remaining(tvb, offset)) > 0) {
@@ -5045,21 +5086,8 @@ static void dissect_x11_requests(tvbuff_t *tvb, packet_info *pinfo,
              * Construct a tvbuff containing the amount of the payload
              * we have available.  Make its reported length the
              * amount of data in the X11 request.
-             *
-             * XXX - if reassembly isn't enabled. the subdissector
-             * will throw a BoundsError exception, rather than a
-             * ReportedBoundsError exception.  We really want a tvbuff
-             * where the length is "length", the reported length is "plen",
-             * and the "if the snapshot length were infinite" length is the
-             * minimum of the reported length of the tvbuff handed to us
-             * and "plen", with a new type of exception thrown if the offset
-             * is within the reported length but beyond that third length,
-             * with that exception getting the "Unreassembled Packet" error.
              */
-            length = length_remaining;
-            if (length > plen)
-                  length = plen;
-            next_tvb = tvb_new_subset_length_caplen(tvb, offset, length, plen);
+            next_tvb = tvb_new_subset_length(tvb, offset, plen);
 
             /*
              * Set the column appropriately.
@@ -6122,7 +6150,7 @@ decode_x11_event(tvbuff_t *tvb, packet_info* pinfo, unsigned char eventcode, con
                   break;
 
             case GenericEvent:
-                  tryGenericExtensionEvent(tvb, offsetp, t, state, byte_order);
+                  tryGenericExtensionEvent(tvb, pinfo, offsetp, t, state, byte_order);
                   break;
 
             default:
@@ -6276,6 +6304,7 @@ static void register_x11_fields(const char* unused _U_)
       static ei_register_info ei[] = {
             { &ei_x11_invalid_format, { "x11.invalid_format", PI_PROTOCOL, PI_WARN, "Invalid Format", EXPFILL }},
             { &ei_x11_request_length, { "x11.request-length.invalid", PI_PROTOCOL, PI_WARN, "Invalid Length", EXPFILL }},
+            { &ei_x11_event_length, { "x11.eventlength.invalid", PI_PROTOCOL, PI_WARN, "Invalid Length", EXPFILL }},
             { &ei_x11_keycode_value_out_of_range, { "x11.keycode_value_out_of_range", PI_PROTOCOL, PI_WARN, "keycode value is out of range", EXPFILL }},
       };
 

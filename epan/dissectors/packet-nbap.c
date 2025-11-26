@@ -22,7 +22,6 @@
 
 #include <epan/to_str.h>
 #include <epan/packet.h>
-#include <epan/sctpppids.h>
 #include <epan/asn1.h>
 #include <epan/conversation.h>
 #include <epan/expert.h>
@@ -38,6 +37,7 @@
 #include "packet-rrc.h"
 #include "packet-umts_rlc.h"
 #include "packet-nbap.h"
+#include "packet-sctp.h"
 
 #ifdef _MSC_VER
 /* disable: "warning C4146: unary minus operator applied to unsigned type, result still unsigned" */
@@ -9611,6 +9611,8 @@ static const value_string nbap_CauseRadioNetwork_vals[] = {
   {  66, "multi-Cell-EDCH-operation-not-available" },
   { 0, NULL }
 };
+
+static value_string_ext nbap_CauseRadioNetwork_vals_ext = VALUE_STRING_EXT_INIT(nbap_CauseRadioNetwork_vals);
 
 
 static int
@@ -55670,8 +55672,8 @@ dissect_nbap_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *dat
 
   pdu_type = tvb_get_uint8(tvb, PDU_TYPE_OFFSET);
   if (pdu_type & 0x1f) {
-    /* pdu_type is not 0x00 (initiatingMessage), 0x20 (succesfulOutcome),
-       0x40 (unsuccesfulOutcome) or 0x60 (outcome), ignore extension bit (0x80) */
+    /* pdu_type is not 0x00 (initiatingMessage), 0x20 (successfulOutcome),
+       0x40 (unsuccessfulOutcome) or 0x60 (outcome), ignore extension bit (0x80) */
     return false;
   }
 
@@ -60002,7 +60004,7 @@ void proto_register_nbap(void)
         "C_ID", HFILL }},
     { &hf_nbap_radioNetwork,
       { "radioNetwork", "nbap.radioNetwork",
-        FT_UINT32, BASE_DEC, VALS(nbap_CauseRadioNetwork_vals), 0,
+        FT_UINT32, BASE_DEC|BASE_EXT_STRING, &nbap_CauseRadioNetwork_vals_ext, 0,
         "CauseRadioNetwork", HFILL }},
     { &hf_nbap_transport,
       { "transport", "nbap.transport",

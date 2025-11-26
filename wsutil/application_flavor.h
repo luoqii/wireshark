@@ -11,6 +11,7 @@
 #pragma once
 
 #include <wireshark.h>
+#include <wiretap/wtap.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,7 +27,7 @@ enum application_flavor_e {
 };
 
 /**
- * Initialize our application flavor.
+ * @brief Initialize our application flavor.
  *
  * Set our application flavor, which determines the top-level
  * configuration directory name and environment variable prefixes.
@@ -37,13 +38,7 @@ enum application_flavor_e {
 WS_DLL_PUBLIC void set_application_flavor(enum application_flavor_e flavor);
 
 /**
- * Get our application flavor.
- * @return The flavor.
- */
-WS_DLL_PUBLIC enum application_flavor_e get_application_flavor(void);
-
-/**
- * Get the proper (capitalized) application name, suitable for user
+ * @brief Get the proper (capitalized) application name, suitable for user
  * presentation.
  *
  * @return The application name. Must not be freed.
@@ -51,31 +46,42 @@ WS_DLL_PUBLIC enum application_flavor_e get_application_flavor(void);
 WS_DLL_PUBLIC const char *application_flavor_name_proper(void);
 
 /**
- * Get the lower-case application name.
+ * @brief Get the lower-case application name.
  *
  * @return The application name. Must not be freed.
  */
 WS_DLL_PUBLIC const char *application_flavor_name_lower(void);
 
 /**
- * Get an application flavor from its name.
+ * @brief Get the prefix for the application specific environment variable used to retrieve various configurations.
  *
- * @param name The application name. Case insensitive.
- * @return The application flavor, or APPLICATION_FLAVOR_WIRESHARK if there is no match.
+ * @return The application prefix.
  */
-WS_DLL_PUBLIC enum application_flavor_e application_name_to_flavor(const char * name);
+WS_DLL_PUBLIC const char* application_configuration_environment_prefix(void);
 
 /**
- * Convenience routine for checking the application flavor.
+ * @brief Get the list of application supported file extensions
+ *
+ * @param file_extensions Returned array of extensions supported by the application
+ * @param num_extensions Returned number of extensions supported by the application
+ */
+WS_DLL_PUBLIC void application_file_extensions(const struct file_extension_info** file_extensions, unsigned* num_extensions);
+
+/**
+ * @brief Get the default columns for the application
+ */
+WS_DLL_PUBLIC const char** application_columns(void);
+
+/**
+ * @brief Get the default number of columns for the application
+ */
+WS_DLL_PUBLIC unsigned application_num_columns(void);
+
+/**
+ * @brief Convenience routine for checking the application flavor.
  * @return true if the application flavor is APPLICATION_FLAVOR_WIRESHARK.
  */
 WS_DLL_PUBLIC bool application_flavor_is_wireshark(void);
-
-/**
- * Convenience routine for checking the application flavor.
- * @return true if the application flavor is APPLICATION_FLAVOR_STRATOSHARK.
- */
-WS_DLL_PUBLIC bool application_flavor_is_stratoshark(void);
 
 #ifdef __cplusplus
 }

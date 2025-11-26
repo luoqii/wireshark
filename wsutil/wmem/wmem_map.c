@@ -340,7 +340,7 @@ wmem_map_insert(wmem_map_t *map, const void *key, void *value)
 }
 
 bool
-wmem_map_contains(wmem_map_t *map, const void *key)
+wmem_map_contains(const wmem_map_t *map, const void *key)
 {
     wmem_map_item_t *item;
 
@@ -365,7 +365,7 @@ wmem_map_contains(wmem_map_t *map, const void *key)
 }
 
 void *
-wmem_map_lookup(wmem_map_t *map, const void *key)
+wmem_map_lookup(const wmem_map_t *map, const void *key)
 {
     wmem_map_item_t *item;
 
@@ -390,7 +390,7 @@ wmem_map_lookup(wmem_map_t *map, const void *key)
 }
 
 bool
-wmem_map_lookup_extended(wmem_map_t *map, const void *key, const void **orig_key, void **value)
+wmem_map_lookup_extended(const wmem_map_t *map, const void *key, const void **orig_key, void **value)
 {
     wmem_map_item_t *item;
 
@@ -485,7 +485,7 @@ wmem_map_steal(wmem_map_t *map, const void *key)
 }
 
 wmem_list_t*
-wmem_map_get_keys(wmem_allocator_t *list_allocator, wmem_map_t *map)
+wmem_map_get_keys(wmem_allocator_t *list_allocator, const wmem_map_t *map)
 {
     size_t capacity, i;
     wmem_map_item_t *cur;
@@ -508,7 +508,7 @@ wmem_map_get_keys(wmem_allocator_t *list_allocator, wmem_map_t *map)
 }
 
 void
-wmem_map_foreach(wmem_map_t *map, GHFunc foreach_func, void * user_data)
+wmem_map_foreach(const wmem_map_t *map, GHFunc foreach_func, void * user_data)
 {
     wmem_map_item_t *cur;
     unsigned i;
@@ -528,7 +528,7 @@ wmem_map_foreach(wmem_map_t *map, GHFunc foreach_func, void * user_data)
 }
 
 void*
-wmem_map_find(wmem_map_t *map, GHRFunc foreach_func, void * user_data)
+wmem_map_find(const wmem_map_t *map, GHRFunc foreach_func, void * user_data)
 {
     wmem_map_item_t **item;
     unsigned i;
@@ -581,7 +581,7 @@ wmem_map_foreach_remove(wmem_map_t *map, GHRFunc foreach_func, void * user_data)
 }
 
 unsigned
-wmem_map_size(wmem_map_t *map)
+wmem_map_size(const wmem_map_t *map)
 {
     return (unsigned)map->count;
 }
@@ -591,7 +591,7 @@ wmem_map_reserve(wmem_map_t *map, uint64_t capacity)
 {
     ws_return_val_if(!capacity, ((size_t)1) << map->min_capacity);
 
-    map->min_capacity = ws_ilog2(capacity) + 1;
+    map->min_capacity = (unsigned)ws_ilog2(capacity) + 1;
 
     map->min_capacity = MAX(map->min_capacity, WMEM_MAP_DEFAULT_CAPACITY);
 

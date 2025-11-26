@@ -290,7 +290,7 @@ static const value_string access_mode_user_level_vals[] = {
 	{ 2,	"Maintenance" },
 	{ 3,	"Authorized client" },
 	{ 4,	"Service" },
-	{ 0xFFFFFFFF,	"Invalid number" },
+	{ 0xFF,	"Invalid number" },
 	{ 0,	NULL }
 };
 
@@ -546,16 +546,6 @@ static const value_string sick_cola_sopas_error_vals[] = {
 	{ 26,	"Complex Arrays not supported" },
 
 	{ 0, NULL }
-};
-
-/* Copied and renamed from proto.c because global value_strings don't work for plugins */
-static const value_string plugin_proto_checksum_vals[] = {
-	{ PROTO_CHECKSUM_E_BAD,        "Bad"  },
-	{ PROTO_CHECKSUM_E_GOOD,       "Good" },
-	{ PROTO_CHECKSUM_E_UNVERIFIED, "Unverified" },
-	{ PROTO_CHECKSUM_E_NOT_PRESENT, "Not present" },
-
-	{ 0,        NULL }
 };
 
 static const unit_name_string sick_cola_units_ticks_mm = { "ticks/mm", NULL };
@@ -2505,7 +2495,7 @@ proto_register_sick_cola(void)
 		{ &hf_sick_cola_b_checksum,
 			{ "Checksum", "sick_cola.binary.checksum", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL } },
 		{ &hf_sick_cola_b_checksum_status,
-			{ "CRC Status", "sick_cola.binary.checksum_status", FT_UINT8, BASE_NONE, &plugin_proto_checksum_vals, 0x0, NULL, HFILL } },
+			{ "CRC Status", "sick_cola.binary.checksum_status", FT_UINT8, BASE_NONE, VALS(proto_checksum_vals), 0x0, NULL, HFILL}},
 		{ &hf_sick_cola_a_stx,
 			{ "STX", "sick_cola.ascii.stx", FT_UINT8, BASE_HEX, NULL, 0x0, NULL, HFILL } },
 		{ &hf_sick_cola_a_etx,

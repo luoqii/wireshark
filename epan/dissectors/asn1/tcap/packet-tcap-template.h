@@ -117,7 +117,7 @@ struct tcaphash_ansicall_t {
   struct tcaphash_ansicall_t * previous_ansicall;
 };
 
-/** The Key for the hash table is the TCAP origine transaction identifier
+/** The Key for the hash table is the TCAP original transaction identifier
    of the TC_BEGIN containing the InitialDP */
 
 struct tcaphash_context_key_t {
@@ -173,7 +173,7 @@ void tcapsrt_close(struct tcaphash_context_t * p_tcaphash_context,
 /**
  * Service Response Time analyze
  * Called just after dissector call
- * Associate a TCAP context to a tcap session and display session related infomations
+ * Associate a TCAP context to a tcap session and display session related information
  * like the first frame, the last, the session duration,
  * and a uniq session identifier for the filtering
  *
@@ -190,7 +190,6 @@ struct tcaphash_context_t * tcapsrt_call_matching(tvbuff_t *tvb,
 						  proto_tree *tree,
 						  struct tcapsrt_info_t * p_tcap_info);
 
-WS_DLL_PUBLIC bool gtcap_StatSRT;
 
 extern int tcap_standard;
 

@@ -290,7 +290,7 @@ static void parse_band_he_cap_phy(struct ws80211_band *band,
 	 * and HT40MINUS channel types are confusing for users as at least
 	 * one won't work and will result in a failed tune. Instead
 	 * we should use a NL80211_CHAN_WIDTH_40 channel where the center
-	 * freq must be provided and calculate the approprate center freq
+	 * freq must be provided and calculate the appropriate center freq
 	 * for the non-overlapping channel as done for VHT80 and higher
 	 * bandwidths. So we really need a different channel type for that.
 	 */
@@ -1232,7 +1232,7 @@ void ws80211_free_interfaces(GArray *interfaces)
 		return;
 
 	while (interfaces->len) {
-		iface = g_array_index(interfaces, struct ws80211_interface *, 0);
+		iface = g_array_index(interfaces, struct ws80211_interface *, interfaces->len - 1);
 		g_array_remove_index(interfaces, interfaces->len - 1);
 		g_array_free(iface->bands, true);
 		g_free(iface->ifname);

@@ -247,12 +247,12 @@ void uat_move_index(uat_t * uat, unsigned old_idx, unsigned new_idx)
 }
 
 /* The returned filename was g_malloc()'d so the caller must free it */
-char* uat_get_actual_filename(uat_t* uat, bool for_writing) {
+char* uat_get_actual_filename(uat_t* uat, bool for_writing, const char* app_env_var_prefix) {
     char *pers_fname = NULL;
 
-    pers_fname =  get_persconffile_path(uat->filename, uat->from_profile);
+    pers_fname =  get_persconffile_path(uat->filename, uat->from_profile, app_env_var_prefix);
     if ((! for_writing ) && (! file_exists(pers_fname) )) {
-        char* data_fname = get_datafile_path(uat->filename);
+        char* data_fname = get_datafile_path(uat->filename, app_env_var_prefix);
 
         if (file_exists(data_fname)) {
             g_free(pers_fname);
@@ -324,6 +324,21 @@ char *uat_fld_tostr(void *rec, uat_field_t *f) {
     return out;
 }
 
+char *uat_record_tostr(const uat_t *uat, void *rec) {
+    unsigned field;
+    wmem_strbuf_t *str;
+
+    str = wmem_strbuf_create(NULL);
+    for (field = 0; field < uat->ncols; field++) {
+        char *fld = uat_fld_tostr(rec, &(uat->fields[field]));
+        if (field > 0)
+            wmem_strbuf_append_c(str, ',');
+        wmem_strbuf_append_printf(str, "\"%s\"", fld);
+        g_free(fld);
+    }
+    return (wmem_strbuf_finalize(str));
+}
+
 static void putfld(FILE* fp, void* rec, uat_field_t* f) {
     unsigned fld_len;
     char* fld_ptr;
@@ -378,9 +393,9 @@ static void putfld(FILE* fp, void* rec, uat_field_t* f) {
     g_free(fld_ptr);
 }
 
-bool uat_save(uat_t* uat, char** error) {
+bool uat_save(uat_t* uat, const char* app_env_var_prefix, char** error) {
     unsigned i;
-    char* fname = uat_get_actual_filename(uat,true);
+    char* fname = uat_get_actual_filename(uat,true, app_env_var_prefix);
     FILE* fp;
 
     if (! fname ) return false;
@@ -390,7 +405,7 @@ bool uat_save(uat_t* uat, char** error) {
     if (!fp && errno == ENOENT) {
         /* Parent directory does not exist, try creating first */
         char *pf_dir_path = NULL;
-        if (create_persconffile_dir(&pf_dir_path) != 0) {
+        if (create_persconffile_dir(app_env_var_prefix, &pf_dir_path) != 0) {
             *error = ws_strdup_printf("uat_save: error creating '%s'", pf_dir_path);
             g_free (pf_dir_path);
             return false;
@@ -597,7 +612,7 @@ void uat_foreach_table(uat_cb_t cb,void* user_data) {
 
 }
 
-void uat_load_all(void) {
+void uat_load_all(const char* app_env_var_prefix) {
     unsigned i;
     char* err;
 
@@ -606,7 +621,7 @@ void uat_load_all(void) {
 
         if (!u->loaded) {
             err = NULL;
-            if (!uat_load(u, NULL, &err)) {
+            if (!uat_load(u, NULL, app_env_var_prefix, &err)) {
                 report_failure("Error loading table '%s': %s",u->name,err);
                 g_free(err);
             }
@@ -805,6 +820,36 @@ bool uat_fld_chk_num_signed_dec64(void* u1 _U_, const char* strptr, unsigned len
         result = uat_fld_chk_num_check_result(result, strn, err);
         g_free(str);
 
+        return result;
+    }
+
+    *err = NULL;
+    return true;
+}
+
+bool uat_fld_chk_num_dbl(void* u1 _U_, const char* strptr, unsigned len, const void* u2 _U_, const void* u3 _U_, char** err) {
+    if (len > 0) {
+        char* str = g_strndup(strptr, len);
+        char* strn;
+
+        double value = g_ascii_strtod(str, &strn);
+        bool result = true;
+        if (errno == ERANGE) {
+            /* Distinguish between underflow and overflow.
+             * The function used for integers handles overflow. */
+            if (value == 0) {
+                *err = g_strdup("Value would underflow");
+                return false;
+            }
+            result = false;
+        } else if ((value == 0 && strn == str)) {
+            /* No conversion could be performed. (The ws_strtoi
+             * functions in libwsutil do this check.) */
+            errno = EINVAL;
+            result = false;
+        }
+        result = uat_fld_chk_num_check_result(result, strn, err);
+        g_free(str);
         return result;
     }
 

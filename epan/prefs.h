@@ -43,6 +43,15 @@ extern "C" {
 #define CONV_DEINT_KEY_MAC        0x04
 #define CONV_DEINT_KEY_VLAN       0x08
 
+/* Bitmask of flags for the effect of a preference in Wireshark */
+#define PREF_EFFECT_DISSECTION        (1u << 0)
+#define PREF_EFFECT_CAPTURE           (1u << 1)
+#define PREF_EFFECT_GUI_LAYOUT        (1u << 2)
+#define PREF_EFFECT_FIELDS            (1u << 3)
+#define PREF_EFFECT_GUI               (1u << 4)
+#define PREF_EFFECT_GUI_COLOR         (1u << 5)
+#define PREF_EFFECT_AGGREGATION       (1u << 6)
+
 struct epan_uat;
 struct _e_addr_resolve;
 
@@ -164,7 +173,7 @@ typedef enum {
 
 typedef struct _e_prefs {
   GList       *col_list;
-  int          num_cols;
+  unsigned     num_cols;
   color_t      st_client_fg, st_client_bg, st_server_fg, st_server_bg;
   color_t      gui_filter_valid_fg, gui_filter_invalid_fg, gui_filter_deprecated_fg;
   color_t      gui_filter_valid_bg, gui_filter_invalid_bg, gui_filter_deprecated_bg;
@@ -232,6 +241,9 @@ typedef struct _e_prefs {
   bool         capture_pcap_ng;
   bool         capture_real_time;
   unsigned     capture_update_interval;
+  bool         enable_aggregation;
+  GList*       aggregation_fields;
+  int          aggregation_fields_num;
   bool         capture_no_interface_load;
   bool         capture_no_extcap;
   bool         capture_show_info;
@@ -250,8 +262,8 @@ typedef struct _e_prefs {
   bool         cols_hide_new; /* true if the new (index-based) gui.column.hide preference was loaded. */
   bool         gui_update_enabled;
   software_update_channel_e gui_update_channel;
-  int          gui_update_interval;
-  int          gui_debounce_timer;
+  unsigned     gui_update_interval;
+  unsigned     gui_debounce_timer;
   char        *saved_at_version;
   bool         unknown_prefs; /* unknown or obsolete pref(s) */
   bool         gui_packet_list_separator;
@@ -266,16 +278,16 @@ typedef struct _e_prefs {
   bool         gui_packet_list_show_minimap;
   bool         gui_packet_list_sortable;
   unsigned     gui_packet_list_cached_rows_max;
-  int          gui_decimal_places1; /* Used for type 1 calculations */
-  int          gui_decimal_places2; /* Used for type 2 calculations */
-  int          gui_decimal_places3; /* Used for type 3 calculations */
+  unsigned     gui_decimal_places1; /* Used for type 1 calculations */
+  unsigned     gui_decimal_places2; /* Used for type 2 calculations */
+  unsigned     gui_decimal_places3; /* Used for type 3 calculations */
   bool         gui_rtp_player_use_disk1;
   bool         gui_rtp_player_use_disk2;
   unsigned     flow_graph_max_export_items;
   bool         st_enable_burstinfo;
   bool         st_burst_showcount;
-  int          st_burst_resolution;
-  int          st_burst_windowlen;
+  unsigned     st_burst_resolution;
+  unsigned     st_burst_windowlen;
   bool         st_sort_casesensitve;
   bool         st_sort_rng_fixorder;
   bool         st_sort_rng_nameonly;
@@ -301,10 +313,10 @@ struct pref_custom_cbs;
 typedef struct pref_module module_t;
 
 /** Sets up memory used by proto routines. Called at program startup */
-void prefs_init(void);
+void prefs_init(const char** col_fmt, int num_cols);
 
 /** Reset preferences to default values.  Called at profile change */
-WS_DLL_PUBLIC void prefs_reset(void);
+WS_DLL_PUBLIC void prefs_reset(const char* app_env_var_prefix, const char** col_fmt, int num_cols);
 
 /** Frees memory used by proto routines. Called at program shutdown */
 void prefs_cleanup(void);
@@ -871,6 +883,8 @@ WS_DLL_PUBLIC void prefs_register_custom_preference_TCP_Analysis(module_t *modul
 WS_DLL_PUBLIC void prefs_set_preference_effect_fields(module_t *module,
     const char *name);
 
+WS_DLL_PUBLIC void prefs_set_preference_effect(module_t* module,
+    const char* name, unsigned flags);
 
 typedef unsigned (*pref_cb)(pref_t *pref, void *user_data);
 
@@ -943,7 +957,7 @@ char *prefs_pref_to_str(pref_t *pref, pref_source_t source);
  *
  * @param pref A preference.
  *
- * @return A boolean indication the obsolesence of the preference.
+ * @return A boolean indication the obsolescence of the preference.
  */
 WS_DLL_PUBLIC
 bool prefs_is_preference_obsolete(pref_t *pref);
@@ -956,9 +970,10 @@ bool prefs_is_preference_obsolete(pref_t *pref);
  * This is called by epan_load_settings(); programs should call that
  * rather than individually calling the routines it calls.
  *
+ * @param app_env_var_prefix The prefix for the application environment variable used to get the global configuration directory.
  * @return a pointer to the filled in prefs object
 */
-extern e_prefs *read_prefs(void);
+extern e_prefs *read_prefs(const char* app_env_var_prefix);
 
 /**
  * Write out "prefs" to the user's preferences file, and return 0.
@@ -966,10 +981,11 @@ extern e_prefs *read_prefs(void);
  * If we got an error, stuff a pointer to the path of the preferences file
  * into "*pf_path_return", and return the errno.
  *
+ * @param app_env_var_prefix The prefix for the application environment variable used to get the global configuration directory.
  * @param pf_path_return The path to write preferences to or NULL for stdout
  * @return 0 if success, otherwise errno
 */
-WS_DLL_PUBLIC int write_prefs(char **pf_path_return);
+WS_DLL_PUBLIC int write_prefs(const char* app_env_var_prefix, char **pf_path_return);
 
 /**
  * Result of setting a preference.

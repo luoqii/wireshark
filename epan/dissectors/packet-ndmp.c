@@ -507,8 +507,8 @@ static const value_string msg_vals[] = {
 	{NDMP_CONFIG_GET_TAPE_INFO, 	"CONFIG_GET_TAPE_INFO"},
 	{NDMP_CONFIG_GET_SCSI_INFO, 	"CONFIG_GET_SCSI_INFO"},
 	{NDMP_CONFIG_GET_SERVER_INFO, 	"CONFIG_GET_SERVER_INFO"},
-	{NDMP_CONFIG_GET_EXT_LIST, 	"CONFIG_GET_EXT_LIST"},
 	{NDMP_CONFIG_SET_EXT_LIST, 	"CONFIG_SET_EXT_LIST"},
+	{NDMP_CONFIG_GET_EXT_LIST, 	"CONFIG_GET_EXT_LIST"},
 	{NDMP_SCSI_OPEN, 		"SCSI_OPEN"},
 	{NDMP_SCSI_CLOSE, 		"SCSI_CLOSE"},
 	{NDMP_SCSI_GET_STATE, 		"SCSI_GET_STATE"},
@@ -1345,15 +1345,12 @@ dissect_execute_cdb_cdb(tvbuff_t *tvb, int offset, packet_info *pinfo,
 
 	if (cdb_len != 0) {
 		tvbuff_t *cdb_tvb;
-		int tvb_len, tvb_rlen;
+		int tvb_rlen;
 
-		tvb_len=tvb_captured_length_remaining(tvb, offset);
-		if(tvb_len>16)
-			tvb_len=16;
 		tvb_rlen=tvb_reported_length_remaining(tvb, offset);
 		if(tvb_rlen>16)
 			tvb_rlen=16;
-		cdb_tvb=tvb_new_subset_length_caplen(tvb, offset, tvb_len, tvb_rlen);
+		cdb_tvb=tvb_new_subset_length(tvb, offset, tvb_rlen);
 
 		if(ndmp_conv_data->task && !ndmp_conv_data->task->itlq){
 			ndmp_conv_data->task->itlq=wmem_new(wmem_file_scope(), itlq_nexus_t);
@@ -1398,15 +1395,12 @@ dissect_execute_cdb_payload(tvbuff_t *tvb, int offset, packet_info *pinfo, proto
 
 	if ((int) payload_len > 0) {
 		tvbuff_t *data_tvb;
-		int tvb_len, tvb_rlen;
+		int tvb_rlen;
 
-		tvb_len=tvb_captured_length_remaining(tvb, offset);
-		if(tvb_len>(int)payload_len)
-			tvb_len=payload_len;
 		tvb_rlen=tvb_reported_length_remaining(tvb, offset);
 		if(tvb_rlen>(int)payload_len)
 			tvb_rlen=payload_len;
-		data_tvb=tvb_new_subset_length_caplen(tvb, offset, tvb_len, tvb_rlen);
+		data_tvb=tvb_new_subset_length(tvb, offset, tvb_rlen);
 
 		if(ndmp_conv_data->task && ndmp_conv_data->task->itlq){
 			/* ndmp conceptually always send both read and write
@@ -3801,19 +3795,19 @@ proto_register_ndmp(void)
 
 	{ &hf_ndmp_tape_flags_no_rewind, {
 		"No rewind", "ndmp.tape.flags.no_rewind", FT_BOOLEAN, 32,
-		TFS(&tfs_ndmp_tape_flags_no_rewind), 0x00000008, NULL, HFILL, }},
+		TFS(&tfs_ndmp_tape_flags_no_rewind), 0x00000008, NULL, HFILL }},
 
 	{ &hf_ndmp_tape_flags_write_protect, {
 		"Write protect", "ndmp.tape.flags.write_protect", FT_BOOLEAN, 32,
-		TFS(&tfs_ndmp_tape_flags_write_protect), 0x00000010, NULL, HFILL, }},
+		TFS(&tfs_ndmp_tape_flags_write_protect), 0x00000010, NULL, HFILL }},
 
 	{ &hf_ndmp_tape_flags_error, {
 		"Error", "ndmp.tape.flags.error", FT_BOOLEAN, 32,
-		TFS(&tfs_ndmp_tape_flags_error), 0x00000020, NULL, HFILL, }},
+		TFS(&tfs_ndmp_tape_flags_error), 0x00000020, NULL, HFILL }},
 
 	{ &hf_ndmp_tape_flags_unload, {
 		"Unload", "ndmp.tape.flags.unload", FT_BOOLEAN, 32,
-		TFS(&tfs_ndmp_tape_flags_unload), 0x00000040, NULL, HFILL, }},
+		TFS(&tfs_ndmp_tape_flags_unload), 0x00000040, NULL, HFILL }},
 
 	{ &hf_ndmp_tape_file_num, {
 		"file_num", "ndmp.tape.status.file_num", FT_UINT32, BASE_DEC,
@@ -4001,15 +3995,15 @@ proto_register_ndmp(void)
 
 	{ &hf_ndmp_file_invalid_atime, {
 		"Invalid atime", "ndmp.file.invalid.atime", FT_BOOLEAN, 32,
-		TFS(&tfs_ndmp_file_invalid_atime), 0x00000001, NULL, HFILL, }},
+		TFS(&tfs_ndmp_file_invalid_atime), 0x00000001, NULL, HFILL }},
 
 	{ &hf_ndmp_file_invalid_ctime, {
 		"Invalid ctime", "ndmp.file.invalid.ctime", FT_BOOLEAN, 32,
-		TFS(&tfs_ndmp_file_invalid_ctime), 0x00000002, NULL, HFILL, }},
+		TFS(&tfs_ndmp_file_invalid_ctime), 0x00000002, NULL, HFILL }},
 
 	{ &hf_ndmp_file_invalid_group, {
 		"Invalid group", "ndmp.file.invalid.group", FT_BOOLEAN, 32,
-		TFS(&tfs_ndmp_file_invalid_group), 0x00000004, NULL, HFILL, }},
+		TFS(&tfs_ndmp_file_invalid_group), 0x00000004, NULL, HFILL }},
 
 	{ &hf_ndmp_file_mtime, {
 		"mtime", "ndmp.file.mtime", FT_ABSOLUTE_TIME, ABSOLUTE_TIME_LOCAL,
@@ -4077,23 +4071,23 @@ proto_register_ndmp(void)
 
 	{ &hf_ndmp_state_invalid_ebr, {
 		"EstimatedBytesLeft valid", "ndmp.bu.state.invalid.ebr", FT_BOOLEAN, 32,
-		TFS(&tfs_ndmp_state_invalid_ebr), 0x00000001, "Whether EstimatedBytesLeft is valid or not", HFILL, }},
+		TFS(&tfs_ndmp_state_invalid_ebr), 0x00000001, "Whether EstimatedBytesLeft is valid or not", HFILL }},
 
 	{ &hf_ndmp_state_invalid_etr, {
 		"EstimatedTimeLeft valid", "ndmp.bu.state.invalid.etr", FT_BOOLEAN, 32,
-		TFS(&tfs_ndmp_state_invalid_etr), 0x00000002, "Whether EstimatedTimeLeft is valid or not", HFILL, }},
+		TFS(&tfs_ndmp_state_invalid_etr), 0x00000002, "Whether EstimatedTimeLeft is valid or not", HFILL }},
 
 	{ &hf_ndmp_bu_operation, {
 		"Operation", "ndmp.bu.operation", FT_UINT32, BASE_DEC,
-		VALS(bu_operation_vals), 0, "BU Operation", HFILL, }},
+		VALS(bu_operation_vals), 0, "BU Operation", HFILL }},
 
 	{ &hf_ndmp_data_state, {
 		"State", "ndmp.data.state", FT_UINT32, BASE_DEC,
-		VALS(data_state_vals), 0, "Data state", HFILL, }},
+		VALS(data_state_vals), 0, "Data state", HFILL }},
 
 	{ &hf_ndmp_data_halted, {
 		"Halted Reason", "ndmp.data.halted", FT_UINT32, BASE_DEC,
-		VALS(data_halted_vals), 0, "Data halted reason", HFILL, }},
+		VALS(data_halted_vals), 0, "Data halted reason", HFILL }},
 
 	{ &hf_ndmp_data_bytes_processed, {
 		"Bytes Processed", "ndmp.data.bytes_processed", FT_UINT64, BASE_DEC,
