@@ -61,7 +61,7 @@ HexDataSourceView::HexDataSourceView(const QByteArray &data, packet_char_enc enc
     field_a_start_(0),
     field_a_len_(0),
     show_offset_(true),
-    show_hex_(true),
+    show_hex_(recent.gui_bytes_view != BYTES_TEXT_ONLY),
     show_ascii_(true),
     row_width_(recent.gui_bytes_view == BYTES_BITS ? 8 : 16),
     em_width_(0),
@@ -120,6 +120,10 @@ void HexDataSourceView::createContextMenu()
     action_bytes_bits_->setData(QVariant::fromValue(BYTES_BITS));
     action_bytes_bits_->setCheckable(true);
 
+    action_bytes_text_ = format_actions->addAction(tr("Show text only"));
+    action_bytes_text_->setData(QVariant::fromValue(BYTES_TEXT_ONLY));
+    action_bytes_text_->setCheckable(true);
+
     ctx_menu_.addActions(format_actions->actions());
     connect(format_actions, &QActionGroup::triggered, this, &HexDataSourceView::setHexDisplayFormat);
 
@@ -174,6 +178,9 @@ void HexDataSourceView::updateContextMenu()
         break;
     case BYTES_OCT:
         action_bytes_oct_->setChecked(true);
+        break;
+    case BYTES_TEXT_ONLY:
+        action_bytes_text_->setChecked(true);
         break;
     }
 
@@ -254,6 +261,7 @@ void HexDataSourceView::setMonospaceFont(const QFont &mono_font)
 void HexDataSourceView::updateByteViewSettings()
 {
     row_width_ = recent.gui_bytes_view == BYTES_BITS ? 8 : 16;
+    show_hex_ = recent.gui_bytes_view != BYTES_TEXT_ONLY;
 
     updateContextMenu();
     updateScrollbars();
@@ -665,6 +673,7 @@ bool HexDataSourceView::addHexFormatRange(QList<QTextLayout::FormatRange> &fmt_l
     int mark_end = mark_start + mark_length - 1;
     if (mark_start < 0 || mark_length < 1) return false;
     if (mark_start > max_tvb_pos && mark_end < tvb_offset) return false;
+    if (recent.gui_bytes_view == BYTES_TEXT_ONLY) return false;
 
     int chars_per_byte;
     switch (recent.gui_bytes_view) {
@@ -703,10 +712,14 @@ bool HexDataSourceView::addAsciiFormatRange(QList<QTextLayout::FormatRange> &fmt
 
     int byte_start = qMax(tvb_offset, mark_start) - tvb_offset;
     int byte_end = qMin(max_tvb_pos, mark_end) - tvb_offset;
-    int fmt_start = offsetChars() + DataPrinter::hexChars() + 3 // offset + hex + spacing
+    int ascii_base = show_offset_ ? offsetChars() : 0;
+    if (show_hex_) {
+        ascii_base += DataPrinter::hexChars() + 3; // offset + hex + spacing
+    }
+    int fmt_start = ascii_base
             + (byte_start / separator_interval_)
             + byte_start;
-    int fmt_length = offsetChars() + DataPrinter::hexChars() + 3 // offset + hex + spacing
+    int fmt_length = ascii_base
             + (byte_end / separator_interval_)
             + byte_end
             + 1 // Just one character.
@@ -754,9 +767,10 @@ int HexDataSourceView::hexPixels()
 int HexDataSourceView::asciiPixels()
 {
     if (show_ascii_) {
-        // Two pad spaces before, one after
+        // Add spacing between the hex and ASCII columns when needed.
         int ascii_chars = (row_width_ + ((row_width_ - 1) / separator_interval_));
-        QString zeroes = QString(ascii_chars + 3, '0');
+        int padding = show_hex_ ? 3 : 0;
+        QString zeroes = QString(ascii_chars + padding, '0');
         return stringWidth(zeroes);
     }
     return 0;

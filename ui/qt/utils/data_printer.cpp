@@ -179,6 +179,8 @@ int DataPrinter::hexChars()
     int row_width, chars_per_byte;
 
     switch (recent.gui_bytes_view) {
+    case BYTES_TEXT_ONLY:
+        return 0;
     case BYTES_HEX:
         row_width = 16;
         chars_per_byte = 3;

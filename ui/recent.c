@@ -147,6 +147,7 @@ static const value_string bytes_view_type_values[] = {
     { BYTES_BITS,   "BITS" },
     { BYTES_DEC,    "DEC" },
     { BYTES_OCT,    "OCT" },
+    { BYTES_TEXT_ONLY, "TEXT" },
     { 0, NULL }
 };
 

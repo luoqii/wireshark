@@ -137,6 +137,7 @@ private:
     QAction *action_bytes_dec_;
     QAction *action_bytes_oct_;
     QAction *action_bytes_bits_;
+    QAction *action_bytes_text_;
     QAction *action_bytes_enc_from_packet_;
     QAction *action_bytes_enc_ascii_;
     QAction *action_bytes_enc_ebcdic_;
